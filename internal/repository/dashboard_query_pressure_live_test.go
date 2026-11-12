@@ -28,7 +28,11 @@ func legacyDashboardOverallSQL(scope *models.CampaignScope, mailboxes []uuid.UUI
 		COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END),
 		COUNT(CASE WHEN ccp.bounced_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END),
 		(SELECT COUNT(*) FROM campaigns ac WHERE ac.organization_id=$1 AND ac.status='active'` + inCampaignScope("ac.id", scope, 4) + `),
-		(SELECT COUNT(*) FROM email_accounts WHERE organization_id=$1 AND status='active'` + inMailboxes("id", mailboxes, 4+len(scopeArgs(scope))) + `)
+		(SELECT COUNT(*) FROM email_accounts WHERE organization_id=$1 AND status='active'` + inMailboxes("id", mailboxes, 4+len(scopeArgs(scope))) + `),
+		COUNT(CASE WHEN ccp.sent_at >= $2 AND ccp.sent_at <= $3 AND COALESCE(ccp.open_tracked, c.open_tracking AND NOT c.text_only) THEN 1 END),
+		COUNT(CASE WHEN ccp.sent_at >= $2 AND ccp.sent_at <= $3 AND COALESCE(ccp.click_tracked, c.link_tracking AND NOT c.text_only) THEN 1 END),
+		COUNT(CASE WHEN ccp.sent_at >= $2 AND ccp.sent_at <= $3 AND ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine AND COALESCE(ccp.open_tracked, c.open_tracking AND NOT c.text_only) THEN 1 END),
+		COUNT(CASE WHEN ccp.sent_at >= $2 AND ccp.sent_at <= $3 AND ccp.clicked_at IS NOT NULL AND COALESCE(ccp.click_tracked, c.link_tracking AND NOT c.text_only) THEN 1 END)
 		FROM campaign_contact_progress ccp JOIN campaigns c ON c.id=ccp.campaign_id
 		JOIN sequences s ON s.id=ccp.sequence_id AND s.kind='email'
 		WHERE c.organization_id=$1` + inCampaignScope("c.id", scope, 4)
@@ -71,6 +75,8 @@ func TestLiveDashboardOverallBoundsHistoryAndPreservesScopedCounts(t *testing.T)
 				VALUES($1,$2,$3,$4,'https://test.local',$5,true)`, uuid.New(), fixture.campaign, contact, step, to.Add(time.Hour))
 		}
 	}
+	// A send recorded as carrying tracked links counts in the click rate even unclicked.
+	exec(`UPDATE campaign_contact_progress SET click_tracked = true WHERE campaign_id=$1 AND sent_at=$2`, sf.campaign, from)
 	account := uuid.New()
 	exec(`INSERT INTO email_accounts(id,user_id,organization_id,email,name,signature_plain,signature_html,provider,status)
 		VALUES($1,$2,$3,$4,'Report','','','smtp_imap','active')`, account, sf.owner, sf.org, account.String()+"@test.local")
@@ -89,15 +95,16 @@ func TestLiveDashboardOverallBoundsHistoryAndPreservesScopedCounts(t *testing.T)
 			for _, mailboxes := range [][]uuid.UUID{nil, {}, {account}, {f.sender}} {
 				params := append(append([]any{sf.org, window[0], window[1]}, scopeArgs(scope)...), mailboxArgs(mailboxes)...)
 				var want models.DashboardOverallStats
+				var trackedOpens, trackedClicks int
 				err := f.pool.QueryRow(ctx, legacyDashboardOverallSQL(scope, mailboxes), params...).Scan(&want.TotalEmailsSent,
 					&want.TotalOpens, &want.MachineOpens, &want.TotalClicks, &want.MachineClicks, &want.TotalReplies,
-					&want.TotalBounces, &want.ActiveCampaigns, &want.ActiveAccounts)
+					&want.TotalBounces, &want.ActiveCampaigns, &want.ActiveAccounts, &want.OpenTrackedSent, &want.ClickTrackedSent, &trackedOpens, &trackedClicks)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if want.TotalEmailsSent > 0 {
-					want.OpenRate = float64(want.TotalOpens) / float64(want.TotalEmailsSent) * 100
-					want.ClickRate = float64(want.TotalClicks) / float64(want.TotalEmailsSent) * 100
+					want.OpenRate = models.Rate(trackedOpens, want.OpenTrackedSent)
+					want.ClickRate = models.Rate(trackedClicks, want.ClickTrackedSent)
 					want.ReplyRate = float64(want.TotalReplies) / float64(want.TotalEmailsSent) * 100
 					want.BounceRate = float64(want.TotalBounces) / float64(want.TotalEmailsSent) * 100
 				}

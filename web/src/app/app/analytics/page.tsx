@@ -1,4 +1,5 @@
 import { NoAccess } from "@/components/layout/NoAccess";
+import { trackedRate, trackedUnit } from "@/lib/trackedRate";
 import { useAccessRestricted, usePermission } from "@/hooks/usePermission";
 import { useEffect, useMemo } from "react";
 import useBrowseState from "@/hooks/useBrowseState";
@@ -131,12 +132,13 @@ export default function AnalyticsPage() {
         { label: "Bounces", value: os?.total_bounces, icon: TriangleAlertIcon, dot: "bg-rose-500" },
     ];
 
+    const openRate = trackedRate(os?.open_rate, os?.open_tracked_sent, os?.total_emails_sent);
     const shareData = {
         title: scoped ? label : "Workspace performance",
         subtitle: RANGE_LABEL[range],
         metrics: [
             { label: "Sent", value: num(os?.total_emails_sent), sub: "emails" },
-            { label: "Open rate", value: pct(os?.open_rate) },
+            { label: "Open rate", value: openRate == null ? "Off" : pct(os?.open_rate) },
             { label: "Reply rate", value: pct(os?.reply_rate) },
             { label: "Bounce rate", value: pct(os?.bounce_rate) },
         ],
@@ -169,8 +171,8 @@ export default function AnalyticsPage() {
                 />
                 <TrendStat
                     label="Open rate"
-                    value={pct(os?.open_rate)}
-                    unit="after delivery"
+                    value={openRate == null ? "Off" : pct(os?.open_rate)}
+                    unit={trackedUnit(os?.open_tracked_sent, os?.total_emails_sent, "after delivery")}
                     points={d && !dash.isPlaceholderData ? dayPoints.opens : undefined}
                     pending={dash.isPending || dash.isPlaceholderData}
                     tone="slate"
@@ -317,7 +319,9 @@ export default function AnalyticsPage() {
                                         <span className="min-w-0 flex-1 text-[12.5px] font-medium text-slate-900 truncate" title={c.name}>{c.name}</span>
                                         <span className="ml-auto flex items-center gap-2 md:gap-4 font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
                                             <span title="Emails sent">{num(c.emails_sent)} sent</span>
-                                            <span title="Open rate" className="hidden md:inline text-emerald-600">{pct(c.open_rate)} open</span>
+                                            <span title="Open rate" className="hidden md:inline text-emerald-600">
+                                                {trackedRate(c.open_rate, c.open_tracked_sent, c.emails_sent) == null ? "not tracked" : `${pct(c.open_rate)} open`}
+                                            </span>
                                             <span title="Reply rate" className="text-amber-600">{pct(c.reply_rate)} reply</span>
                                         </span>
                                     </Link>

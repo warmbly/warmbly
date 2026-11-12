@@ -232,10 +232,15 @@ function Section({ title, action, children }: { title: string; action?: React.Re
     );
 }
 
+// Opens are not tracked when none of the sends carried a pixel.
+function untracked(trackedSent: number | undefined, sent: number): boolean {
+    return trackedSent === 0 && sent > 0;
+}
+
 function Tiles({ o }: { o: NonNullable<ReportView["overview"]> }) {
     const tiles: { label: string; value: string; note?: string }[] = [
         { label: "Sent", value: number.format(o.sent) },
-        { label: "Opened", value: number.format(o.opened), note: `${pct(o.open_rate)} open rate` },
+        { label: "Opened", value: number.format(o.opened), note: untracked(o.open_tracked_sent, o.sent) ? "not tracked" : `${pct(o.open_rate)} open rate` },
         { label: "Replied", value: number.format(o.replied), note: `${pct(o.reply_rate)} reply rate` },
     ];
     if (o.positive !== undefined) {
@@ -426,7 +431,7 @@ function CampaignTable({ rows, positive }: { rows: NonNullable<ReportView["campa
                         <tr key={`${c.name}-${i}`}>
                             <td className="wr-name">{c.name}</td>
                             <td className="num">{number.format(c.sent)}</td>
-                            <td className="num">{pct(c.open_rate)}</td>
+                            <td className="num">{untracked(c.open_tracked_sent, c.sent) ? "Not tracked" : pct(c.open_rate)}</td>
                             <td className="num">
                                 {number.format(c.replies)} <span className="wr-muted">({pct(c.reply_rate)})</span>
                             </td>

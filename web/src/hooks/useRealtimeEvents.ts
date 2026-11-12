@@ -32,6 +32,10 @@ const OVERVIEW_REFRESH_MAX_WAIT_MS = 15_000
 
 // Bridges realtime socket events into both the zustand store and react-query
 // cache so list pages, detail panes, counters, and workflow states stay live.
+
+// A campaign's send plan: ['campaigns', id, 'send-plan'].
+const isSendPlanQuery: QueryMatch = (q) => q.queryKey[2] === 'send-plan'
+
 export function useRealtimeEvents() {
   const { isConnected, subscribeToChannel } = useSocket()
   const { user } = useUserProfile()
@@ -408,6 +412,8 @@ export function useRealtimeEvents() {
           ['analytics', 'dashboard'],
           ['cloud-link'],
         ])
+        // A mailbox's health, status or warmup moves the per-mailbox limits in every send plan.
+        accountRefresh.add([['campaigns']], isSendPlanQuery)
         return
       }
 
@@ -654,6 +660,11 @@ export function useRealtimeEvents() {
         }
         const keys = spine[entityType]
         if (keys) invalidate(keys)
+        if (entityType === 'email_account') {
+          // Send plans and the sidebar's capacity read mailbox limits.
+          accountRefresh.add([['analytics', 'dashboard']])
+          accountRefresh.add([['campaigns']], isSendPlanQuery)
+        }
         // Unibox writes come in bursts (reading, filing), so they ride the coalescer.
         if (entityType === 'unibox') {
           inboxRefresh.add([['unibox']], (q) => !partialMatchKey(q.queryKey, OVERVIEW_KEY))

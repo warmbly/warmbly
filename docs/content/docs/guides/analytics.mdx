@@ -39,7 +39,7 @@ For bounces or complaints, check the per-mailbox breakdown to find the sender at
 
 ## Good to know
 
-- Opens and clicks only count when open or link tracking is on for the campaign.
+- Opens and clicks only count when open or link tracking is on for the campaign, and their rates are of the sends that were tracked. With tracking off the rate reads **Off**, not `0%`.
 - Bots, security scanners and privacy-proxy auto-opens are logged but never counted.
 - Replies are human replies. Out-of-office notices and autoresponders never count.
 - A click by a person counts as an open too.
@@ -77,9 +77,9 @@ The marketing site stays cookieless, with no persistent PostHog identity. Attrib
 
 | Metric | Counts | Feeds |
 | --- | --- | --- |
-| Sent | Emails actually sent | The denominator for every rate |
-| Opens | Recipients who opened | Open rate |
-| Clicks | Recipients who clicked a tracked link | Click rate |
+| Sent | Emails actually sent | The denominator for every rate except open and click rate |
+| Opens | Recipients who opened | Open rate, of the sends that carried the open pixel |
+| Clicks | Recipients who clicked a tracked link | Click rate, of the sends that carried tracked links |
 | Replies | Human replies | Reply rate |
 | Positive replies | Human replies the reply classifier judged positive | Positive reply rate, interested leads |
 | Bounces | Hard and soft bounces | Bounce rate |
@@ -87,7 +87,7 @@ The marketing site stays cookieless, with no persistent PostHog identity. Attrib
 
 Seven rules govern the counts:
 
-- **Tracking must be on.** Opens and clicks need open or link tracking enabled on the campaign, and a tracking host on the install. A [custom tracking domain](/guides/mailboxes/#custom-tracking-domain) per mailbox is optional; without one they go through the shared host and still count. With tracking off they stay at zero while sends and replies still count.
+- **Tracking must be on.** Opens and clicks need open or link tracking enabled on the campaign, and a tracking host on the install. A [custom tracking domain](/guides/mailboxes/#custom-tracking-domain) per mailbox is optional; without one they go through the shared host and still count. Each send records whether it carried the open pixel and tracked links, and the open and click rates divide only by the sends that did. A send made while tracking was off is in neither half of the rate, so switching tracking on starts the rate from that moment instead of diluting it with the untracked sends before, and switching it off leaves the rate of the tracked sends as it was. When none of the sends in the window were tracked, the rate shows **Off** rather than `0%`, and a rate over only some of the sends says how many it is of (`of 412 tracked`). A step with no links carries no tracked links, so it is not part of the click rate. Sends from before Warmbly recorded this follow the campaign's tracking setting as it is now.
 - **Reading in Warmbly does not count as an open.** Unibox removes Warmbly's tracking pixels from the displayed message, including quoted history. This applies to sent messages and every other folder; recipient copies retain their pixels.
 - **Replies are human replies.** Out-of-office and autoresponders never count, never stamp the contact as replied, and never trip stop-on-reply. A reply is attributed by the thread it answers, so a person who replies from a different address than the one you mailed (a "send as" alias, a forward, a colleague answering on their behalf) still counts as a reply for that lead. In a campaign that rotates across several mailboxes, each lead's reply is expected in the mailbox that wrote to them (the one their follow-ups come from too), so that mailbox has to be connected with inbox sync in the same workspace for the reply to be seen; a reply that reaches another mailbox in the pool stays in the Unibox and is not counted. Reply detection is always on; the reply-intent switch in Settings governs only what happens after a reply is detected. A reply that was missed is not lost: once a day, and whenever it starts, the platform re-checks recent inbound mail that was never attributed and marks the lead replied if it should have been.
 - **Bots are filtered.** Crawlers, CLI agents, prefetches, chat link previews, and security gateways that announce themselves are served normally but never counted. The ones that do not announce themselves are caught by where they came from and by what they do. Requests from a known mail-filtering network are treated as automated whatever their user agent claims, and a click from one is still redirected, just without the ticket that would file the visit against the recipient. Microsoft 365's own filtering layer, where Safe Links and delivery-time link scanning run, is recognised out of the box, as is Barracuda's. Proofpoint, Mimecast and Cisco Secure Email are recognised too, with one difference: those three also offer browser isolation, which renders a clicked page in the vendor's cloud for the recipient to read, so a click from them can be a real person. A match there is treated as automated only when it also arrives soon enough after the send to be the delivery-time scan, and a recipient who clicks through isolation later still counts as a person. The rest are caught by behaviour: an open within a minute of the send, or a click within thirty seconds, and clicks on two or more links of one email from the same source within five seconds (a scanner walking the message). The clock on the first two starts when the send is handed to a worker, before the mail has even been delivered, so those windows cover the sending provider's queue and the transit to the recipient as well as reading time. A self-hosted instance can change those windows under Instance settings, including the one the isolation vendors are measured against, when its recipients' gateways are slower or faster than that. Otherwise one corporate scanner would "click" every link seconds after delivery. A self-hosted instance can name its own scanner networks; see [tracking service configuration](/development/configuration/).

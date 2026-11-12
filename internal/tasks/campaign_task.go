@@ -719,8 +719,10 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		}
 	}
 
+	var sendTracking models.SendTracking
 	if campaign.OpenTracking && bodyHTML != "" {
 		bodyHTML = AddOpenTrackingPixel(bodyHTML, taskID, trackingDomain)
+		sendTracking.Opens = true
 	}
 
 	if bodyHTML != "" && (campaign.LinkTracking || campaign.UTMTracking) {
@@ -742,6 +744,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 			bodyHTML, _ = TrackLinks(bodyHTML, LinkTracking{TrackingDomain: linkOpts.TrackingDomain, UTM: linkOpts.UTM})
 		} else {
 			bodyHTML = tracked
+			sendTracking.Clicks = campaign.LinkTracking
 		}
 	}
 	if campaign.UTMTracking && bodyPlain != "" {
@@ -819,7 +822,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		s.retryCampaignTickLater(ctx, taskRecord)
 		return errx.InternalError()
 	}
-	reserved, rerr := s.campaignProgressRepo.ReserveSend(ctx, campaign.ID, contact.ID, sequence.ID, taskID, account.ID, nextPair.IsNewLead, rendered.Arm)
+	reserved, rerr := s.campaignProgressRepo.ReserveSend(ctx, campaign.ID, contact.ID, sequence.ID, taskID, account.ID, nextPair.IsNewLead, rendered.Arm, sendTracking)
 	if rerr != nil {
 		// The attempt could not be made durable, so it must not be made at all.
 		// Retry the whole task rather than sending something nothing remembers.
@@ -1231,11 +1234,17 @@ func (s *tasksService) pauseUndeliverable(ctx context.Context, campaignID, taskI
 		})
 	}
 	if s.streamingPublisher != nil {
-		s.streamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
-			BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignCompleted},
+		// Org-scoped so every teammate's list and badge see the pause, with the
+		// exact status rather than "completed".
+		event := &pubsub.CampaignEvent{
+			BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignUpdated},
 			CampaignID: campaignID.String(),
 			Status:     "paused_undeliverable",
-		})
+		}
+		if c, err := s.campaignRepo.GetByID(ctx, campaignID); err == nil && c != nil {
+			event.UserID, event.OrgID, event.Name = c.UserID, campaignOrgID(c), c.Name
+		}
+		s.streamingPublisher.PublishCampaignEvent(ctx, event)
 	}
 }
 

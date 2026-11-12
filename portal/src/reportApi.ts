@@ -18,6 +18,8 @@ export interface ReportSections {
 export interface ReportOverview {
     sent: number;
     opened: number;
+    // Sends that carried an open pixel; open_rate is of these.
+    open_tracked_sent?: number;
     open_rate: number;
     clicked: number;
     replied: number;
@@ -40,6 +42,8 @@ export interface ReportCampaign {
     status: string;
     sent: number;
     opens: number;
+    // Sends that carried an open pixel; open_rate is of these.
+    open_tracked_sent?: number;
     open_rate: number;
     clicks: number;
     replies: number;

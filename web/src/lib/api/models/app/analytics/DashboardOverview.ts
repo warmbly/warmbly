@@ -15,6 +15,10 @@ export interface DashboardOverallStats {
     machine_clicks: number
     total_replies: number
     total_bounces: number
+    // Sends that carried an open pixel and tracked links; open_rate and
+    // click_rate are of these. Absent from a server older than the field.
+    open_tracked_sent?: number
+    click_tracked_sent?: number
     open_rate: number
     click_rate: number
     reply_rate: number
@@ -44,6 +48,10 @@ export interface TopCampaignStats {
     name: string
     status: string
     emails_sent: number
+    // Sends that carried an open pixel and tracked links; open_rate and
+    // click_rate are of these. Absent from a server older than the field.
+    open_tracked_sent?: number
+    click_tracked_sent?: number
     open_rate: number
     click_rate: number
     reply_rate: number

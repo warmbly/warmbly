@@ -131,6 +131,7 @@ func (s *campaignService) Overview(ctx context.Context, orgID string, allowed []
 }
 
 func (s *campaignService) Update(ctx context.Context, orgID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error) {
+	defer s.forgetCapacity(orgID)
 	tags, xerr := validate.Uuids(data.EmailTags)
 	if xerr != nil {
 		return nil, xerr
@@ -208,6 +209,7 @@ func (s *campaignService) RescheduleForOrganization(ctx context.Context, orgID u
 }
 
 func (s *campaignService) Delete(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.Campaign, *errx.Error) {
+	defer s.forgetCapacity(orgID.String())
 	campaign, cID, xerr := s.campaignForOrg(ctx, orgID, campaignID)
 	if xerr != nil {
 		return nil, xerr
@@ -449,6 +451,7 @@ func truncateUTF8(s string, n int) string {
 }
 
 func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, campaignID string, opts models.StartCampaignOptions) *errx.Error {
+	defer s.forgetCapacity(orgID.String())
 	cID, parseErr := uuid.Parse(campaignID)
 	if parseErr != nil {
 		return errx.ErrUuid
@@ -911,6 +914,7 @@ func (s *campaignService) ResumeVerificationPaused(ctx context.Context, orgID uu
 }
 
 func (s *campaignService) StopCampaign(ctx context.Context, orgID uuid.UUID, campaignID string) *errx.Error {
+	defer s.forgetCapacity(orgID.String())
 	cID, parseErr := uuid.Parse(campaignID)
 	if parseErr != nil {
 		return errx.ErrUuid
@@ -1516,6 +1520,9 @@ func (s *campaignService) SendPlan(ctx context.Context, orgID uuid.UUID, campaig
 			if plan.Stale {
 				s.refreshPlanAsync(campaign, orgID, key)
 			}
+			if snap.Day == planBudgetDay(now) {
+				s.overlayLiveSends(ctx, plan)
+			}
 			return plan, nil
 		} else if err != nil {
 			// A snapshot read that failed is logged and falls through to a
@@ -1566,21 +1573,60 @@ func (s *campaignService) SendPlan(ctx context.Context, orgID uuid.UUID, campaig
 	return plan, nil
 }
 
+// overlayLiveSends moves a stored plan's sent counts up to the sends made
+// since it was walked, taking each from what was still to go, so the numbers
+// track every send while the walk itself runs on its own interval.
+func (s *campaignService) overlayLiveSends(ctx context.Context, plan *models.CampaignSendPlan) {
+	if s.taskRepo == nil {
+		return
+	}
+	live, err := s.taskRepo.CountCampaignSendsTodayBySender(ctx, plan.CampaignID)
+	if err != nil {
+		return
+	}
+	total := 0
+	for i := range plan.Mailboxes {
+		mp := &plan.Mailboxes[i]
+		if d := live[mp.ID] - mp.SentToday; d > 0 {
+			mp.SentToday += d
+			mp.ExpectedRemaining = max(0, mp.ExpectedRemaining-d)
+		}
+	}
+	for _, n := range live {
+		total += n
+	}
+	if d := total - plan.SentToday; d > 0 {
+		plan.SentToday = total
+		plan.ExpectedRemaining = max(0, plan.ExpectedRemaining-d)
+		plan.Projected = max(plan.Projected, plan.SentToday+plan.ExpectedRemaining)
+	}
+}
+
+// forgetCapacity drops the workspace's cached capacity after a change to
+// which campaigns run or how they are clamped.
+func (s *campaignService) forgetCapacity(orgID string) {
+	if s.capacityCache != nil {
+		s.capacityCache.forget(orgID)
+	}
+}
+
 func (s *campaignService) WorkspaceCapacity(ctx context.Context, orgID uuid.UUID) (*models.WorkspaceSendCapacity, *errx.Error) {
 	planner, ok := s.planner()
 	if !ok {
 		return nil, errx.New(errx.Internal, "send planning is not available")
 	}
+	var gen uint64
 	if s.capacityCache != nil {
 		if out, ok := s.capacityCache.get(orgID.String()); ok {
 			return out, nil
 		}
+		gen = s.capacityCache.generation(orgID.String())
 	}
 	accounts, xerr := s.emailRepo.GetAllActiveInScope(ctx, repository.NewAccountScope(&orgID))
 	if xerr != nil {
 		return nil, xerr
 	}
-	out, err := planner.PoolCapacityToday(ctx, &models.Campaign{OrganizationID: &orgID, WarmupGraduation: true}, accounts)
+	out, err := planner.WorkspaceCapacityToday(ctx, orgID, accounts)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
@@ -1593,7 +1639,7 @@ func (s *campaignService) WorkspaceCapacity(ctx context.Context, orgID uuid.UUID
 		}
 	}
 	if s.capacityCache != nil {
-		s.capacityCache.put(orgID.String(), out)
+		s.capacityCache.putAt(orgID.String(), out, gen)
 	}
 	return out, nil
 }

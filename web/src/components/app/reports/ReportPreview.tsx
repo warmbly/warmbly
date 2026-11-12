@@ -6,6 +6,7 @@ import { SectionBar, Stat, StatStrip } from "@/components/layout/Page";
 import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
 import type { ClientReportReplyClass, ClientReportView } from "@/lib/api/models/app/reports/ClientReport";
 import { formatDateTime } from "./reportText";
+import { trackedRate } from "@/lib/trackedRate";
 
 const pct = (n: number | undefined) => `${(n ?? 0).toFixed(1)}%`;
 const num = (n: number | undefined) => (n ?? 0).toLocaleString();
@@ -54,7 +55,7 @@ function Overview({ view }: { view: ClientReportView }) {
         <section className="rounded-md border border-slate-200 overflow-hidden bg-white">
             <StatStrip cols={positive ? 6 : 5}>
                 <Stat label="Sent" value={num(o.sent)} sub="emails" />
-                <Stat label="Opened" value={pct(o.open_rate)} sub={`${num(o.opened)} opens`} />
+                <Stat label="Opened" value={trackedRate(o.open_rate, o.open_tracked_sent, o.sent) == null ? "Not tracked" : pct(o.open_rate)} sub={`${num(o.opened)} opens`} />
                 <Stat label="Clicked" value={num(o.clicked)} sub="clicks" />
                 <Stat label="Replied" value={pct(o.reply_rate)} sub={`${num(o.replied)} replies`} />
                 {positive && <Stat label="Positive" value={pct(o.positive_rate)} sub={`${num(o.positive)} interested`} />}
@@ -116,7 +117,7 @@ function Campaigns({ view }: { view: ClientReportView }) {
                                         <div className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400">{c.status}</div>
                                     </td>
                                     <Td>{num(c.sent)}</Td>
-                                    <Td muted>{pct(c.open_rate)}</Td>
+                                    <Td muted>{trackedRate(c.open_rate, c.open_tracked_sent, c.sent) == null ? "Not tracked" : pct(c.open_rate)}</Td>
                                     <Td muted className="hidden sm:table-cell">{num(c.clicks)}</Td>
                                     <Td>{pct(c.reply_rate)}</Td>
                                     {positive && <Td muted className="hidden md:table-cell">{num(c.positive)}</Td>}

@@ -228,16 +228,18 @@ type ClientReportView struct {
 
 // ClientReportOverview is the KPI row. Positive figures are nil when the section is off.
 type ClientReportOverview struct {
-	Sent         int      `json:"sent"`
-	Opened       int      `json:"opened"`
-	OpenRate     float64  `json:"open_rate"`
-	Clicked      int      `json:"clicked"`
-	Replied      int      `json:"replied"`
-	ReplyRate    float64  `json:"reply_rate"`
-	Positive     *int     `json:"positive,omitempty"`
-	PositiveRate *float64 `json:"positive_rate,omitempty"`
-	Bounced      int      `json:"bounced"`
-	BounceRate   float64  `json:"bounce_rate"`
+	Sent   int `json:"sent"`
+	Opened int `json:"opened"`
+	// OpenTrackedSent is the sends that carried an open pixel; OpenRate is of these.
+	OpenTrackedSent int      `json:"open_tracked_sent"`
+	OpenRate        float64  `json:"open_rate"`
+	Clicked         int      `json:"clicked"`
+	Replied         int      `json:"replied"`
+	ReplyRate       float64  `json:"reply_rate"`
+	Positive        *int     `json:"positive,omitempty"`
+	PositiveRate    *float64 `json:"positive_rate,omitempty"`
+	Bounced         int      `json:"bounced"`
+	BounceRate      float64  `json:"bounce_rate"`
 }
 
 // ClientReportDay is one day of the chart.
@@ -250,18 +252,20 @@ type ClientReportDay struct {
 
 // ClientReportCampaign is one row of the campaign table.
 type ClientReportCampaign struct {
-	ID         uuid.UUID `json:"-"`
-	Name       string    `json:"name"`
-	Status     string    `json:"status"`
-	Sent       int       `json:"sent"`
-	Opens      int       `json:"opens"`
-	OpenRate   float64   `json:"open_rate"`
-	Clicks     int       `json:"clicks"`
-	Replies    int       `json:"replies"`
-	ReplyRate  float64   `json:"reply_rate"`
-	Positive   *int      `json:"positive,omitempty"`
-	Bounces    int       `json:"bounces"`
-	BounceRate float64   `json:"bounce_rate"`
+	ID     uuid.UUID `json:"-"`
+	Name   string    `json:"name"`
+	Status string    `json:"status"`
+	Sent   int       `json:"sent"`
+	Opens  int       `json:"opens"`
+	// OpenTrackedSent is the sends that carried an open pixel; OpenRate is of these.
+	OpenTrackedSent int     `json:"open_tracked_sent"`
+	OpenRate        float64 `json:"open_rate"`
+	Clicks          int     `json:"clicks"`
+	Replies         int     `json:"replies"`
+	ReplyRate       float64 `json:"reply_rate"`
+	Positive        *int    `json:"positive,omitempty"`
+	Bounces         int     `json:"bounces"`
+	BounceRate      float64 `json:"bounce_rate"`
 }
 
 // ClientReportReply is one reply in the list; Snippet is set only when the report shows snippets.
