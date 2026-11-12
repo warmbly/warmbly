@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,7 +31,26 @@ const (
 	// of a request the API refused with 429.
 	mailVeriRateLimitAttempts = 3
 	mailVeriRateLimitBackoff  = 250 * time.Millisecond
+	// mailVeriMaxInFlight is the API's limit on concurrent checks per
+	// account. Warmbly's paid-provider concurrency is higher, so checks for
+	// one key queue here instead of being refused with 429.
+	mailVeriMaxInFlight = 5
 )
+
+// mailVeriSlots holds one semaphore per API key, shared by every client
+// built for that key, so the in-flight limit holds across a batch.
+var mailVeriSlots sync.Map
+
+func (m *MailVeri) acquireSlot(ctx context.Context) (func(), error) {
+	v, _ := mailVeriSlots.LoadOrStore(m.apiKey, make(chan struct{}, mailVeriMaxInFlight))
+	slots := v.(chan struct{})
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("mailveri: %w", ctx.Err())
+	}
+}
 
 // NewMailVeri constructs the client. baseURL is overridable for tests.
 func NewMailVeri(apiKey string, baseURL string) *MailVeri {
@@ -66,6 +86,12 @@ func (m *MailVeri) Verify(ctx context.Context, email string) Result {
 func (m *MailVeri) Check(ctx context.Context, email string) (Result, error) {
 	res := Result{Email: strings.ToLower(strings.TrimSpace(email)), CheckedAt: time.Now().UTC(), Status: StatusUnknown, Provider: ProviderMailVeri}
 	body, _ := json.Marshal(map[string]string{"email": res.Email})
+	release, err := m.acquireSlot(ctx)
+	if err != nil {
+		res.Reason = err.Error()
+		return res, err
+	}
+	defer release()
 	var out mailVeriResponse
 	if err := m.request(ctx, http.MethodPost, "/v1/verify-mail/", body, &out); err != nil {
 		res.Reason = err.Error()

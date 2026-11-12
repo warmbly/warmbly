@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestMailVeriMapsResults(t *testing.T) {
@@ -120,5 +122,53 @@ func TestMailVeriRetriesARateLimitedCheck(t *testing.T) {
 	res, err := NewMailVeri("key", srv.URL).Check(context.Background(), "good@x.com")
 	if err != nil || res.Status != StatusValid || calls != 2 {
 		t.Fatalf("retry = %+v, %v after %d calls", res, err, calls)
+	}
+}
+
+func TestMailVeriCapsChecksInFlight(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		active   int
+		maxSeen  int
+		release  = make(chan struct{})
+		arrivals = make(chan struct{}, 16)
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		active++
+		if active > maxSeen {
+			maxSeen = active
+		}
+		mu.Unlock()
+		arrivals <- struct{}{}
+		<-release
+		mu.Lock()
+		active--
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"error":0,"status":"VALID","email":"a@x.com","balance":1,"credits_used":1,"quality_score":90,"is_forwarding":false}`))
+	}))
+	defer srv.Close()
+
+	// Separate clients for the same key share the limit.
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = NewMailVeri("cap-key", srv.URL).Check(context.Background(), "a@x.com")
+		}()
+	}
+	for i := 0; i < mailVeriMaxInFlight; i++ {
+		<-arrivals
+	}
+	select {
+	case <-arrivals:
+		t.Fatal("a sixth check started while five were in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	wg.Wait()
+	if maxSeen != mailVeriMaxInFlight {
+		t.Fatalf("max in flight = %d, want %d", maxSeen, mailVeriMaxInFlight)
 	}
 }

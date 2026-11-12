@@ -127,7 +127,7 @@ An account with nothing left is only visible when a check is refused, so Warmbly
 
 1. Create an API key in the [MailVeri dashboard](https://app.mailveri.com/api-keys/) under **Dashboard → API Keys**.
 2. In Warmbly, open **Integrations → MailVeri → Connect** and paste the key. Warmbly validates it with MailVeri's free balance request, so connecting spends nothing, and stores it encrypted.
-3. New contacts and re-verification requests use MailVeri. Each address uses one credit; a check that ends `UNKNOWN` costs nothing. `VALID` maps to deliverable, `INVALID` and `DISPOSABLE` to undeliverable, `ROLE_ACCOUNT`, `CATCH_ALL` and `FULL_INBOX` to risky, and `UNKNOWN` to unknown. Its 0 to 100 quality score becomes the verdict's confidence.
+3. New contacts and re-verification requests use MailVeri. Each address uses one credit; a check that ends `UNKNOWN` costs nothing. `VALID` maps to deliverable, `INVALID` and `DISPOSABLE` to undeliverable, `ROLE_ACCOUNT`, `CATCH_ALL` and `FULL_INBOX` to risky, and `UNKNOWN` to unknown. Its 0 to 100 quality score is kept with the check result. The confidence Warmbly shows on the contact comes from Warmbly's own evidence score, as with the other services.
 
 MailVeri exposes its balance, so Warmbly shows the remaining credits on the connection and notices an empty account without spending a check. When the credits run out or the key is revoked, the connection is marked and the built-in check covers until it is fixed. See the [MailVeri API documentation](https://mailveri.com/docs/api) and [address verification](/guides/deliverability/#address-verification).
 
