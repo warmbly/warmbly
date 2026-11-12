@@ -212,9 +212,9 @@ warmblyctl admin api POST /admin/mailboxes/remove --server laptop \
   --data @remove.json --write --confirm 'POST /admin/mailboxes/remove'
 ```
 
-Preview first. With `dry_run: true` nothing is removed, `matched` is the full count and `remaining` equals it, but `mailboxes` lists at most the first 100; see every match, paging with `next_cursor`, with `warmblyctl admin api GET /admin/mailboxes --query q=<domain> --query status=all` before removing anything. Then send the same body with `dry_run` set to `false` (or left out). Each removing pass deletes at most 100 mailboxes and reports `remaining`; repeat it until `remaining` is `0`.
+Preview first. With `dry_run: true` nothing is removed, `matched` is the full count and `remaining` equals it, but `mailboxes` lists at most the first 100; see every match, paging with `next_cursor`, with `warmblyctl admin api GET /admin/mailboxes --server laptop --query q=<domain> --query status=all` before removing anything. Then send the same body with `dry_run` set to `false` (or left out). Each removing pass deletes at most 100 mailboxes and reports `remaining`; repeat it until `remaining` is `0`.
 
-A mailbox that fails keeps its row and is marked with `removed: false` and an `error`, which the CLI prints as `[REDACTED]`. Put its `id` in `skip` on the next pass so the rest still progress; `remaining` then counts only the mailboxes not skipped, and `skip` holds at most 1,000 ids. A skipped mailbox is still there when `remaining` reaches `0`. Find its cause in the backend log line `admin mailbox removal: delete failed`, which names the mailbox, or open the mailbox in the admin panel, fix that, then run a pass without it in `skip`.
+A mailbox that fails keeps its row and is marked with `removed: false` and an `error`, which the CLI prints as `[REDACTED]`. Put its `id` in `skip` and keep every unresolved `id` there on every later pass, so the rest still progress; `remaining` then counts only the mailboxes not skipped, and `skip` holds at most 1,000 ids. A skipped mailbox is still there when `remaining` reaches `0`. Find its cause in the backend log line `admin mailbox removal: delete failed`, which names the mailbox, or open the mailbox in the admin panel, fix that, then run a pass without it in `skip`.
 
 ### JSON, redaction and exit codes
 
