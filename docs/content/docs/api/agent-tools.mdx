@@ -51,6 +51,8 @@ curl -s "https://api.warmbly.com/v1/ai/tools?format=openai" \
 
 Because the list is permission-filtered, you can hand the response straight to your agent: everything in it is callable with the same credential, and nothing in it can send mail.
 
+The list includes the docs and API tools described on the [MCP server](/api/mcp/#docs-and-the-full-api) page: `search_docs` and `read_doc` for how a feature works, and `find_api`, `describe_api`, `api_read` and `api_write` for any documented endpoint without a dedicated tool. Those two call the endpoint with the credential that called them, so the endpoint's own scope applies and each call counts as a request of its own.
+
 ## Execute a tool
 
 `POST /ai/tools/{name}/call` runs one tool. The request body is the tool's JSON argument object, exactly as your model produced it in its tool call; an empty body means no arguments.

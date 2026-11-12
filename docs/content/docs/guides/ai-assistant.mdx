@@ -113,10 +113,18 @@ These preferences are yours alone, kept in your browser for each workspace.
 - Manage the team, workspace and voice settings, plan and limits, API keys, and webhooks
 - List connected integrations, give you a link to connect one, and set up [Slack](/guides/slack/): notification channels, the inbox channel, and where the assistant answers
 - Search the web and read a public page
+- Explain how a feature works from these docs, with a link to the page it read
+- Reach anything else your role allows through the [Warmbly API](/api/), described below
 
 It knows what page you are on, so "summarize this campaign" and "draft a reply here" resolve correctly.
 
-When the available tools exceed the OpenAI-compatible provider's 128-tool limit, Remie discovers the tools it needs on demand, including tools from connected MCP servers. Discovery results include each tool's argument schema, so its usage remains available in the conversation after another search. No permitted capability is removed. Discovery is a read-only step; the action itself keeps its normal permissions and approval requirements. Like other model steps, discovery counts toward the run's step budget and is charged to the balance.
+Remie keeps a core set of tools in view and finds the rest on demand by searching, including tools from connected MCP servers, so a workspace never runs into a model provider's tool limit. Found tools stay available for the rest of the conversation, and no permitted capability is removed. Discovery is a read-only step; the action itself keeps its normal permissions and approval requirements. Like other model steps, discovery counts toward the run's step budget and is charged to the balance.
+
+### Everything else, through the API
+
+When no dedicated tool covers a request (reply templates, A/B variants, sending domains, lead searches, imports, integration settings and so on), Remie looks up the matching [API endpoint](/api/), reads its documentation, and calls it as you. The call goes through the same checks as the dashboard: your role's permissions, your workspace, your rate limits. Reads run on their own; every change asks, and **Always allow** is never offered for it.
+
+Some things stay out of reach on purpose. Remie cannot send mail, start a campaign or run a placement test this way (each has its own tool, which shows you exactly what goes out), sign in or change account security, manage API keys, webhooks or OAuth apps, upload files, or enter a credential such as a password or API key, which belongs in the dashboard where it is sealed. Fields that hold a credential are withheld from anything Remie reads.
 
 </Fold>
 
@@ -131,6 +139,7 @@ Some actions always ask, and **Always allow** is never offered for them:
 - sending a reply or a new email, and placement tests
 - starting or stopping a campaign, enabling an automation, starting warmup, releasing a mailbox's send hold or a lead's hold, and adding leads to a campaign, since each puts mail in motion
 - inviting a member, changing a member's role, and creating or editing an API key
+- changes made through the general API tool (`api_write`)
 
 Inviting or removing a member, changing a member's role, creating or editing an API key or a webhook endpoint, and rotating a webhook signing secret also need the same recent confirmation as doing it in Settings: if you have not confirmed it is you in the last five minutes, Remie stops and asks you to confirm in the dashboard first. From Slack, do these in the dashboard.
 - tools from [connected MCP servers](/guides/connect-mcp-tools/)

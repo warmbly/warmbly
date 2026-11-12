@@ -106,6 +106,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
+	"net/http"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
@@ -290,6 +291,8 @@ type Handler struct {
 	TypeSafe typesafe.Asker
 	AISearch generation.SearchClient
 
+	// Router is the backend's own router, which the assistant's API tools call through as the caller.
+	Router http.Handler
 	// AITools is the shared tool registry the dashboard agent and MCP server
 	// run on. Handlers bound to the invoking user's permissions.
 	AITools *aitools.Registry

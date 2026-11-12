@@ -66,12 +66,17 @@ func TestToolCatalogEveryToolIsReachableWithBoundedPages(t *testing.T) {
 			t.Fatalf("total = %d, want %d", result.TotalMatches, len(tools))
 		}
 		defs := c.definitions()
-		if len(defs) != len(result.Tools)+1 || len(defs) > 128 {
-			t.Fatalf("wire catalog size = %d for %d matches", len(defs), len(result.Tools))
+		if len(defs) > maxLoadedTools+1 {
+			t.Fatalf("wire catalog size = %d", len(defs))
 		}
-		for i, match := range result.Tools {
-			if seen[match.Name] || defs[i].Name != match.Name || defs[i].InputSchema == nil || defs[i].Handler == nil {
-				t.Fatalf("duplicate or incomplete definition: %s", match.Name)
+		onWire := map[string]ToolDef{}
+		for _, d := range defs {
+			onWire[d.Name] = d
+		}
+		for _, match := range result.Tools {
+			d, ok := onWire[match.Name]
+			if seen[match.Name] || !ok || d.InputSchema == nil || d.Handler == nil {
+				t.Fatalf("duplicate or unloaded definition: %s", match.Name)
 			}
 			seen[match.Name] = true
 		}
@@ -111,9 +116,10 @@ func TestToolCatalogSearchAndValidation(t *testing.T) {
 		query  string
 		offset int
 	}{{"no_such_tool", 0}, {"", 9999}} {
+		before := len(c.definitions())
 		result := findCatalogTools(t, c, tc.query, tc.offset)
-		if len(result.Tools) != 0 || result.NextOffset != nil || len(c.definitions()) != 1 {
-			t.Fatalf("empty search left stale tools: %+v", result)
+		if len(result.Tools) != 0 || result.NextOffset != nil || len(c.definitions()) != before {
+			t.Fatalf("an empty search should keep what is loaded: %+v", result)
 		}
 	}
 }
@@ -131,17 +137,50 @@ func TestToolCatalogRestoresCurrentPermissionsAndAvoidsNameCollisions(t *testing
 		{Role: "tool", Content: `{"tools":[{"name":"forbidden_tool"}]}`},
 	}
 	restored := newToolCatalog(tools, messages)
-	if len(restored.active) != 1 || restored.active[0].Name != tools[137].Name {
+	if len(restored.loaded) != 1 || restored.loaded[0].Name != tools[137].Name {
 		t.Fatal("discovery was not restored from its arguments")
 	}
 	messages = append(messages, AgentMessage{Role: "assistant", ToolCalls: []ToolCall{{Name: tools[136].Name}, {Name: "forbidden_tool"}}})
 	restored = newToolCatalog(tools, messages)
-	if len(restored.active) != 1 || restored.active[0].Name != tools[136].Name {
-		t.Fatal("recent permitted tool was not restored")
+	if len(restored.loaded) != 2 || restored.loaded[0].Name != tools[136].Name || restored.loaded[1].Name != tools[137].Name {
+		t.Fatal("recently used tools were not restored, most recent first")
 	}
 	tools = tools[:137]
 	restored = newToolCatalog(tools, messages[:2])
-	if len(restored.active) != 0 {
+	if len(restored.loaded) != 0 {
 		t.Fatal("a tool removed from the current registry was restored")
 	}
+}
+
+func TestToolCatalogKeepsCoreToolsAndBoundsDiscovered(t *testing.T) {
+	tools := catalogTestTools(300)
+	for i := range tools {
+		tools[i].Deferred = i >= 10
+	}
+	c := newToolCatalog(tools, nil)
+	if c == nil || len(c.definitions()) != 11 {
+		t.Fatal("deferred tools should leave only the core set and discovery on the wire")
+	}
+	for offset := 0; offset < 300; offset += toolSearchPageSize {
+		findCatalogTools(t, c, "", offset)
+		defs := c.definitions()
+		if len(defs) > 10+maxLoadedTools+1 {
+			t.Fatalf("wire catalog grew to %d", len(defs))
+		}
+		for i := 0; i < 10; i++ {
+			if defs[i].Name != tools[i].Name {
+				t.Fatal("a core tool left the wire after discovery")
+			}
+		}
+	}
+	if len(newToolCatalog(tools[:10], nil).definitionsOrNil()) != 0 {
+		t.Fatal("a set with nothing deferred should be passed through")
+	}
+}
+
+func (c *toolCatalog) definitionsOrNil() []ToolDef {
+	if c == nil {
+		return nil
+	}
+	return c.definitions()
 }
