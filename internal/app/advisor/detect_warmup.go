@@ -15,13 +15,13 @@ func warmupDetectors() []Detector {
 		{
 			Key:      "warmup_off_while_sending",
 			Category: models.AdvisorCategoryWarmup,
-			About:    "A mailbox running cold campaigns with warmup switched off. Warmup is what generates the positive engagement that offsets cold traffic; without it a mailbox's only signal to providers is unsolicited mail from strangers.",
+			About:    "A mailbox running cold campaigns with warmup switched off. Warmup is what generates the positive engagement that offsets cold traffic; without it a mailbox's only signal to providers is unsolicited mail from strangers. On a self-hosted instance warmup runs only among the instance's own mailboxes, which works but is not effective, so there it is only a suggestion.",
 			Run:      detectWarmupOffWhileSending,
 		},
 		{
 			Key:      "warmup_paused",
 			Category: models.AdvisorCategoryWarmup,
-			About:    "Warmup left paused on a mailbox. Pausing is a deliberate, usually temporary action, and a pause nobody resumed removes the mailbox's positive signal without anyone noticing.",
+			About:    "Warmup left paused on a mailbox. Pausing is a deliberate, usually temporary action, and a pause nobody resumed removes the mailbox's positive signal without anyone noticing. On a self-hosted instance, where warmup runs only among the instance's own mailboxes, it is only a suggestion.",
 			Run:      detectWarmupPaused,
 		},
 		{
@@ -103,6 +103,25 @@ func detectWarmupOffWhileSending(s *repository.AdvisorSnapshot) []Finding {
 		if m.AgeDays < newMailboxDays {
 			severity = models.AdvisorCritical
 		}
+		detail := fmt.Sprintf(
+			"%s sent %s in the last week with warmup switched off. Warmup is what produces the opens, replies, and inbox moves that offset cold traffic; without it, the only thing providers see from this mailbox is unsolicited mail to strangers.",
+			m.Email, plural(m.ColdSent7d, "cold email", "cold emails"))
+		remedy := "Turn warmup on and leave it on. It should keep running after campaigns start, not stop once the mailbox is considered ready."
+		evidence := map[string]any{
+			"mailbox":       m.Email,
+			"cold_sends_7d": m.ColdSent7d,
+			"age_days":      m.AgeDays,
+			"daily_cap":     m.CampaignLimit,
+		}
+		if s.SelfHosted {
+			// Local warmup works but is not effective, so turning it on is a suggestion, not an alarm.
+			severity = models.AdvisorLow
+			detail = fmt.Sprintf(
+				"%s sent %s in the last week with warmup switched off. On this self-hosted instance warmup runs only among the instance's own mailboxes. That works, but it adds far less than a large pool of real mailboxes does.",
+				m.Email, plural(m.ColdSent7d, "cold email", "cold emails"))
+			remedy = "Turn warmup on if you want some conversational traffic between this instance's mailboxes. For a pool of thousands of real mailboxes, warm the mailbox in a hosted workspace on Warmbly Cloud."
+			evidence["self_hosted"] = true
+		}
 
 		out = append(out, Finding{
 			Key:         "warmup_off_while_sending",
@@ -115,16 +134,9 @@ func detectWarmupOffWhileSending(s *repository.AdvisorSnapshot) []Finding {
 			EntityLabel: m.Email,
 			Impact:      clampImpact(65 + m.ColdSent7d/10),
 			Title:       fmt.Sprintf("%s is sending cold mail with no warmup", m.Email),
-			Detail: fmt.Sprintf(
-				"%s sent %s in the last week with warmup switched off. Warmup is what produces the opens, replies, and inbox moves that offset cold traffic; without it, the only thing providers see from this mailbox is unsolicited mail to strangers.",
-				m.Email, plural(m.ColdSent7d, "cold email", "cold emails")),
-			Remedy: "Turn warmup on and leave it on. It should keep running after campaigns start, not stop once the mailbox is considered ready.",
-			Evidence: map[string]any{
-				"mailbox":       m.Email,
-				"cold_sends_7d": m.ColdSent7d,
-				"age_days":      m.AgeDays,
-				"daily_cap":     m.CampaignLimit,
-			},
+			Detail:      detail,
+			Remedy:      remedy,
+			Evidence:    evidence,
 			Action: withUndo(toolAction("set_mailbox_warmup",
 				"Turn warmup on",
 				map[string]any{"email_account_id": m.ID.String(), "action": "start"},
@@ -144,6 +156,16 @@ func detectWarmupPaused(s *repository.AdvisorSnapshot) []Finding {
 			continue
 		}
 		severity := models.AdvisorHigh
+		evidence := map[string]any{
+			"mailbox":                m.Email,
+			"currently_sending_cold": m.SendingCold(),
+			"cold_sends_7d":          m.ColdSent7d,
+		}
+		if s.SelfHosted {
+			// Resuming only restores warmup among this instance's own mailboxes.
+			severity = models.AdvisorLow
+			evidence["self_hosted"] = true
+		}
 
 		out = append(out, Finding{
 			Key:         "warmup_paused",
@@ -160,12 +182,8 @@ func detectWarmupPaused(s *repository.AdvisorSnapshot) []Finding {
 				"Warmup on %s is paused%s. Pausing keeps the ramp progress, so resuming picks up where it left off rather than starting over.",
 				m.Email,
 				map[bool]string{true: " while the mailbox is running cold campaigns", false: ""}[m.SendingCold()]),
-			Remedy: "Resume warmup unless you paused it deliberately for a reason that still applies.",
-			Evidence: map[string]any{
-				"mailbox":                m.Email,
-				"currently_sending_cold": m.SendingCold(),
-				"cold_sends_7d":          m.ColdSent7d,
-			},
+			Remedy:   "Resume warmup unless you paused it deliberately for a reason that still applies.",
+			Evidence: evidence,
 			Action: withUndo(toolAction("set_mailbox_warmup",
 				"Resume warmup",
 				map[string]any{"email_account_id": m.ID.String(), "action": "resume"},

@@ -41,7 +41,7 @@ func deliverabilityDetectors() []Detector {
 		{
 			Key:      "mailbox_shared_tracking_domain",
 			Category: models.AdvisorCategoryDeliverability,
-			About:    "Whether a sending mailbox uses its own verified tracking domain. Open pixels and click links on a shared domain inherit every other sender's reputation on it, which is a self-inflicted deliverability drag.",
+			About:    "Whether a sending mailbox uses its own verified tracking domain. Open pixels and click links on a shared domain inherit every other sender's reputation on it, which is a self-inflicted deliverability drag. Not raised on a self-hosted instance, whose tracking host is the operator's own.",
 			Run:      detectSharedTrackingDomain,
 		},
 	}
@@ -331,7 +331,8 @@ func detectSharedTrackingDomain(s *repository.AdvisorSnapshot) []Finding {
 	for _, m := range s.Mailboxes {
 		// Nothing goes out on a tracking host unless a campaign tracks opens or
 		// links, and a campaign's own verified domain takes priority.
-		if !m.SendingCold() || !m.TrackedOnMailboxHost {
+		// A self-host's tracking host is the operator's own, not shared with strangers.
+		if s.SelfHosted || !m.SendingCold() || !m.TrackedOnMailboxHost {
 			continue
 		}
 		if m.TrackingDomain != "" && m.TrackingDomainVerified {

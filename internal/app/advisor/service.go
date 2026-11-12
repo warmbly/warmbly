@@ -92,6 +92,7 @@ type service struct {
 	// rather than what happens on a default one. Optional/nil-safe.
 	domainAuth   DomainAuthPolicy
 	warmupAccess WarmupAccess
+	selfHosted   bool
 }
 
 // DomainAuthPolicy resolves whether the sending-domain authentication gate is
@@ -140,6 +141,11 @@ func WithDomainAuthPolicy(p DomainAuthPolicy) Option {
 	return func(s *service) { s.domainAuth = p }
 }
 
+// WithSelfHosted tells the detectors this is a self-hosted instance, so they do not judge it by the hosted pool and shared tracking host.
+func WithSelfHosted(selfHosted bool) Option {
+	return func(s *service) { s.selfHosted = selfHosted }
+}
+
 // WarmupAccess answers whether an organization's plan includes warmup.
 type WarmupAccess interface {
 	CanUseWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
@@ -186,6 +192,7 @@ func (s *service) Evaluate(ctx context.Context, orgID uuid.UUID, trigger string)
 	}
 
 	snapshot.TrackingHost = s.trackingHost
+	snapshot.SelfHosted = s.selfHosted
 	if s.domainAuth != nil {
 		snapshot.DomainAuthEnforced, snapshot.DomainAuthGrace = s.domainAuth.DomainAuth(ctx)
 	}
