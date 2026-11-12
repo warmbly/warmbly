@@ -145,18 +145,85 @@ func reconcileDue(rows []repository.MailboxAssignment, seen map[uuid.UUID]reconc
 	return due
 }
 
-// ReloadWorkerAccounts publishes every active mailbox assigned to workerID
-// back onto it. Called from the boot heartbeat, so a restarted worker is
-// sending and syncing again within seconds rather than after the reconciler's
-// next republish window.
-func (s *emailService) ReloadWorkerAccounts(ctx context.Context, workerID uuid.UUID) {
-	ids, err := s.emailRepository.ListActiveAccountsByWorker(ctx, workerID)
+// workerReloadTimeout bounds one reload pass; a full worker is a thousand or more mailboxes loaded one by one.
+const workerReloadTimeout = 10 * time.Minute
+
+// workerReload is what one worker has asked for and not yet been given: everything, or the named mailboxes.
+type workerReload struct {
+	running bool
+	full    bool
+	ids     map[uuid.UUID]struct{}
+}
+
+// RequestWorkerReload re-ships a worker's mailboxes in the background: all of them when it booted, else the named ones.
+// One pass runs per worker at a time and requests arriving meanwhile join the next, so a worker that keeps asking
+// cannot stack reloads of its whole inventory on top of each other.
+func (s *emailService) RequestWorkerReload(workerID uuid.UUID, full bool, ids []uuid.UUID) {
+	if !full && len(ids) == 0 {
+		return
+	}
+	s.reloadMu.Lock()
+	if s.reloads == nil {
+		s.reloads = make(map[uuid.UUID]*workerReload)
+	}
+	r := s.reloads[workerID]
+	if r == nil {
+		r = &workerReload{ids: make(map[uuid.UUID]struct{})}
+		s.reloads[workerID] = r
+	}
+	r.full = r.full || full
+	for _, id := range ids {
+		r.ids[id] = struct{}{}
+	}
+	start := !r.running
+	r.running = true
+	s.reloadMu.Unlock()
+	if start {
+		go s.runWorkerReloads(workerID, r)
+	}
+}
+
+func (s *emailService) runWorkerReloads(workerID uuid.UUID, r *workerReload) {
+	for {
+		s.reloadMu.Lock()
+		full, ids := r.full, r.ids
+		if !full && len(ids) == 0 {
+			r.running = false
+			delete(s.reloads, workerID)
+			s.reloadMu.Unlock()
+			return
+		}
+		r.full, r.ids = false, make(map[uuid.UUID]struct{})
+		s.reloadMu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), workerReloadTimeout)
+		s.reloadWorkerAccounts(ctx, workerID, full, ids)
+		cancel()
+	}
+}
+
+// reloadWorkerAccounts publishes the active mailboxes assigned to workerID back onto it: all of them, or those in only.
+func (s *emailService) reloadWorkerAccounts(ctx context.Context, workerID uuid.UUID, full bool, only map[uuid.UUID]struct{}) {
+	assigned, err := s.emailRepository.ListActiveAccountsByWorker(ctx, workerID)
 	if err != nil {
 		log.Warn().Err(err).Str("worker_id", workerID.String()).Msg("worker boot reload: list accounts failed")
 		return
 	}
+	ids := assigned
+	if !full {
+		// A worker may name only mailboxes placed on it.
+		ids = ids[:0:0]
+		for _, id := range assigned {
+			if _, ok := only[id]; ok {
+				ids = append(ids, id)
+			}
+		}
+	}
 	loaded := 0
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			break
+		}
 		if err := s.LoadAccountOntoWorker(ctx, id); err != nil {
 			log.Warn().Err(err).Str("email_id", id.String()).Str("worker_id", workerID.String()).Msg("worker boot reload: load account failed")
 			continue
@@ -164,7 +231,7 @@ func (s *emailService) ReloadWorkerAccounts(ctx context.Context, workerID uuid.U
 		loaded++
 	}
 	if len(ids) > 0 {
-		log.Info().Str("worker_id", workerID.String()).Int("loaded", loaded).Int("assigned", len(ids)).Msg("worker boot reload: mailboxes re-shipped")
+		log.Info().Str("worker_id", workerID.String()).Bool("full", full).Int("loaded", loaded).Int("requested", len(ids)).Int("assigned", len(assigned)).Msg("worker boot reload: mailboxes re-shipped")
 	}
 }
 

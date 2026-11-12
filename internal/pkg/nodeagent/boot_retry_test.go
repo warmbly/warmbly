@@ -79,9 +79,12 @@ func TestRunRetriesBootUntilAcknowledged(t *testing.T) {
 	}
 }
 
-func TestRunRetriesRequestedReloadAndKeepsRequestsMadeDuringHeartbeat(t *testing.T) {
+// An old backend only knows the boot flag, so a miss asks for a full reload; once a reply says the backend
+// reloads by id, a miss names its mailbox, and a beat that is lost sends the same names again.
+func TestRunNamesMissingMailboxesOnceTheBackendReloadsByID(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var a *Agent
+		first, second := uuid.New(), uuid.New()
 		var beats []models.NodeHeartbeat
 		client := &http.Client{Transport: heartbeatTransport(func(r *http.Request) (*http.Response, error) {
 			var beat models.NodeHeartbeat
@@ -89,31 +92,52 @@ func TestRunRetriesRequestedReloadAndKeepsRequestsMadeDuringHeartbeat(t *testing
 				return nil, err
 			}
 			beats = append(beats, beat)
-			if len(beats) == 3 {
+			body := `{"liveness_seconds":120}`
+			switch len(beats) {
+			case 2, 3:
+				body = `{"liveness_seconds":120,"reloads_by_id":true}`
+			case 4:
+				a.RequestReload(second)
 				return nil, errors.New("lost reload acknowledgement")
 			}
-			if len(beats) == 4 {
-				a.RequestReload()
+			if len(beats) >= 5 {
+				body = `{"liveness_seconds":120,"reloads_by_id":true}`
 			}
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"liveness_seconds":120}`)), Header: make(http.Header)}, nil
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 		})}
 		a = New(Config{NodeID: uuid.New(), Role: models.NodeRoleWorker, BaseURL: "https://backend.test", Token: "fixture", Address: "1.1.1.1", HTTPClient: client})
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		go a.Run(ctx)
 		synctest.Wait()
-		for i := 1; i < 6; i++ {
-			if i == 2 {
-				a.RequestReload()
-				a.RequestReload()
-			}
+		a.RequestReload(first)
+		for range 5 {
 			time.Sleep(40 * time.Second)
 			synctest.Wait()
-		}
-		for i, want := range []bool{true, false, true, true, true, false} {
-			if len(beats) <= i || beats[i].Booted != want {
-				t.Fatalf("heartbeat %d: expected reload=%t, beats=%+v", i+1, want, beats)
+			if len(beats) == 2 {
+				a.RequestReload(first)
 			}
+		}
+		if len(beats) < 6 {
+			t.Fatalf("got %d beats, want 6", len(beats))
+		}
+		if !beats[0].Booted || len(beats[0].MissingMailboxes) != 0 {
+			t.Errorf("beat 1 = %+v, want the boot flag alone", beats[0])
+		}
+		if !beats[1].Booted || len(beats[1].MissingMailboxes) != 0 {
+			t.Errorf("beat 2 = %+v, want a miss before reloads_by_id to ask for a full reload", beats[1])
+		}
+		if beats[2].Booted || len(beats[2].MissingMailboxes) != 1 || beats[2].MissingMailboxes[0] != first {
+			t.Errorf("beat 3 = %+v, want only the missing mailbox named", beats[2])
+		}
+		if beats[3].Booted || len(beats[3].MissingMailboxes) != 0 {
+			t.Errorf("beat 4 = %+v, want nothing pending", beats[3])
+		}
+		if beats[4].Booted || len(beats[4].MissingMailboxes) != 1 || beats[4].MissingMailboxes[0] != second {
+			t.Errorf("beat 5 = %+v, want the request made during the lost beat", beats[4])
+		}
+		if len(beats[5].MissingMailboxes) != 0 {
+			t.Errorf("beat 6 = %+v, want nothing pending once acknowledged", beats[5])
 		}
 		cancel()
 		synctest.Wait()
