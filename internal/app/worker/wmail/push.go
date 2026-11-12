@@ -179,7 +179,8 @@ func (w *WMail) maintainPush(ctx context.Context) {
 	default:
 		return
 	}
-	if err != nil {
+	// A mailbox stopping mid-call is not a refusal; a channel it closed on the way is still reported below.
+	if err != nil && ctx.Err() == nil {
 		next := pushRefusal{target: target, retryAt: pushRetryAt(err, now), reported: refusal.reported}
 		event := log.Debug()
 		if refusal.target != target || now.Sub(refusal.reported) >= pushReportEvery {
@@ -190,7 +191,8 @@ func (w *WMail) maintainPush(ctx context.Context) {
 		}
 		pushRefusals.Store(w.ID, next)
 		event.Err(err).Str("email_id", w.ID.String()).Msg("mailbox push channel not opened; polling continues")
-	} else if !refusal.reported.IsZero() {
+	} else if err == nil && !refusal.reported.IsZero() && !samePush(state, next) {
+		// Only a channel the provider just opened, renewed or closed clears the refusal; a no-op proves nothing.
 		pushRefusals.Delete(w.ID)
 	}
 	// A failed open still reports a channel it closed on the way, and a lost report is sent again next pass.

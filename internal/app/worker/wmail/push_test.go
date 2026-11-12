@@ -1,14 +1,17 @@
 package wmail
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/client/goog"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"golang.org/x/oauth2"
 )
 
 func TestWakeRunsTheNextPassEarlyOnlyAfterACleanPass(t *testing.T) {
@@ -188,5 +191,38 @@ func TestARebuiltMailboxKeepsItsPushBackoff(t *testing.T) {
 	other := &models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/other"}
 	if pushTarget(other) == pushTarget(want) {
 		t.Fatal("a changed topic is not a new target")
+	}
+}
+
+func TestAStoppedMailboxRecordsNoRefusal(t *testing.T) {
+	id := uuid.New()
+	t.Cleanup(func() { pushRefusals.Delete(id) })
+	client := &goog.Client{OnTokenRefresh: func(context.Context, *oauth2.Token) error { return nil }}
+	if merr := client.Init(t.Context(), &oauth2.Token{AccessToken: "live", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); merr != nil {
+		t.Fatalf("client init: %v", merr.Message)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	w := &WMail{ID: id, EmailType: models.InboxProviderGoogle, wake: make(chan struct{}, 1),
+		GoogleData: &GoogleData{Client: client}, onEvent: func(models.JobEventType, any) error { return nil }}
+	w.ApplyPush(&models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/t"})
+	w.maintainPush(ctx)
+	if _, ok := pushRefusals.Load(id); ok {
+		t.Fatal("a cancelled call was recorded as a refusal")
+	}
+}
+
+func TestANoOpPassKeepsTheRefusal(t *testing.T) {
+	id := uuid.New()
+	t.Cleanup(func() { pushRefusals.Delete(id) })
+	want := &models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/t",
+		State: &models.MailboxPushState{Provider: models.MailboxPushGmail, ExpiresAt: time.Now().Add(7 * 24 * time.Hour), Credential: credentialPrint("projects/p/topics/t")}}
+	// The backoff is over, but the watch has days left, so no provider call is made.
+	pushRefusals.Store(id, pushRefusal{target: pushTarget(want), retryAt: time.Now().Add(-time.Minute), reported: time.Now()})
+	w := &WMail{ID: id, EmailType: models.InboxProviderGoogle, GoogleData: &GoogleData{}, wake: make(chan struct{}, 1)}
+	w.ApplyPush(want)
+	w.maintainPush(t.Context())
+	if _, ok := pushRefusals.Load(id); !ok {
+		t.Fatal("a pass that asked the provider nothing cleared the refusal")
 	}
 }
