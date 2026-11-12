@@ -17,11 +17,10 @@ test("an agency sets its portal's look", async ({ page, proof }) => {
   await page.getByRole("button", { name: "Teal", exact: true }).click();
   await page.getByRole("radiogroup", { name: "Font" }).getByRole("radio", { name: "Geometric" }).click();
   await page.getByRole("radiogroup", { name: "Corners" }).getByRole("radio", { name: "Round" }).click();
-  await expect(page.getByRole("button", { name: "Dashboard", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Sign-in", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("radiogroup", { name: "Corners" }).getByRole("radio", { name: "Round" })).toBeChecked();
-  await expect(page.getByText("The dashboard your clients work in.")).toBeVisible();
   await proof.dwell(700);
-  await proof.shot("agency-look-dashboard", { caption: "A colour, a font and round corners, shown on the client dashboard as they are picked" });
+  await proof.shot("agency-look-dashboard", { caption: "A colour, a font and round corners, shown on the sign-in page as they are picked" });
 
   await page.getByRole("radiogroup", { name: "Sign-in layout" }).getByRole("radio", { name: "Split" }).scrollIntoViewIfNeeded();
   await page.getByRole("radiogroup", { name: "Sign-in layout" }).getByRole("radio", { name: "Split" }).click();

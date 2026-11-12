@@ -9,10 +9,12 @@ import {
     BarChart3Icon,
     ChevronRightIcon,
     CopyIcon,
+    EyeIcon,
     FileBarChartIcon,
     GaugeIcon,
     InboxIcon,
     Link2Icon,
+    Loader2Icon,
     MoreHorizontalIcon,
     PlusIcon,
 } from "lucide-react";
@@ -23,9 +25,10 @@ import ConnectLinksDialog from "@/components/app/emails/connect-links/ConnectLin
 import { AddClientDialog } from "@/components/app/agency/AddClientDialog";
 import { PoolMeter } from "@/components/app/agency/PoolMeter";
 import { formatNumber } from "@/components/app/agency/styles";
+import { AgencySkeletonRows, SkeletonBar } from "@/components/app/agency/AgencySkeleton";
 import { useAgencyAIBalance, useAgencyClients, useCurrentAgency } from "@/lib/api/hooks/app/agency/useAgency";
 import { fmtUsd } from "@/lib/money";
-import { useAgencyLive, useAgencyOverview, useOpenClient } from "@/lib/api/hooks/app/agency/useAgencyHome";
+import { useAgencyLive, useAgencyOverview, useEnterClientView, useOpenClient } from "@/lib/api/hooks/app/agency/useAgencyHome";
 import type { AgencyAttention, AgencyOverviewClient } from "@/lib/api/models/app/agency/AgencyHome";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +85,8 @@ export default function AgencyHome() {
     const clients = useAgencyClients(agency?.id);
     const ai = useAgencyAIBalance(agency?.id);
     const navigate = useNavigate();
-    const { open, pending } = useOpenClient();
+    const { open, opening, pending } = useOpenClient();
+    const { enter: enterClientView, opening: viewing } = useEnterClientView();
     const [adding, setAdding] = React.useState(false);
     const [connectOpen, setConnectOpen] = React.useState(false);
     useAgencyLive(agency?.id);
@@ -122,6 +126,8 @@ export default function AgencyHome() {
 
     const ranked = rankClients(data?.clients ?? [], data?.attention ?? []);
     const t = data?.totals;
+    // Until the first answer each figure is an outline, never a dash that reads as "none".
+    const stat = (n: number | undefined) => n ?? (overview.isPending ? <SkeletonBar className="h-5 w-10 mt-0.5" /> : "-");
 
     return (
         <Page>
@@ -145,42 +151,56 @@ export default function AgencyHome() {
                     </Link>
                 )}
                 <StatStrip cols={6}>
-                    <Stat label="Clients" value={t?.clients ?? "-"} />
-                    <Stat label="Sent today" value={t?.sent_today ?? "-"} />
-                    <Stat label="Replies waiting" value={t?.replies_waiting ?? "-"} href="/app/agency/inbox" />
-                    <Stat label="Positive replies" value={t?.positive_replies_7d ?? "-"} sub="last 7 days" />
-                    <Stat label="Active campaigns" value={t?.active_campaigns ?? "-"} />
-                    <Stat label="Mailbox problems" value={t?.mailbox_problems ?? "-"} sub={t ? `of ${formatNumber(t.mailboxes)} mailboxes` : undefined} last />
+                    <Stat animated label="Clients" value={stat(t?.clients)} />
+                    <Stat animated label="Sent today" value={stat(t?.sent_today)} />
+                    <Stat animated label="Replies waiting" value={stat(t?.replies_waiting)} href="/app/agency/inbox" />
+                    <Stat animated label="Positive replies" value={stat(t?.positive_replies_7d)} sub="last 7 days" />
+                    <Stat animated label="Active campaigns" value={stat(t?.active_campaigns)} />
+                    <Stat animated label="Mailbox problems" value={stat(t?.mailbox_problems)} sub={t ? `of ${formatNumber(t.mailboxes)} mailboxes` : undefined} last />
                 </StatStrip>
 
                 <SectionBar label="Needs attention" count={data ? data.attention.length : undefined} />
+                {overview.isPending && <AgencySkeletonRows rows={2} avatar={false} />}
                 {data && data.attention.length === 0 && (
                     <p className="px-5 py-3 text-[12px] text-emerald-700 border-b border-slate-200/60">Nothing needs attention across your clients.</p>
                 )}
-                {data?.attention.map((a, i) => (
-                    <button
-                        key={`${a.kind}-${a.organization_id ?? "agency"}-${i}`}
-                        type="button"
-                        disabled={pending}
-                        onClick={() => go(a)}
-                        className="group w-full min-h-10 px-5 py-1.5 flex items-center gap-3 border-b border-slate-200/60 text-left hover:bg-slate-50/80 disabled:opacity-60"
-                    >
-                        <span className={cn("size-1.5 rounded-full shrink-0", a.severity === "critical" ? "bg-red-500" : "bg-amber-500")} />
-                        <span className="w-36 shrink-0 truncate text-[12px] font-medium text-slate-900">{a.client_name || agency.name}</span>
-                        <span className="flex-1 min-w-0 truncate text-[12.5px] text-slate-600">{attentionText(a)}</span>
-                        <ChevronRightIcon className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-600 shrink-0" />
-                    </button>
-                ))}
+                {data?.attention.map((a, i) => {
+                    const busy = !!a.organization_id && opening === a.organization_id;
+                    return (
+                        <button
+                            key={`${a.kind}-${a.organization_id ?? "agency"}-${i}`}
+                            type="button"
+                            disabled={pending}
+                            aria-busy={busy || undefined}
+                            onClick={() => go(a)}
+                            className={cn(
+                                "group w-full min-h-10 px-5 py-1.5 flex items-center gap-3 border-b border-slate-200/60 text-left hover:bg-slate-50/80 transition-[background-color,opacity] animate-in fade-in duration-300 fill-mode-both motion-reduce:animate-none",
+                                busy ? "bg-slate-50/80" : "disabled:opacity-60",
+                            )}
+                        >
+                            <span className={cn("size-1.5 rounded-full shrink-0", a.severity === "critical" ? "bg-red-500" : "bg-amber-500")} />
+                            <span className="w-36 shrink-0 truncate text-[12px] font-medium text-slate-900">{a.client_name || agency.name}</span>
+                            <span className="flex-1 min-w-0 truncate text-[12.5px] text-slate-600">{attentionText(a)}</span>
+                            {busy ? (
+                                <Loader2Icon className="w-3.5 h-3.5 animate-spin text-slate-400 shrink-0" />
+                            ) : (
+                                <ChevronRightIcon className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                            )}
+                        </button>
+                    );
+                })}
 
                 <SectionBar label="Clients" count={data?.clients.length} />
-                {data && data.clients.length === 0 ? (
+                {overview.isPending ? (
+                    <AgencySkeletonRows rows={5} />
+                ) : data && data.clients.length === 0 ? (
                     <EmptyBlock
                         title="No clients yet"
                         body="Each client gets its own workspace. Add one, then send it a connect link so it can add its own mailboxes."
                         cta={canManage ? <TopbarAction onClick={() => setAdding(true)}>Add client</TopbarAction> : undefined}
                     />
                 ) : (
-                    <div>
+                    <div className="animate-in fade-in duration-300 fill-mode-both motion-reduce:animate-none">
                         <div className="hidden lg:flex h-8 px-5 items-center gap-3 border-b border-slate-200/60 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
                             <span className="flex-1 min-w-0">Client</span>
                             <span className="w-28 text-right">Pool this period</span>
@@ -197,9 +217,12 @@ export default function AgencyHome() {
                             <ClientRow
                                 key={c.organization_id}
                                 client={c}
+                                opening={opening === c.organization_id || viewing === c.organization_id}
+                                disabled={pending || viewing !== null}
                                 onOpen={(then) => void open(c.organization_id, then)}
                                 onConnect={() => void sendConnectLink(c.organization_id)}
                                 onCap={() => navigate({ to: "/app/agency/clients" })}
+                                onViewAsClient={() => void enterClientView(c.organization_id)}
                             />
                         ))}
                     </div>
@@ -237,20 +260,27 @@ function Chip({ n, label, tone }: { n: number; label: string; tone: "red" | "amb
 
 function ClientRow({
     client: c,
+    opening,
+    disabled,
     onOpen,
     onConnect,
     onCap,
+    onViewAsClient,
 }: {
     client: AgencyOverviewClient;
+    opening: boolean;
+    disabled: boolean;
     onOpen: (then?: (nav: Nav) => unknown) => void;
     onConnect: () => void;
     onCap: () => void;
+    onViewAsClient: () => void;
 }) {
     const m = c.mailboxes;
     const k = c.campaigns;
     const limit = c.monthly_send_limit ?? null;
     const capShare = limit ? Math.min(1, c.pool_used / limit) : null;
     const member = c.access !== "none";
+    const enter = member && !disabled ? () => onOpen() : undefined;
     const bounceTone = k && k.sent_7d >= 20 && k.bounce_rate_7d >= 0.05 ? "text-red-600 font-medium" : undefined;
 
     const mailboxChips = m && (
@@ -268,13 +298,15 @@ function ClientRow({
         <div
             role={member ? "button" : undefined}
             tabIndex={member ? 0 : undefined}
-            onClick={member ? () => onOpen() : undefined}
+            aria-busy={opening || undefined}
+            onClick={enter}
             onKeyDown={(e) => {
-                if (member && e.key === "Enter" && e.target === e.currentTarget) onOpen();
+                if (enter && e.key === "Enter" && e.target === e.currentTarget) enter();
             }}
             className={cn(
-                "group min-h-11 px-5 py-2 lg:py-1.5 flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-1.5 border-b border-slate-200/60",
+                "group min-h-11 px-5 py-2 lg:py-1.5 flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-1.5 border-b border-slate-200/60 transition-colors",
                 member && "hover:bg-slate-50/80 cursor-pointer",
+                opening && "bg-slate-50/80",
             )}
         >
             <span className="flex-1 min-w-0 flex items-center gap-2">
@@ -332,7 +364,11 @@ function ClientRow({
                     )}
                 </div>
             )}
-            {member ? (
+            {opening ? (
+                <span className="size-7 inline-flex items-center justify-center" aria-label={`Opening ${c.name}`}>
+                    <Loader2Icon className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                </span>
+            ) : member ? (
                 <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     <PopoverMenu align="end">
                         <PopoverMenuTrigger asChild>
@@ -347,6 +383,9 @@ function ClientRow({
                         <PopoverMenuContent minWidth={210}>
                             <PopoverMenuItem icon={<ArrowUpRightIcon className="w-3 h-3" />} onSelect={() => onOpen()}>
                                 Open workspace
+                            </PopoverMenuItem>
+                            <PopoverMenuItem icon={<EyeIcon className="w-3 h-3" />} onSelect={onViewAsClient} description="See it as the client's members do">
+                                View as client
                             </PopoverMenuItem>
                             {c.inbox && (
                                 <PopoverMenuItem

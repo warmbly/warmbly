@@ -70,6 +70,12 @@ A client workspace's plan comes from the agency. Its **Settings > Billing** page
 
 **Remove from agency** (in the row's menu) detaches a client. The workspace and everything in it stay, along with members it added itself. It loses the agency's plan and goes back to its own, and staff the agency added lose access to it. Select a client's row to open its workspace.
 
+### View as client
+
+**View as client** (in a client's row menu on **Agency** and **Agency > Clients**, and as **Dashboard** in the preview on **Agency > Branding**, which saves your branding changes first) opens the client's workspace the way its own members see it: your brand instead of Warmbly's, without Warmbly's plan, trial or balance prompts, and with only the pages and actions one role allows. It starts with the role most of the workspace's members hold; pick another role, or **Owner**, from the bar at the top of the page.
+
+The view only narrows what you are shown. Every request still runs with your own access, so a role can never show you more than you already have in that workspace, and what you change there is changed for real. It lasts for that browser tab: **Exit client view** returns you to your own view of the workspace, and the back button returns you to the agency view (to **Branding** when you came from there). Opening another workspace ends it too.
+
 A client can also take its workspace back. The workspace's owner opens **Settings > Danger zone** in that workspace and selects **Leave agency**, which has the same effect as **Remove from agency**. When the agency owner also owns the workspace (every workspace opened with **New workspace**), it is removed from the agency's side instead.
 
 A workspace belongs to at most one agency. The link to an agency, and the agency's record of the sends and AI the workspace took from it, do not travel in a [workspace export](/guides/workspace-export-import/): an imported workspace starts outside any agency.
@@ -256,7 +262,7 @@ Put your agency's brand on everything a client sees. Under **Agency > Branding**
 - **Portal domain**: point one subdomain, such as `portal.youragency.com`, at Warmbly and every client's connect links and reports are built on it instead of the shared portal address. Form links stay on the client's forms domain or the shared forms host. Your clients can also sign in to the full dashboard there, in your brand, with no Warmbly name: see [the dashboard on your portal domain](/guides/white-label/#the-dashboard-on-your-portal-domain). You choose whether they sign in on your domain or on the main address, and either way a session signed in there reaches only your client workspaces: see [where clients sign in](/guides/white-label/#where-clients-sign-in).
 - **Portal theme**: choose a font, corner style and default appearance, upload a tab icon, shape the sign-in page with a layout, background, image, heading and message, and add your support and legal links. See [portal theme](/guides/white-label/#portal-theme).
 - **Embeds**: paste a connect link or a report link into **Embed on your website** for a script tag or an iframe that resizes to fit on your own site.
-- **Your brand in the dashboard**: your client's own team (members who are not your staff) sees your logo and name in the dashboard instead of Warmbly's, a **Managed by** line with your agency's name, and none of Warmbly's plan, trial or balance prompts. Your staff keep Warmbly's dashboard with a way back to the agency view.
+- **Your brand in the dashboard**: your client's own team (members who are not your staff) sees your logo and name in the dashboard instead of Warmbly's, a **Managed by** line with your agency's name, and none of Warmbly's plan, trial or balance prompts. Your staff keep Warmbly's dashboard with a way back to the agency view, and can see what a client sees with [view as client](#view-as-client).
 - **Powered by**: Agency shows your logo and colour with a small "Powered by Warmbly" line. Agency Pro and Enterprise can remove it.
 
 See [white-label](/guides/white-label/).

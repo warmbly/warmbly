@@ -4,7 +4,8 @@
 
 import React from "react";
 import { AgencyPage } from "@/components/app/agency/AgencyPage";
-import { Loader2Icon } from "lucide-react";
+import { ViewAsClientMenu } from "@/components/app/agency/ViewAsClientMenu";
+import { RouteFallback } from "@/components/layout/RouteStates";
 import { PageBody } from "@/components/layout/Page";
 import { useCurrentAgency } from "@/lib/api/hooks/app/agency/useAgency";
 import toast from "react-hot-toast/headless";
@@ -94,13 +95,17 @@ function AgencyBranding({ agencyId, agencyName }: { agencyId: string; agencyName
         applyBrandTheme({ accent_color, theme }, true);
     }, [savedLook, agencyId]);
 
-    if (view.isLoading) {
-        return (
-            <div className="flex-1 flex items-center justify-center py-20">
-                <Loader2Icon className="w-4 h-4 animate-spin text-slate-400" />
-            </div>
-        );
-    }
+    // The client view shows the saved brand, so a pending edit is saved first; one that cannot be saved keeps you here.
+    const saveFirst = async () => {
+        try {
+            await autosave.flush();
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    if (view.isLoading) return <RouteFallback />;
 
     return (
         // The shell scrolls here, so the preview sticks to it, below the page's own bar.
@@ -132,6 +137,7 @@ function AgencyBranding({ agencyId, agencyName }: { agencyId: string; agencyName
                     address={hostOf(data?.portal_base_url)}
                     signInAddress={data?.portal_sign_in === "warmbly" ? mainAddress() : undefined}
                     agencyBilling
+                    previewAction={<ViewAsClientMenu agencyId={agencyId} returnTo="/app/agency/branding" beforeEnter={saveFirst} variant="tab" />}
                 />
 
                 <Section

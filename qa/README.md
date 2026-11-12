@@ -477,3 +477,12 @@ client, what every agency plan includes, the agencies page). Run `pnpm dev --hos
 QA_WEB_URL=http://127.0.0.1:<port> QA_API_URL=http://localhost:<API> QA_MAILPIT_URL=http://localhost:<MAILPIT> \
   QA_SITE=1 pnpm proof site-agencies
 ```
+
+## Agency client view proof fixtures
+
+`flows/agency-client-view.flow.ts` and `flows/agency-branding-tour.flow.ts` record an agency opening a client's
+workspace as that client's members see it, and branding the portal before opening the real dashboard in it.
+Apply `fixtures/agency.sql`, then `fixtures/agency-client-view.sql` (two roles in the client workspace, so the
+view has roles to be drawn for), to this worktree's isolated rich-seed database. Run
+`QA_AGENCY_FIXTURES=1 pnpm proof agency-client-view` and `QA_AGENCY_FIXTURES=1 pnpm proof agency-branding-tour`.
+The branding tour saves a look on the seeded agency, so the client view flow records in that brand afterwards.

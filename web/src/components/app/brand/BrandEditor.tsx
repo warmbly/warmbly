@@ -39,6 +39,7 @@ export default function BrandEditor({
     address,
     signInAddress,
     agencyBilling = false,
+    previewAction,
 }: {
     draft: BrandDraft;
     setDraft: React.Dispatch<React.SetStateAction<BrandDraft>>;
@@ -61,6 +62,8 @@ export default function BrandEditor({
     signInAddress?: string;
     /** An agency's brand: the plan that removes the attribution is the agency's, chosen in its billing. */
     agencyBilling?: boolean;
+    /** Beside the preview's tabs: the way to the real dashboard in this brand. */
+    previewAction?: React.ReactNode;
 }) {
     const upgrade = useUpgradeDialog();
     const nameInvalid = nameError("Brand name", draft.display_name, "workspace", true);
@@ -107,6 +110,7 @@ export default function BrandEditor({
                             onTabChange={setPreviewTab}
                             address={address}
                             signInAddress={signInAddress}
+                            action={previewAction}
                         />
                     </div>
                 </aside>

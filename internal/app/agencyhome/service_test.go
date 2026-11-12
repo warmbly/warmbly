@@ -3,6 +3,7 @@ package agencyhome
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,8 @@ func (f *fakeAgencies) Usage(context.Context, uuid.UUID, uuid.UUID) (*models.Age
 }
 
 type fakeRepo struct {
+	// The overview reads concurrently.
+	mu      sync.Mutex
 	clients []models.AgencyClientMembership
 	threads []models.AgencyInboxThread
 
@@ -52,6 +55,8 @@ func (f *fakeRepo) Mailboxes(_ context.Context, q models.AgencyMailboxQuery) ([]
 }
 
 func (f *fakeRepo) hit(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.calls == nil {
 		f.calls = map[string]int{}
 	}

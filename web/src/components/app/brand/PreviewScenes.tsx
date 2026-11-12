@@ -1,26 +1,14 @@
-// The pages BrandPreview draws. The dashboard and the sign-in form use the dashboard's own
-// utilities under the brand's theme, so they take the same colours the real pages do; the connect
-// page and the report use the tones the client pages derive from the accent.
+// The pages BrandPreview draws. The sign-in form uses the dashboard's own utilities under the brand's
+// theme, so it takes the same colours the real page does; the connect page and the report use the
+// tones the client pages derive from the accent.
 
 import React from "react";
-import {
-    BarChart3Icon,
-    CheckIcon,
-    ContactIcon,
-    InboxIcon,
-    MailIcon,
-    PlusIcon,
-    SearchIcon,
-    SendIcon,
-    ServerIcon,
-    SettingsIcon,
-} from "lucide-react";
+import { ServerIcon } from "lucide-react";
 
 import { DashboardImage } from "@/components/ui/dashboard-image";
 import type { PortalTheme, PublicBrand } from "@/lib/api/models/app/brand/Brand";
-import { isHexColour } from "@/lib/accentScale";
 import { CLIENT_SURFACES, clientPageTones, mixHex } from "@/lib/clientPageTones";
-import { FONT_STACKS, brandImageURL, scopedVariables, supportHref } from "@/lib/portalTheme";
+import { FONT_STACKS, brandImageURL, supportHref } from "@/lib/portalTheme";
 import type { ResolvedTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -56,164 +44,6 @@ export function SignInFormScene() {
     );
 }
 
-function Mark({ brand, className }: { brand: PublicBrand; className?: string }) {
-    const logo = brandImageURL(brand.logo_url);
-    return (
-        <span className={cn("flex min-w-0 items-center gap-2", className)}>
-            {logo ? (
-                <DashboardImage src={logo} alt="" className="h-6 max-w-[110px] shrink-0 object-contain" />
-            ) : (
-                <span aria-hidden className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-600 text-[12px] font-bold text-white">
-                    {(brand.name || "?").slice(0, 1).toUpperCase()}
-                </span>
-            )}
-            <span className="truncate text-[14px] font-semibold tracking-tight text-slate-900">{brand.name}</span>
-        </span>
-    );
-}
-
-const NAV = [
-    { label: "Mailboxes", icon: MailIcon },
-    { label: "Campaigns", icon: SendIcon, active: true },
-    { label: "Inbox", icon: InboxIcon, count: 4 },
-    { label: "Contacts", icon: ContactIcon },
-    { label: "Analytics", icon: BarChart3Icon },
-    { label: "Settings", icon: SettingsIcon },
-];
-
-const CAMPAIGNS = [
-    { name: "Spring outreach", status: "Active", sent: 72, on: true, picked: true },
-    { name: "Agency owners, UK", status: "Active", sent: 44, on: true, picked: false },
-    { name: "Webinar follow-up", status: "Paused", sent: 61, on: false, picked: false },
-    { name: "Re-engage lost deals", status: "Draft", sent: 0, on: false, picked: false },
-    { name: "Founders, Series A", status: "Active", sent: 83, on: true, picked: false },
-    { name: "Event invitations", status: "Active", sent: 27, on: true, picked: false },
-    { name: "Partner referrals", status: "Paused", sent: 52, on: false, picked: false },
-    { name: "Renewal check-ins", status: "Draft", sent: 0, on: false, picked: false },
-];
-
-/** The dashboard in a brand's theme: its mark in the chrome and its accent on everything that is sky. */
-export function DashboardScene({ brand, theme, mode, compact = false }: SceneProps) {
-    const accent = isHexColour(brand.accent_color) ? brand.accent_color : undefined;
-    const style = React.useMemo(() => scopedVariables(accent, theme, mode) as React.CSSProperties, [accent, theme, mode]);
-    return (
-        <div
-            style={style}
-            className={cn("h-full w-full font-[family-name:var(--wb-font)] text-slate-900", mode === "dark" ? "dark" : "theme-light")}
-        >
-            <div className="flex h-full flex-col bg-[#f5f6f8] dark:bg-[var(--wb-chrome)]">
-                <div className="flex h-12 shrink-0 items-center gap-3 px-4">
-                    <Mark brand={brand} className="max-w-[55%]" />
-                    {!compact && (
-                        <span className="ml-auto flex h-7 w-44 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-400">
-                            <SearchIcon className="size-3.5" />
-                            Search
-                        </span>
-                    )}
-                    <span className={cn("inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700", compact && "ml-auto")}>
-                        AK
-                    </span>
-                </div>
-                <div className="flex min-h-0 flex-1">
-                    {!compact && (
-                        <div className="w-[176px] shrink-0 space-y-0.5 px-2.5 py-2">
-                            {NAV.map(({ label, icon: Icon, active, count }) => (
-                                <div
-                                    key={label}
-                                    className={cn(
-                                        "flex h-8 items-center gap-2 rounded-md px-2 text-[12.5px]",
-                                        active ? "wb-nav-active bg-white font-medium text-slate-900 shadow-sm" : "text-slate-600",
-                                    )}
-                                >
-                                    <Icon className={cn("size-3.5", active ? "text-sky-600" : "text-slate-400")} />
-                                    {label}
-                                    {count && (
-                                        <span className="ml-auto rounded-full bg-sky-600 px-1.5 text-[10px] font-semibold leading-4 text-white">{count}</span>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    <div className={cn("min-w-0 flex-1 overflow-hidden border-t border-slate-200/70 bg-white", !compact && "rounded-tl-2xl border-l")}>
-                        <div className="flex h-12 items-center gap-2 border-b border-slate-200 px-4">
-                            <span className="text-[14px] font-semibold tracking-tight text-slate-900">Campaigns</span>
-                            <span className="rounded bg-slate-100 px-1.5 text-[11px] leading-5 text-slate-500">8</span>
-                            <span className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white">
-                                <PlusIcon className="size-3.5" />
-                                New campaign
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-1 border-b border-slate-200 px-3">
-                            {["All", "Active", "Paused", "Drafts"].map((t, i) => (
-                                <span key={t} className={cn("relative inline-flex h-10 items-center px-2.5 text-[12.5px]", i === 0 ? "font-medium text-slate-900" : "text-slate-500")}>
-                                    {t}
-                                    {i === 0 && <span className="absolute -bottom-px left-2 right-2 h-0.5 rounded-full bg-sky-600" />}
-                                </span>
-                            ))}
-                        </div>
-                        <div className={cn("grid gap-3 p-4", compact ? "grid-cols-2" : "grid-cols-3")}>
-                            {[
-                                ["Sent this week", "1,240", 68],
-                                ["Replies", "38", 42],
-                                ["Reply rate", "3.1%", 31],
-                            ]
-                                .slice(0, compact ? 2 : 3)
-                                .map(([label, value, share]) => (
-                                    <div key={label} className="rounded-lg border border-slate-200 px-3 py-2.5">
-                                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">{label}</div>
-                                        <div className="mt-0.5 text-[18px] font-semibold tracking-tight text-slate-900">{value}</div>
-                                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100">
-                                            <div className="h-full rounded-full bg-sky-500" style={{ width: `${share}%` }} />
-                                        </div>
-                                    </div>
-                                ))}
-                        </div>
-                        <div className="mx-4 overflow-hidden rounded-md border border-slate-200">
-                            {CAMPAIGNS.slice(0, compact ? 6 : 8).map((c) => (
-                                <div
-                                    key={c.name}
-                                    className={cn("flex h-10 items-center gap-3 border-b border-slate-100 px-3 text-[12.5px] last:border-b-0", c.picked && "bg-sky-50")}
-                                >
-                                    <span
-                                        className={cn(
-                                            "inline-flex size-3.5 shrink-0 items-center justify-center rounded-[4px] border",
-                                            c.picked ? "theme-solid border-sky-600 bg-sky-600 text-white" : "border-slate-300 bg-white",
-                                        )}
-                                    >
-                                        {c.picked && <CheckIcon className="size-2.5" strokeWidth={3} />}
-                                    </span>
-                                    <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{c.name}</span>
-                                    {!compact && (
-                                        <span className="h-1 w-20 overflow-hidden rounded-full bg-slate-100">
-                                            <span className="block h-full rounded-full bg-sky-500" style={{ width: `${c.sent}%` }} />
-                                        </span>
-                                    )}
-                                    <span
-                                        className={cn(
-                                            "rounded px-1.5 text-[11px] font-medium leading-5",
-                                            c.status === "Active" ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-500",
-                                            c.picked && c.status === "Active" && "bg-sky-100",
-                                        )}
-                                    >
-                                        {c.status}
-                                    </span>
-                                    <span className={cn("relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full", c.on ? "bg-sky-600" : "bg-slate-200")}>
-                                        <span className={cn("inline-block size-3.5 rounded-full bg-white shadow-sm", c.on ? "translate-x-[15px]" : "translate-x-[2px]")} />
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="px-4 pt-3 text-[12px] text-slate-500">
-                            Four campaigns are sending. <span className="font-medium text-sky-600">See the schedule</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// The client pages' corner scale, as portal/src/styles.css sets it per choice.
 const CLIENT_RADIUS = {
     "": { card: 14, control: 7, button: 7 },
     sharp: { card: 0, control: 0, button: 0 },

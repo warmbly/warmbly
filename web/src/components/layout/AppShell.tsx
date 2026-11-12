@@ -23,6 +23,7 @@ import { AppHeader } from "./AppHeader";
 import { AppNav } from "./AppNav";
 import PendingDeletionBar from "./PendingDeletionBar";
 import SendingRestrictedBar from "./SendingRestrictedBar";
+import ClientViewBar from "./ClientViewBar";
 import TrialBar from "./TrialBar";
 import { useClientBrand } from "@/hooks/useClientBrand";
 import { useBrandTheme } from "@/hooks/useBrandTheme";
@@ -77,6 +78,7 @@ export function AppShell() {
                 {/* Sits above the header so it can't be missed. Only
                     renders when the current workspace or the user's
                     own account is scheduled for deletion. */}
+                <ClientViewBar />
                 <SendingRestrictedBar />
                 <PendingDeletionBar />
                 {!clientBrand && <TrialBar />}

@@ -28,13 +28,13 @@ beforeAll(() => {
 });
 
 describe("BrandPreview", () => {
-    it("offers the four pages for an agency's brand and draws each", () => {
+    it("offers the three pages for an agency's brand and draws each, and no drawn dashboard", () => {
         withRoom(440, () => {
             const { container } = render(<BrandPreview brand={brand} fallbackName="Agency" />);
             const picture = () => container.querySelector("[inert]") as HTMLElement;
             expect(picture().textContent).toContain("Welcome to Northwind Growth");
+            expect(screen.queryByRole("button", { name: "Dashboard" })).toBeNull();
             for (const [tab, text] of [
-                ["Dashboard", "New campaign"],
                 ["Connect page", "Connect your mailbox"],
                 ["Report", "Outreach report"],
                 ["Sign-in", "Welcome back"],
@@ -54,7 +54,7 @@ describe("BrandPreview", () => {
 
     it("opens in the brand's default appearance and lets the viewer flip it", () => {
         withRoom(440, () => {
-            const { container } = render(<BrandPreview brand={brand} fallbackName="Agency" tab="dashboard" />);
+            const { container } = render(<BrandPreview brand={brand} fallbackName="Agency" tab="signin" />);
             expect(screen.getByRole("radio", { name: "Dark" })).toHaveAttribute("aria-checked", "true");
             expect(container.querySelector("[inert] .dark, [inert] > .dark")).not.toBeNull();
             act(() => fireEvent.click(screen.getByRole("radio", { name: "Light" })));
@@ -65,7 +65,7 @@ describe("BrandPreview", () => {
 
     it("names the brand by the fallback until it has a name", () => {
         withRoom(440, () => {
-            const { container } = render(<BrandPreview brand={{ name: "" }} fallbackName="Northwind" tab="dashboard" />);
+            const { container } = render(<BrandPreview brand={{ name: "" }} fallbackName="Northwind" tab="signin" />);
             expect(container.querySelector("[inert]")?.textContent).toContain("Northwind");
         });
     });
