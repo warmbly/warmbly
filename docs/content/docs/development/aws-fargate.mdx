@@ -125,7 +125,9 @@ memory; the 512 MiB minimum applies to 0.25 vCPU tasks.
 
 Mail workers can remain on existing hosts or use the separate EC2 worker root.
 Graviton `t4g.small` hosts provide 2 vCPUs and 2 GiB of memory with a static public
-IP per worker. The root uses standard CPU credits to cap burst charges. Bootstrap
+IP per worker. The root uses unlimited CPU credits, so a worker that runs above
+its 20% baseline keeps its speed instead of being throttled; CPU time beyond its
+earned credits is billed. Bootstrap
 prepares each host without starting its worker, so identity and credentials can
 be checked before a sequential handover. Check mailbox authentication when the
 outbound IP changes, and preserve each worker ID throughout the move.

@@ -1,9 +1,10 @@
 # EC2 worker hosts
 
 This root prepares one ARM `t4g.small` per worker in `us-east-1`, each with an
-encrypted 16 GiB gp3 disk, static IPv4 address and pinned worker image. Standard
-CPU credits cap burst charges; depleted credits throttle to baseline. Monitor
-credit balance and fleet health before changing size or credit mode.
+encrypted 16 GiB gp3 disk, static IPv4 address and pinned worker image. Unlimited
+CPU credits keep a busy worker at full speed: a burst above the 20% baseline
+spends earned credits first, and only CPU time beyond them is billed. Watch
+`CPUSurplusCreditsCharged` to see what that costs.
 
 ```sh
 terraform -chdir=deploy/terraform/aws/workers init \
