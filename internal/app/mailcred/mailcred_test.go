@@ -147,7 +147,8 @@ func TestAddEmailCarriesNoPlaintext(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 		wire, _ := json.Marshal(e)
-		for _, secret := range []string{"ya29", "1//refresh", "eyJ", "M.refresh", "smtp-secret", "imap-secret", "xoauth"} {
+		// Whole values: a three-letter fragment like "eyJ" turns up in random base64 ciphertext now and then.
+		for _, secret := range []string{"ya29.secret", "1//refresh", "eyJ.secret", "M.refresh", "smtp-secret", "imap-secret", "xoauth-secret"} {
 			if strings.Contains(string(wire), secret) {
 				t.Fatalf("%s: the sealed payload still carries %q", name, secret)
 			}
