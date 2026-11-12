@@ -22,7 +22,8 @@ export type IntegrationProvider =
     | "outscraper"
     | "jina"
     | "millionverifier"
-    | "cleanmylist";
+    | "cleanmylist"
+    | "mailveri";
 
 export type IntegrationAuthMethod = "oauth" | "api_key" | "webhook";
 
@@ -385,6 +386,7 @@ export const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
     jina: "Jina AI",
     millionverifier: "MillionVerifier",
     cleanmylist: "CleanMyList",
+    mailveri: "MailVeri",
 };
 
 // A connection is bookable when it's a connected scheduling provider with a

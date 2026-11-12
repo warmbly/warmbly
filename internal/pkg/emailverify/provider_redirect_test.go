@@ -40,4 +40,7 @@ func TestEveryVerificationClientRefusesAnInsecureRedirect(t *testing.T) {
 	if NewMillionVerifier("key", "").client.CheckRedirect == nil {
 		t.Fatal("millionverifier follows redirects unguarded")
 	}
+	if NewMailVeri("key", "").client.CheckRedirect == nil {
+		t.Fatal("mailveri follows redirects unguarded")
+	}
 }

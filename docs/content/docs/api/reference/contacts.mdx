@@ -179,7 +179,7 @@ A JSON array of contact objects (at least one, up to the per-request maximum; an
 | `custom_fields` | object | No | String key/value custom fields. Keys may use letters, numbers, underscores, spaces, and dashes. |
 | `subscribed` | boolean | No | Marketing-consent flag. Omit it to let a new contact default to subscribed and an existing one keep whatever it already had. |
 | `verification_status` | string | No | A verdict you already hold for the address, in Warmbly's vocabulary (`valid`, `risky`, `invalid`, `unknown`) or any known service's (`ok`, `catch-all`, `do_not_mail`, `deliverable`, `ok_for_all`, ...). Stored as an imported verdict that the background check leaves alone. A value no known service writes is rejected with `unknown_verification_status`. |
-| `verification_provider` | string | No | The vocabulary `verification_status` is written in: `zerobounce`, `millionverifier`, `cleanmylist`, `neverbounce`, `bouncer`, `kickbox`, `emailable`, `debounce`, `clearout`, `emaillistverify`, or `warmbly`. Omit it to have the value recognised by itself. An unknown name is rejected with `unknown_verification_provider`. |
+| `verification_provider` | string | No | The vocabulary `verification_status` is written in: `zerobounce`, `millionverifier`, `cleanmylist`, `mailveri`, `neverbounce`, `bouncer`, `kickbox`, `emailable`, `debounce`, `clearout`, `emaillistverify`, or `warmbly`. Omit it to have the value recognised by itself. An unknown name is rejected with `unknown_verification_provider`. |
 
 An address you already have is matched (lowercased) and enriched rather than duplicated: fields you send replace what is stored, fields you omit or send empty are left alone, and `custom_fields` is merged key by key. Use `PATCH /contacts/:id` to clear a value.
 
@@ -620,7 +620,7 @@ Reports which verifier checks this workspace's addresses and the contacts by ver
 }
 ```
 
-`provider` is `builtin`, `millionverifier`, or `cleanmylist`. `credits` is the connected service's remaining balance when available (omitted for CleanMyList); `provider_error` is set instead when the service is connected but unusable (a rejected key, no credits), in which case the built-in check is in use. `builtin_ready` says whether the built-in mailbox probe can run on this instance. `pending` counts contacts nobody has checked yet plus those with a re-check queued.
+`provider` is `builtin`, `millionverifier`, `cleanmylist`, or `mailveri`. `credits` is the connected service's remaining balance when available (omitted for CleanMyList); `provider_error` is set instead when the service is connected but unusable (a rejected key, no credits), in which case the built-in check is in use. `builtin_ready` says whether the built-in mailbox probe can run on this instance. `pending` counts contacts nobody has checked yet plus those with a re-check queued.
 
 ## Verify or override contacts
 
@@ -651,7 +651,7 @@ At least one contact must be selected (`no_contacts`). Marking leads deliverable
 }
 ```
 
-For `verify`, `verifier` names who runs the checks (`builtin`, `millionverifier`, or `cleanmylist`) and `verifier_label` its display name. When a verifier is connected but cannot be used right now, `verifier` is `builtin` and `verifier_error` says why (the same sentence as the overview's `provider_error`).
+For `verify`, `verifier` names who runs the checks (`builtin`, `millionverifier`, `cleanmylist`, or `mailveri`) and `verifier_label` its display name. When a verifier is connected but cannot be used right now, `verifier` is `builtin` and `verifier_error` says why (the same sentence as the overview's `provider_error`).
 
 ## Look up a contact by email
 

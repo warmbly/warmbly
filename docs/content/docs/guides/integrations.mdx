@@ -91,6 +91,7 @@ The active filters show as chips you can clear one at a time or all at once. Sea
 | Calendly, Cal.com | Meetings | minted inbound URL | Track booked, rescheduled, and canceled calls |
 | MillionVerifier | Verification | API key | Check every contact's address through your pay-as-you-go credits instead of the built-in probe |
 | CleanMyList | Verification | API key | Verify contacts using your CleanMyList plan allowance and credits |
+| MailVeri | Verification | API key | Verify contacts using your MailVeri credits |
 
 Slack does more than post: it brings the [AI assistant](/guides/ai-assistant/) into Slack, mirrors [Unibox](/guides/unibox/) replies into a channel where the team can reply, label and draft, and each member links their own Slack account. Its setup and settings have their own guide, [Slack](/guides/slack/).
 
@@ -121,6 +122,14 @@ The key is tested against your MillionVerifier account when you connect, so a mi
 CleanMyList does not expose a balance through its API, so Warmbly omits the credit counter. View your allowance and credits in CleanMyList. If verification fails, including an exhausted account, Warmbly uses the built-in check. Fix the account or reconnect a revoked key to restore verification.
 
 An account with nothing left is only visible when a check is refused, so Warmbly stops checking against it for 15 minutes rather than retrying every address. Topping up takes effect on the next pass after that. See the [CleanMyList API documentation](https://www.cleanmylist.io/developers) and [address verification](/guides/deliverability/#address-verification).
+
+### Connect MailVeri
+
+1. Create an API key in the [MailVeri dashboard](https://app.mailveri.com/api-keys/) under **Dashboard → API Keys**.
+2. In Warmbly, open **Integrations → MailVeri → Connect** and paste the key. Warmbly validates it with MailVeri's free balance request, so connecting spends nothing, and stores it encrypted.
+3. New contacts and re-verification requests use MailVeri. Each address uses one credit; a check that ends `UNKNOWN` costs nothing. `VALID` maps to deliverable, `INVALID` and `DISPOSABLE` to undeliverable, `ROLE_ACCOUNT`, `CATCH_ALL` and `FULL_INBOX` to risky, and `UNKNOWN` to unknown. Its 0 to 100 quality score is kept with the check result. The confidence Warmbly shows on the contact comes from Warmbly's own evidence score, as with the other services.
+
+MailVeri exposes its balance, so Warmbly shows the remaining credits on the connection and notices an empty account without spending a check. When the credits run out or the key is revoked, the connection is marked and the built-in check covers until it is fixed. See the [MailVeri API documentation](https://mailveri.com/docs/api) and [address verification](/guides/deliverability/#address-verification).
 
 ### One verifier at a time
 

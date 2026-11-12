@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { verificationSourceLabel, verificationTitle } from "./VerificationBadge";
 
 describe("verification provider attribution", () => {
-    it.each(["CleanMyList", "MillionVerifier"])("names %s on provider verdicts", (name) => {
+    it.each(["CleanMyList", "MailVeri", "MillionVerifier"])("names %s on provider verdicts", (name) => {
         expect(verificationTitle({
             verification_status: "valid",
             verification_source: "provider",

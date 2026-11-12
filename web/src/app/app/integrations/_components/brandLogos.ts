@@ -90,6 +90,10 @@ export const RAW_BRAND_LOGOS: Record<string, RawBrandLogo> = {
         viewBox: "0 0 64 64",
         inner: '<rect x="12" y="13" width="40" height="8" rx="4" fill="#111A15"/><rect x="12" y="28" width="31" height="8" rx="4" fill="#111A15"/><rect x="12" y="43" width="28" height="8" rx="4" fill="#111A15"/><circle cx="47" cy="47" r="13" fill="#78D21D"/>',
     },
+    mailveri: {
+        viewBox: "0 0 512 512",
+        inner: '<path fill="#556EE6" fill-rule="evenodd" d="M501 362 469 330 395 404 352 362 320 393V395L394 469ZM24 110 21 391 31 412 46 423 277 426V384L63 383 64 171 234 277 404 171 405 277H447V119L439 101 422 88 56 85 35 95ZM65 128H403L234 234Z"/>',
+    },
     slack: SLACK,
     close: CLOSE,
     pipedrive: PIPEDRIVE,

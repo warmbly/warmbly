@@ -7,7 +7,7 @@ import type { ContactVerificationCounts } from "@/lib/api/models/app/contacts/Se
 
 export interface VerificationOverview {
     // "builtin" (the in-house check) or the connected verification provider.
-    provider: "builtin" | "millionverifier" | "cleanmylist" | string;
+    provider: "builtin" | "millionverifier" | "cleanmylist" | "mailveri" | string;
     connection_id?: string;
     credits?: number;
     // Set when a provider is connected but unusable (bad key, no credits).

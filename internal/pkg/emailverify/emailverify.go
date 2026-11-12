@@ -91,6 +91,7 @@ const (
 	ProviderBuiltin         = "builtin"
 	ProviderMillionVerifier = "millionverifier"
 	ProviderCleanMyList     = "cleanmylist"
+	ProviderMailVeri        = "mailveri"
 )
 
 // Result is the outcome of verifying one address. It round-trips into the

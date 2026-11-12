@@ -97,6 +97,15 @@ const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
             helper: "App → API keys in CleanMyList. Verify your account email first. Connecting is free; checks use your plan allowance, then credits.",
         },
     ],
+    mailveri: [
+        {
+            key: "api_key",
+            label: "MailVeri API key",
+            type: "password",
+            required: true,
+            helper: "Dashboard → API Keys in MailVeri. The key is checked for free before it is saved; one credit is spent per address verified, and unknown results are free.",
+        },
+    ],
     millionverifier: [
         {
             key: "api_key",
