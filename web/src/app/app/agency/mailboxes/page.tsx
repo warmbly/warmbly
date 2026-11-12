@@ -2,6 +2,7 @@
 // holds once for all of them, and the ways to add more, by the agency or by the client.
 
 import React from "react";
+import { AgencySkeletonRows } from "@/components/app/agency/AgencySkeleton";
 import { KeyRoundIcon, Loader2Icon, MoreHorizontalIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 
@@ -194,6 +195,7 @@ function AgencyMailboxes() {
     const user = useUserProfile();
     const confirm = useConfirm();
     const { open, pending } = useOpenClient();
+    const [clicked, setClicked] = React.useState<string | null>(null);
     const giveAccount = useAgencyVendorForClient(agencyId);
     const removeAccount = useDeleteAgencyVendor(agencyId);
 
@@ -339,9 +341,7 @@ function AgencyMailboxes() {
             </div>
 
             {mailboxes.isLoading ? (
-                <div className="py-12 flex justify-center">
-                    <Loader2Icon className="w-4 h-4 animate-spin text-slate-400" />
-                </div>
+                <AgencySkeletonRows rows={8} />
             ) : mailboxes.isError && rows.length === 0 ? (
                 <LoadFailed what="the mailboxes" error={mailboxes.error} onRetry={() => void mailboxes.refetch()} />
             ) : rows.length === 0 ? (
@@ -357,7 +357,7 @@ function AgencyMailboxes() {
                     cta={!filtered && canAdd ? <TopbarAction onClick={() => setAdding({})}>Add mailboxes</TopbarAction> : undefined}
                 />
             ) : (
-                <div>
+                <div className={cn("transition-opacity duration-200", mailboxes.isPlaceholderData && "opacity-60")}>
                     <div className="hidden md:flex h-8 px-5 items-center gap-3 border-b border-slate-200/60 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
                         <span className="flex-1">Mailbox</span>
                         <span className="w-44">Client</span>
@@ -367,7 +367,12 @@ function AgencyMailboxes() {
                     </div>
                     {rows.map((m) => {
                         const s = standing(m);
-                        const go = () => void open(m.organization_id, (nav) => nav({ to: "/app/emails", search: { mailbox: m.id } }));
+                        const opening = pending && clicked === m.id;
+                        const go = () => {
+                            if (pending) return;
+                            setClicked(m.id);
+                            void open(m.organization_id, (nav) => nav({ to: "/app/emails", search: { mailbox: m.id } }));
+                        };
                         return (
                             <div
                                 key={m.id}
@@ -381,7 +386,11 @@ function AgencyMailboxes() {
                                     }
                                 }}
                                 title={`Open in ${m.client}`}
-                                className="min-h-11 px-5 py-1.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1 border-b border-slate-200/60 hover:bg-slate-50/80 cursor-pointer"
+                                aria-busy={opening || undefined}
+                                className={cn(
+                                    "min-h-11 px-5 py-1.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1 border-b border-slate-200/60 hover:bg-slate-50/80 cursor-pointer transition-colors",
+                                    opening && "bg-slate-50/80",
+                                )}
                             >
                                 <span className="flex-1 min-w-[220px] flex items-center gap-2.5">
                                     <ProviderLogo id={m.vendor || m.provider} size="sm" title={m.vendor ? vendorLabel(m.vendor) : PROVIDERS[m.provider] ?? m.provider} />
@@ -399,7 +408,10 @@ function AgencyMailboxes() {
                                     <span className={cn("h-[18px] px-1.5 rounded text-[10.5px] font-medium inline-flex items-center", s.cls)}>{s.label}</span>
                                 </span>
                                 <span className="w-20 text-[12px] text-slate-600">{m.warmup ? "On" : "Off"}</span>
-                                <span className="w-24 text-right text-[12px] tabular-nums text-slate-600">{m.campaign_limit.toLocaleString()}</span>
+                                <span className="w-24 text-right text-[12px] tabular-nums text-slate-600 inline-flex items-center justify-end gap-1.5">
+                                    {opening && <Loader2Icon aria-label={`Opening ${m.client}`} className="w-3 h-3 animate-spin text-slate-400" />}
+                                    {m.campaign_limit.toLocaleString()}
+                                </span>
                             </div>
                         );
                     })}

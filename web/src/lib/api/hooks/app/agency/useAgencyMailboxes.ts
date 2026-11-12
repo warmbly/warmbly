@@ -57,6 +57,8 @@ export function useAgencyMailboxes(agencyId: string | undefined, filters: Agency
     return useInfiniteQuery({
         ...agencyMailboxesQuery(agencyId ?? "", filters),
         enabled: !!agencyId,
+        // A changed filter keeps the last list on screen until the new one answers.
+        placeholderData: (prev) => prev,
     });
 }
 

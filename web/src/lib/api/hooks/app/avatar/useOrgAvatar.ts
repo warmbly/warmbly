@@ -18,7 +18,7 @@ function applyOrgAvatar(qc: QueryClient, orgId: string | null, avatarUrl: string
         const patch = <T extends { id: string; avatar_url?: string | null }>(o: T): T =>
             o.id === orgId ? { ...o, avatar_url: avatarUrl } : o;
         const store = useAppStore.getState();
-        const current = store.currentOrganization;
+        const current = store.memberOrganization ?? store.currentOrganization;
         const list = store.organizations;
         if (list.some((o) => o.id === orgId)) {
             // setOrganizations adopts the matching row as the current org.

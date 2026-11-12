@@ -126,7 +126,7 @@ export default function PortalThemeEditor({
                         value={draft.accent_color}
                         onChange={(hex) => {
                             setDraft((d) => ({ ...d, accent_color: hex }));
-                            onEdit("dashboard");
+                            onEdit("signin");
                         }}
                         disabled={!canWrite}
                         showScale
@@ -137,7 +137,7 @@ export default function PortalThemeEditor({
                         label="Font"
                         cols={4}
                         value={theme.font}
-                        onChange={(font) => set({ font }, "dashboard")}
+                        onChange={(font) => set({ font }, "signin")}
                         disabled={!canWrite}
                         options={[
                             { value: "", label: "Standard", glyph: fontGlyph() },
@@ -152,7 +152,7 @@ export default function PortalThemeEditor({
                         label="Corners"
                         cols={3}
                         value={theme.corners}
-                        onChange={(corners) => set({ corners }, "dashboard")}
+                        onChange={(corners) => set({ corners }, "signin")}
                         disabled={!canWrite}
                         options={[
                             { value: "sharp", label: "Sharp", glyph: cornerGlyph(CORNER_RADIUS.sharp) },

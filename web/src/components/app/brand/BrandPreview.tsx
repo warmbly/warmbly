@@ -1,5 +1,6 @@
 // BrandPreview: what a brand looks like where people meet it, drawn live from the editor's draft:
-// the portal's sign-in page (the real component), the dashboard, a connect page and a shared report.
+// the portal's sign-in page (the real component), a connect page and a shared report. The dashboard is not drawn
+// here: `action` offers the real one, opened as a client sees it.
 
 import React from "react";
 import { LockIcon, MonitorIcon, MoonIcon, SmartphoneIcon, SunIcon } from "lucide-react";
@@ -10,21 +11,19 @@ import type { PublicBrand } from "@/lib/api/models/app/brand/Brand";
 import { loadThemeFont, parsePortalTheme } from "@/lib/portalTheme";
 import type { ResolvedTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { ConnectScene, DashboardScene, ReportScene, SignInFormScene } from "./PreviewScenes";
+import { ConnectScene, ReportScene, SignInFormScene } from "./PreviewScenes";
 
-export type PreviewTab = "signin" | "dashboard" | "connect" | "report";
+export type PreviewTab = "signin" | "connect" | "report";
 type Device = "desktop" | "phone";
 
 const TAB_LABELS: Record<PreviewTab, string> = {
     signin: "Sign-in",
-    dashboard: "Dashboard",
     connect: "Connect page",
     report: "Report",
 };
 
 const CAPTIONS: Record<PreviewTab, string> = {
     signin: "The sign-in page on your portal domain.",
-    dashboard: "The dashboard your clients work in.",
     connect: "The page a client opens to connect a mailbox.",
     report: "A report shared with a client.",
 };
@@ -33,7 +32,6 @@ const CAPTIONS: Record<PreviewTab, string> = {
 const PHONE = { width: 390, height: 780 };
 const DESKTOP: Record<PreviewTab, { width: number; height: number }> = {
     signin: { width: 1180, height: 720 },
-    dashboard: { width: 1040, height: 640 },
     connect: { width: 1040, height: 640 },
     report: { width: 1040, height: 640 },
 };
@@ -41,12 +39,11 @@ const DESKTOP: Record<PreviewTab, { width: number; height: number }> = {
 // Where each page lives, for the address bar.
 const PATHS: Record<PreviewTab, string> = {
     signin: "/auth/login",
-    dashboard: "/app/campaigns",
     connect: "/connect/k3f9a2",
     report: "/r/q7m2x8",
 };
 
-const ALL_PREVIEW_TABS: PreviewTab[] = ["signin", "dashboard", "connect", "report"];
+const ALL_PREVIEW_TABS: PreviewTab[] = ["signin", "connect", "report"];
 
 export default function BrandPreview({
     brand,
@@ -56,6 +53,7 @@ export default function BrandPreview({
     onTabChange,
     address,
     signInAddress,
+    action,
 }: {
     brand: PublicBrand;
     /** Shown when the brand has no name. */
@@ -68,6 +66,8 @@ export default function BrandPreview({
     address?: string;
     /** The host of the sign-in page when clients sign in somewhere other than the portal. */
     signInAddress?: string;
+    /** Beside the tabs, where a dashboard tab would be: the way to the real dashboard. */
+    action?: React.ReactNode;
 }) {
     const [ownTab, setOwnTab] = React.useState<PreviewTab>(tabs[0]);
     const shownTab = tab && tabs.includes(tab) ? tab : tabs.includes(ownTab) ? ownTab : tabs[0];
@@ -114,6 +114,7 @@ export default function BrandPreview({
                         ))}
                     </div>
                 </ScrollStrip>
+                {action}
                 <IconSwitch
                     label="Screen size"
                     value={device}
@@ -152,8 +153,6 @@ export default function BrandPreview({
                         <PortalSignIn brand={named} scope={mode} contained>
                             <SignInFormScene />
                         </PortalSignIn>
-                    ) : shownTab === "dashboard" ? (
-                        <DashboardScene brand={named} theme={theme} mode={mode} compact={device === "phone"} />
                     ) : shownTab === "connect" ? (
                         <ConnectScene brand={named} theme={theme} mode={mode} />
                     ) : (

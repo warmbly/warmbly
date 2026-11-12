@@ -118,7 +118,7 @@ async function runBoot(queryClient: QueryClient, location: { pathname: string; h
         // Identity carries the workspace's folders and labels, so it follows the switch.
         // A client member sees the workspace's brand in the chrome, so it is there before the first paint.
         const current = useAppStore.getState().currentOrganization;
-        const managed = !!current?.agency && !agencies.some((a) => a.id === current.agency?.id);
+        const managed = !!current?.agency && (!!useAppStore.getState().clientView || !agencies.some((a) => a.id === current.agency?.id));
         const [user] = await Promise.all([
             queryClient.ensureQueryData(userQuery),
             current ? queryClient.ensureQueryData(subscriptionQuery).catch(() => undefined) : undefined,

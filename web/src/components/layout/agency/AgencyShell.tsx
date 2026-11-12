@@ -10,7 +10,6 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "@tanstack/react-router";
-import { Loader2Icon } from "lucide-react";
 import { SkyChrome } from "../SkyChrome";
 import { RouteBoundary } from "../ErrorBoundary";
 import { RouteFallback } from "../RouteStates";
@@ -57,9 +56,7 @@ export function AgencyShell() {
                         </div>
                         <div ref={scrollRef} className="h-full overflow-auto">
                             {isLoading ? (
-                                <div className="h-full flex items-center justify-center">
-                                    <Loader2Icon className="w-4 h-4 animate-spin text-slate-400" />
-                                </div>
+                                <RouteFallback />
                             ) : isError && !agency ? (
                                 <EmptyBlock title="Could not load your agency" body="Check your connection and reload the page." />
                             ) : !agency ? (
@@ -70,7 +67,10 @@ export function AgencyShell() {
                             ) : (
                                 <RouteBoundary>
                                     <Suspense fallback={<RouteFallback />}>
-                                        <Outlet />
+                                        {/* Each page settles in as it opens; filters and tabs inside one do not replay it. */}
+                                        <div key={routeKey} className="min-h-full animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out fill-mode-both motion-reduce:animate-none">
+                                            <Outlet />
+                                        </div>
                                     </Suspense>
                                 </RouteBoundary>
                             )}
