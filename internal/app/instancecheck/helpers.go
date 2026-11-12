@@ -3,11 +3,14 @@ package instancecheck
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 
 	"github.com/warmbly/warmbly/internal/app/instanceconfig"
 	"github.com/warmbly/warmbly/internal/config"
@@ -81,15 +84,18 @@ func splitHostPort(host string) (string, string, error) {
 	return u.Hostname(), u.Port(), nil
 }
 
-// registrableDomain is the last two labels of a hostname. Good enough for an
-// advisory comparison; it is deliberately not a public-suffix lookup.
+// registrableDomain is a hostname's eTLD+1 ("a.example.co.uk" -> "example.co.uk");
+// an IP, a bare name or a public suffix comes back unchanged.
 func registrableDomain(host string) string {
 	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
-	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
+	if net.ParseIP(host) != nil {
 		return host
 	}
-	return strings.Join(parts[len(parts)-2:], ".")
+	etld1, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return host
+	}
+	return etld1
 }
 
 func policy(d Deps) *config.AuthPolicy {
