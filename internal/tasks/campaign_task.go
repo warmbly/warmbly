@@ -924,12 +924,18 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		failureCode := campaignDispatchFailureCode(err)
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send failed", err.Error())
 		if s.campaignLogRepo != nil {
+			eventType, level := "email_failed", "error"
+			message := fmt.Sprintf("%s%s's email, will retry: %s", models.DispatchFailedLogPrefix, contact.Email, err.Error())
+			// A send held back before it left is a postponement, not something to act on.
+			if deferred, ok := models.AdmissionDeferredMessage(contact.Email, failureCode); ok {
+				eventType, level, message = "email_deferred", "info", deferred
+			}
 			s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 				CampaignID: campaign.ID,
-				EventType:  "email_failed",
-				Message:    fmt.Sprintf("Could not dispatch %s's email, will retry: %s", contact.Email, err.Error()),
+				EventType:  eventType,
+				Message:    message,
 				Metadata: map[string]interface{}{
-					"level":       "error",
+					"level":       level,
 					"code":        failureCode,
 					"contact_id":  contact.ID.String(),
 					"sequence_id": sequence.ID.String(),
