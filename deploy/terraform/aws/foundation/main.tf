@@ -30,6 +30,12 @@ variable "name" {
   default = "warmbly-production"
 }
 
+# Unused here; the CI stack runner passes it to every stack it plans.
+variable "state_bucket" {
+  type    = string
+  default = ""
+}
+
 variable "vpc_cidr" {
   type    = string
   default = "10.42.0.0/16"

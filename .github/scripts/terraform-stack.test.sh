@@ -28,4 +28,11 @@ check safe aws_iam_role existing_role '["create"]'
 check safe aws_ecs_task_definition service '["delete","create"]'
 check gated aws_lb_target_group service '["delete"]'
 check safe aws_cloudwatch_metric_alarm service '["update"]'
+# The runner passes -var=state_bucket to every stack, and Terraform refuses an undeclared variable.
+for stack in foundation runtime workers; do
+  if ! grep -qs '^variable "state_bucket"' deploy/terraform/aws/"$stack"/*.tf; then
+    echo "deploy/terraform/aws/$stack must declare variable \"state_bucket\"" >&2
+    exit 1
+  fi
+done
 echo 'Protected evidence IAM changes require approval; existing plan classifications remain unchanged'
