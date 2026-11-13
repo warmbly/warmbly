@@ -101,6 +101,9 @@ func (r *campaignLogRepository) GetLogs(ctx context.Context, campaignID uuid.UUI
 	if err := r.normalizeLoadingRetries(ctx, campaignID, logs); err != nil {
 		return nil, err
 	}
+	for i := range logs {
+		logs[i].DeferTransientSendRetry()
+	}
 
 	var nextCursor *string
 	hasMore := len(logs) > limit
