@@ -157,6 +157,15 @@ func (s *Service) VerifyJoinToken(ctx context.Context, token string) error {
 	return nil
 }
 
+// JoinTokenExpiresAt is when the current join token stops working, nil when none has been issued.
+func (s *Service) JoinTokenExpiresAt(ctx context.Context) (*time.Time, error) {
+	want, expiresAt, err := s.settings.GetJoinToken(ctx)
+	if err != nil || want == "" {
+		return nil, err
+	}
+	return expiresAt, nil
+}
+
 // ErrNoNodeCredential is a node that holds no credential of its own yet; joining again issues one.
 var ErrNoNodeCredential = errors.New("this node holds no node credential; join it again to receive one")
 

@@ -66,7 +66,20 @@ table's default route.
 
 ## Prepare the join token
 
-Issue a join token on the Warmbly instance and store it as a SecureString:
+Set [`FLEET_JOIN_TOKEN_PARAMETER`](/development/configuration/#workers) on the
+backend to the parameter name, `/<name>/fleet/join-token` unless
+`fleet_join_token_parameter` changes it, and give the backend's role
+`ssm:GetParameter` and `ssm:PutParameter` on it. Within a minute of starting,
+the backend issues a 30-day join token and stores it there as a SecureString.
+It checks every hour and issues a new one when the stored token expires within
+10 days or no longer joins, so launches never meet an expired token. Workers
+already joined are unaffected by a new token.
+
+Issuing a token revokes the previous one. Once the backend keeps the parameter,
+read the token from it to join a machine by hand rather than running
+`warmblyctl fleet join-token`, which would make the backend issue another.
+
+Without `FLEET_JOIN_TOKEN_PARAMETER`, issue a token and store it yourself:
 
 ```sh
 warmblyctl fleet join-token --ttl 720h
@@ -74,18 +87,16 @@ aws ssm put-parameter --region us-east-1 --type SecureString --overwrite \
   --name /warmbly-production/fleet/join-token --value '<token>'
 ```
 
-The parameter name defaults to `/<name>/fleet/join-token` and can be changed
-with `fleet_join_token_parameter`. A join token works for at most 30 days, and
-issuing a new one revokes the previous one. Joined workers are unaffected, but a
-worker launched with an expired token cannot join. Issue and store a new token
-before the old one expires, for example every three weeks, or scale-out stops
-producing working workers.
+A join token works for at most 30 days, so store a new one before the old one
+expires, for example every three weeks, or scale-out stops producing working
+workers.
 
 ## Enable the fleet
 
 1. Apply the foundation root. It associates an Amazon-provided IPv6 block with
    the VPC; existing subnets stay IPv4-only.
-2. Store the join token as above.
+2. Set `FLEET_JOIN_TOKEN_PARAMETER` on the backend, or store a join token by
+   hand, as above.
 3. Set at least these in the workers var file, then plan and apply the workers
    root:
 
