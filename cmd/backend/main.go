@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/warmbly/warmbly/internal/app/fleetjoin"
 	"github.com/warmbly/warmbly/internal/app/fleetmetrics"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"log"
@@ -2306,6 +2307,15 @@ func main() {
 		// same one for as long as it holds the lock, so a fleet of replicas does
 		// the work once instead of once per replica.
 		elector := leader.New(primaryDB, "backend")
+
+		// The worker Auto Scaling Group joins with the token in this parameter; unset on every other deployment.
+		if parameter := fleetjoin.Parameter(); parameter != "" && fleetNodeService != nil {
+			elector.Go("fleet_join_token", func(ctx context.Context) {
+				if err := fleetjoin.Run(ctx, fleetNodeService, parameter, fleetjoin.KMSKey()); err != nil {
+					log.Printf("Warning: fleet join token renewal disabled: %v", err)
+				}
+			})
+		}
 
 		// Worker reconciler: assign + (re)load every active mailbox onto its
 		// worker. Workers hold accounts in memory only, so this is what makes a
