@@ -255,6 +255,9 @@ func TestInterestedRepliesByLanguage(t *testing.T) {
 			"Vamos marcar uma reunião.",
 			"Se possível, envie mais informações.",
 			"Nos interessa muito, mas tenho uma dúvida.",
+			"Tenho interesse em saber mais, não hesite em me contactar.",
+			"Tenho interesse, se possível envie mais informações.",
+			"Tenho interesse. Se precisar de algo, aviso.",
 		},
 	}
 	for lang, replies := range positive {
@@ -344,6 +347,11 @@ func TestNegatedAndHedgedInterestIsNotPositive(t *testing.T) {
 		"Se tivermos interesse, tenho interesse em falar depois.",
 		"Caso nos interessa muito, avisaremos.",
 		"Parece interessante, mas não agora.",
+		"Tenho interesse se o preço for baixo.",
+		"Mi interessa molto se il prezzo è giusto.",
+		"Klinkt goed als de prijs klopt.",
+		"Me interesa mucho si el precio es bueno.",
+		"Ich bin interessiert, wenn der Preis stimmt.",
 	} {
 		if got := ClassifyOffline(Input{Subject: "Re: Hallo", BodyText: body, Languages: all}); got.Class == ClassPositive {
 			t.Errorf("%q read as positive", body)
