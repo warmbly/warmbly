@@ -73,11 +73,13 @@ backend to the parameter name, `/<name>/fleet/join-token` unless
 customer managed key (`fleet_join_token_kms_key_arn`), also set
 [`FLEET_JOIN_TOKEN_KMS_KEY`](/development/configuration/#workers) to that key and
 give the backend's role `kms:Encrypt`, `kms:GenerateDataKey` and `kms:Decrypt`
-on it. Within a minute of starting,
-the backend issues a 30-day join token and stores it there as a SecureString.
-It checks every hour and issues a new one when the stored token expires within
-10 days or no longer joins, so launches never meet an expired token. Workers
-already joined are unaffected by a new token.
+on it. The backend checks the parameter when it starts and then every hour, or
+five minutes after a failed check. When the parameter is missing, holds a token
+that no longer joins, or holds one that expires within 10 days, it stores a new
+30-day join token there as a SecureString; a stored token with longer left is
+kept. Workers already joined are unaffected by a new token. Before the first
+launch, confirm the parameter exists and that the backend logs no
+`fleet join token not renewed` warning.
 
 Issuing a token revokes the previous one. Once the backend keeps the parameter,
 read the token from it to join a machine by hand rather than running
