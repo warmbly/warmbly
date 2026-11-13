@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,8 @@ type PartnerReferralRepository interface {
 	// GetPartnerReferral returns nil when the workspace did not come from a partner.
 	GetPartnerReferral(ctx context.Context, orgID uuid.UUID) (*models.PartnerReferral, error)
 	MarkPartnerLeadReported(ctx context.Context, orgID uuid.UUID) error
+	// ListUnreportedPartnerReferrals returns referrals created in [createdAfter, createdBefore) Dub has not accepted, oldest first.
+	ListUnreportedPartnerReferrals(ctx context.Context, createdAfter, createdBefore time.Time, limit int) ([]models.PartnerReferral, error)
 }
 
 type partnerReferralRepository struct {
@@ -38,9 +41,9 @@ func (r *partnerReferralRepository) RecordPartnerReferral(ctx context.Context, o
 func (r *partnerReferralRepository) GetPartnerReferral(ctx context.Context, orgID uuid.UUID) (*models.PartnerReferral, error) {
 	ref := &models.PartnerReferral{OrganizationID: orgID}
 	err := r.db.QueryRow(ctx, `
-		SELECT dub_click_id, lead_reported_at
+		SELECT dub_click_id, lead_reported_at, created_at
 		FROM organization_partner_referrals WHERE organization_id = $1`, orgID).
-		Scan(&ref.DubClickID, &ref.LeadReportedAt)
+		Scan(&ref.DubClickID, &ref.LeadReportedAt, &ref.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -55,4 +58,26 @@ func (r *partnerReferralRepository) MarkPartnerLeadReported(ctx context.Context,
 		UPDATE organization_partner_referrals SET lead_reported_at = now()
 		WHERE organization_id = $1 AND lead_reported_at IS NULL`, orgID)
 	return err
+}
+
+func (r *partnerReferralRepository) ListUnreportedPartnerReferrals(ctx context.Context, createdAfter, createdBefore time.Time, limit int) ([]models.PartnerReferral, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT organization_id, dub_click_id, created_at
+		FROM organization_partner_referrals
+		WHERE lead_reported_at IS NULL AND created_at >= $1 AND created_at < $2
+		ORDER BY created_at
+		LIMIT $3`, createdAfter, createdBefore, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.PartnerReferral
+	for rows.Next() {
+		var ref models.PartnerReferral
+		if err := rows.Scan(&ref.OrganizationID, &ref.DubClickID, &ref.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
 }

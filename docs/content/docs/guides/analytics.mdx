@@ -71,7 +71,7 @@ The marketing site stays cookieless, with no persistent PostHog identity. Attrib
 
 Signups through Google, Apple or single sign-on record acquisition the same way as an email signup, when the sign-in creates a new workspace.
 
-A partner referral on Warmbly Cloud (a `?via=` link) travels the same way, as `wb_click` in the links, with no cookie. A signup on a later visit that did not come through the partner's link is not credited to the partner. See [partner program](/development/configuration/#partner-program).
+A partner referral on Warmbly Cloud (a `?via=` link) travels the same way, as `wb_click` in the links, with no cookie. A signup on a later visit that did not come through the partner's link is not credited to the partner, unless that visit opens an address that still carries `wb_click`, such as a bookmark. See [partner program](/development/configuration/#partner-program).
 
 </Fold>
 

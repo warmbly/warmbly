@@ -330,6 +330,21 @@ const websiteJsonLd = {
             if (link) decorateLink(link);
           }, true);
         });
+        // A plain click into the dashboard while the partner click is still being
+        // recorded waits for it, at most 1.5 s, so signup does not start without it.
+        document.addEventListener('click', function (event) {
+          var pending = typeof window !== 'undefined' && window.wbPartnerClick;
+          if (!pending || event.defaultPrevented || event.button !== 0 ||
+            event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          var link = event.target && event.target.closest && event.target.closest('a[href]');
+          if (!link || (link.target && link.target !== '_self') || link.hasAttribute('download')) return;
+          var url;
+          try { url = new URL(link.href, location.href); } catch (e) { return; }
+          if (url.hostname !== DASHBOARD_HOST) return;
+          event.preventDefault();
+          var go = function () { decorateLink(link); location.assign(link.href); };
+          Promise.race([pending, new Promise(function (resolve) { setTimeout(resolve, 1500); })]).then(go, go);
+        });
 
         function acquisition() {
           var params = new URLSearchParams(location.search);
@@ -425,7 +440,8 @@ const websiteJsonLd = {
       click and swaps via for the click id (wb_click) in the address bar, so a
       reload records nothing twice. One request, made by this browser so the
       click carries its own location; no cookie, no third-party script. A
-      failed request leaves via in place for the next page to retry.
+      failed request leaves via in place for the next page to retry, and a
+      click into the dashboard waits briefly for one still in flight.
     -->
     {partnerLinkDomain && (
       <script is:inline define:vars={{ partnerLinkDomain }}>
@@ -433,7 +449,7 @@ const websiteJsonLd = {
           var params = new URLSearchParams(location.search);
           var key = (params.get('via') || '').trim();
           if (!/^[A-Za-z0-9._-]{1,100}$/.test(key) || /^[A-Za-z0-9_-]{1,64}$/.test(params.get('wb_click') || '')) return;
-          fetch('https://api.dub.co/track/click', {
+          window.wbPartnerClick = fetch('https://api.dub.co/track/click', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ domain: partnerLinkDomain, key: key, url: location.href, referrer: document.referrer }),
@@ -444,7 +460,8 @@ const websiteJsonLd = {
             now.delete('via');
             now.set('wb_click', click);
             history.replaceState(history.state, '', location.pathname + '?' + now.toString() + location.hash);
-          }).catch(function () { /* Blocked or offline: via stays for the next page. */ });
+          }).catch(function () { /* Blocked or offline: via stays for the next page. */ })
+            .then(function () { window.wbPartnerClick = null; });
         })();
       </script>
     )}

@@ -14,6 +14,7 @@ type PartnerReferral struct {
 	DubClickID     string
 	// LeadReportedAt is nil until Dub has accepted the signup.
 	LeadReportedAt *time.Time
+	CreatedAt      time.Time
 }
 
 // dubClickIDPattern is the shape of a Dub click id (a short nanoid); anything

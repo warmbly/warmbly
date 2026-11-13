@@ -1172,6 +1172,7 @@ func main() {
 			}); ok {
 				w.WirePartners(partnerProgram)
 			}
+			go partnerProgram.Start(ctx, 10*time.Minute)
 			log.Printf("Partner program: Dub attribution on")
 		}
 

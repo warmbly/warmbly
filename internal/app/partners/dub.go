@@ -32,6 +32,13 @@ const (
 	requestTimeout = 5 * time.Second
 	// Dub's limit on customer name and email.
 	dubFieldMax = 100
+
+	// The sweep leaves a signup's own report this long before retrying it,
+	// gives up after retryWindow (a click Dub never issued fails forever),
+	// and reports at most retryBatch per pass.
+	retrySettle = 5 * time.Minute
+	retryWindow = 7 * 24 * time.Hour
+	retryBatch  = 100
 )
 
 // Store holds the click each referred workspace signed up through.
@@ -39,6 +46,7 @@ type Store interface {
 	RecordPartnerReferral(ctx context.Context, orgID uuid.UUID, dubClickID string) error
 	GetPartnerReferral(ctx context.Context, orgID uuid.UUID) (*models.PartnerReferral, error)
 	MarkPartnerLeadReported(ctx context.Context, orgID uuid.UUID) error
+	ListUnreportedPartnerReferrals(ctx context.Context, createdAfter, createdBefore time.Time, limit int) ([]models.PartnerReferral, error)
 }
 
 // Customer is the person who signed up. The email is what lets Dub's risk
@@ -102,6 +110,37 @@ func (s *Service) CheckoutMetadata(ctx context.Context, orgID uuid.UUID) map[str
 		}
 	}
 	return map[string]string{checkoutMetadataKey: orgID.String()}
+}
+
+// Start retries, every interval until ctx ends, signups whose report never
+// reached Dub, so a workspace's payments are attributed without waiting for a
+// new checkout. Replicas may overlap: Dub deduplicates the lead.
+func (s *Service) Start(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.retryUnreported(ctx, time.Now())
+		}
+	}
+}
+
+func (s *Service) retryUnreported(ctx context.Context, now time.Time) {
+	refs, err := s.store.ListUnreportedPartnerReferrals(ctx, now.Add(-retryWindow), now.Add(-retrySettle), retryBatch)
+	if err != nil {
+		errs.CaptureException(fmt.Errorf("list unreported partner referrals: %w", err))
+		return
+	}
+	for _, ref := range refs {
+		if ctx.Err() != nil {
+			return
+		}
+		// A failure is expected while Dub is down; the row stays unreported and the next pass retries it.
+		_ = s.reportLead(ctx, ref.OrganizationID, ref.DubClickID, Customer{})
+	}
 }
 
 type leadRequest struct {

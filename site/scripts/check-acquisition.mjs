@@ -22,10 +22,10 @@ function visit(href, referrer = '', targets = [], loading = false) {
       referrer,
       readyState: loading ? 'loading' : 'complete',
       querySelectorAll: () => links,
-      addEventListener: (name, callback) => { listeners[name] = callback; },
+      addEventListener: (name, callback) => { (listeners[name] ||= []).push(callback); },
     },
   });
-  if (loading) listeners.DOMContentLoaded();
+  if (loading) listeners.DOMContentLoaded.forEach((callback) => callback());
   return { links: links.map((link) => new URL(link.href)), listeners };
 }
 
@@ -58,7 +58,7 @@ for (const host of ['warmbly.com', 'www.warmbly.com', 'app.warmbly.com']) {
 const { listeners } = visit('https://warmbly.com/pricing?utm_source=reddit&wb_lp=/first', 'https://www.reddit.com/');
 for (const name of ['click', 'auxclick', 'contextmenu']) {
   const link = { href: 'https://app.warmbly.com/auth/register?utm_source=later&plan=pro' };
-  listeners[name]({ target: { closest: () => link } });
+  listeners[name].forEach((callback) => callback({ target: { closest: () => link }, button: 0, preventDefault() {} }));
   const url = new URL(link.href);
   assert.equal(url.searchParams.get('utm_source'), 'reddit');
   assert.equal(url.searchParams.get('wb_lp'), '/first');
@@ -105,7 +105,7 @@ async function partnerClick(href, answer = { ok: true, json: async () => ({ clic
   const calls = [];
   const urls = [];
   vm.runInNewContext(partnerScript, {
-    URLSearchParams, location: new URL(href), document: { referrer: 'https://x.com/' }, partnerLinkDomain: 'go.warmbly.com',
+    URLSearchParams, location: new URL(href), document: { referrer: 'https://x.com/' }, partnerLinkDomain: 'go.warmbly.com', window: {},
     history: { state: null, replaceState: (_s, _t, url) => urls.push(url) },
     fetch: (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return Promise.resolve(answer); },
   });
@@ -122,5 +122,37 @@ const refused = await partnerClick('https://warmbly.com/?via=john', { ok: false,
 assert.equal(refused.calls.length, 1);
 assert.deepEqual(refused.urls, []);
 assert.deepEqual((await partnerClick('https://warmbly.com/?via=john', { ok: true, json: async () => ({ clickId: '<b>' }) })).urls, []);
+
+// A dashboard click waits for an in-flight partner click and leaves with its id.
+{
+  const location = new URL('https://warmbly.com/?via=john');
+  const window = {};
+  const listeners = {};
+  let release;
+  window.wbPartnerClick = new Promise((resolve) => { release = resolve; });
+  const assigned = [];
+  location.assign = (url) => assigned.push(url);
+  vm.runInNewContext(script, {
+    URL, URLSearchParams, location, window, setTimeout,
+    history: { state: null, replaceState() {} },
+    document: { referrer: '', readyState: 'complete', querySelectorAll: () => [], addEventListener: (name, callback) => { (listeners[name] ||= []).push(callback); } },
+  });
+  const link = { href: 'https://app.warmbly.com/auth/register', target: '', hasAttribute: () => false };
+  let prevented = false;
+  const event = { target: { closest: () => link }, button: 0, preventDefault() { prevented = true; } };
+  listeners.click.forEach((callback) => callback(event));
+  assert.equal(prevented, true);
+  assert.deepEqual(assigned, []);
+  // The click is recorded: the address bar now carries wb_click.
+  location.search = '?wb_click=cl1ck_ID-9';
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(new URL(assigned[0]).searchParams.get('wb_click'), 'cl1ck_ID-9');
+
+  // A new-tab click is never held.
+  prevented = false;
+  listeners.click.forEach((callback) => callback({ ...event, metaKey: true }));
+  assert.equal(prevented, false);
+}
 
 console.log('Cookieless marketing acquisition regressions passed');

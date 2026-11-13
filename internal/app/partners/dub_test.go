@@ -23,7 +23,7 @@ func (m *memStore) RecordPartnerReferral(_ context.Context, orgID uuid.UUID, cli
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.refs[orgID]; !ok {
-		m.refs[orgID] = &models.PartnerReferral{OrganizationID: orgID, DubClickID: clickID}
+		m.refs[orgID] = &models.PartnerReferral{OrganizationID: orgID, DubClickID: clickID, CreatedAt: time.Now()}
 	}
 	return nil
 }
@@ -45,6 +45,18 @@ func (m *memStore) MarkPartnerLeadReported(_ context.Context, orgID uuid.UUID) e
 	now := time.Now()
 	m.refs[orgID].LeadReportedAt = &now
 	return nil
+}
+
+func (m *memStore) ListUnreportedPartnerReferrals(_ context.Context, after, before time.Time, limit int) ([]models.PartnerReferral, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []models.PartnerReferral
+	for _, ref := range m.refs {
+		if ref.LeadReportedAt == nil && !ref.CreatedAt.Before(after) && ref.CreatedAt.Before(before) && len(out) < limit {
+			out = append(out, *ref)
+		}
+	}
+	return out, nil
 }
 
 type fakeDub struct {
@@ -221,5 +233,26 @@ func TestCustomerFieldsDubWouldRefuseAreDropped(t *testing.T) {
 	}
 	if got := truncateRunes(strings.Repeat("é", 120), dubFieldMax); len([]rune(got)) != dubFieldMax {
 		t.Fatalf("name not truncated to %d runes", dubFieldMax)
+	}
+}
+
+func TestSweepReportsOnlySettledRecentUnreportedSignups(t *testing.T) {
+	f, srv := newFakeDub(t, http.StatusOK)
+	s, store := newService(t, srv)
+	now := time.Now()
+	stuck, fresh, stale := uuid.New(), uuid.New(), uuid.New()
+	store.refs[stuck] = &models.PartnerReferral{OrganizationID: stuck, DubClickID: "stuck", CreatedAt: now.Add(-time.Hour)}
+	store.refs[fresh] = &models.PartnerReferral{OrganizationID: fresh, DubClickID: "fresh", CreatedAt: now.Add(-time.Minute)}
+	store.refs[stale] = &models.PartnerReferral{OrganizationID: stale, DubClickID: "stale", CreatedAt: now.Add(-8 * 24 * time.Hour)}
+
+	s.retryUnreported(context.Background(), now)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.leads) != 1 || f.leads[0]["clickId"] != "stuck" || f.leads[0]["customerExternalId"] != stuck.String() {
+		t.Fatalf("sweep sent %v, want only the settled unreported signup", f.leads)
+	}
+	if ref, _ := store.GetPartnerReferral(context.Background(), stuck); ref.LeadReportedAt == nil {
+		t.Fatal("a swept lead Dub accepted must be marked reported")
 	}
 }
