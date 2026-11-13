@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast/headless";
 import {
     AlertOctagonIcon,
+    ArrowRightLeftIcon,
     BellIcon,
     BoxesIcon,
     BriefcaseIcon,
@@ -103,6 +104,7 @@ const GROUPS: SectionGroup[] = [
         label: "Advanced",
         items: [
             { path: "warmbly-cloud", label: "Warmbly Cloud", icon: CloudIcon, description: "Warm your mailboxes in the Warmbly pool.", permission: "MANAGE_SETTINGS", hostedLabel: "Linked instances", hostedDescription: "Self-hosted instances warming in this workspace." },
+            { path: "migrate", label: "Migrate from another tool", icon: ArrowRightLeftIcon, description: "Bring mailboxes, campaigns and leads over from Smartlead, Instantly and more.", permission: "MANAGE_CONTACTS" },
             { path: "data", label: "Data", icon: DatabaseIcon, description: "Export this workspace, or import one from another instance.", ownerOnly: true },
             { path: "danger", label: "Danger zone", icon: AlertOctagonIcon, description: "Irreversible actions." },
         ],
@@ -136,6 +138,7 @@ function SettingsLayoutInner() {
         : !!(cloudStatus.data?.connected || cloudStatus.data?.legacy_connected);
     const canViewAnalytics = usePermission("VIEW_ANALYTICS");
     const canManageBilling = usePermission("MANAGE_BILLING");
+    const canManageContacts = usePermission("MANAGE_CONTACTS");
     const restricted = useAccessRestricted();
     const navRef = React.useRef<HTMLElement>(null);
     const unsaved = useUnsavedRegistry();
@@ -205,6 +208,7 @@ function SettingsLayoutInner() {
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                     (s.permission !== "MANAGE_SETTINGS" || canManageSettings) &&
                     (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics) &&
+                    (s.permission !== "MANAGE_CONTACTS" || canManageContacts) &&
                     (s.permission !== "MANAGE_BILLING" || canManageBilling || access.isOwner),
             )
             .map((s) =>

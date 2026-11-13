@@ -20,12 +20,18 @@ import (
 	"time"
 )
 
+// OrganizationHeader names the client workspace an agency API key acts in.
+const OrganizationHeader = "Warmbly-Organization"
+
 // Client is one host's API surface.
 type Client struct {
 	BaseURL   string
 	Token     string
 	UserAgent string
-	HTTP      *http.Client
+	// Organization is sent as the Warmbly-Organization header, which points
+	// an agency key at one client workspace. A request's own header wins.
+	Organization string
+	HTTP         *http.Client
 	// Debug prints the request line to stderr, which is the first thing
 	// anyone wants when a call goes somewhere unexpected.
 	Debug io.Writer
@@ -159,6 +165,9 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	}
 	if req.IdempotencyKey != "" {
 		httpReq.Header.Set("Idempotency-Key", req.IdempotencyKey)
+	}
+	if c.Organization != "" && !req.Anonymous {
+		httpReq.Header.Set(OrganizationHeader, c.Organization)
 	}
 	for k, v := range req.Headers {
 		httpReq.Header.Set(k, v)

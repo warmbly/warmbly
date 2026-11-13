@@ -1,0 +1,40 @@
+{
+  "emails": [
+    {
+      "id": "XdPd8p1PVo",
+      "fromName": "John Doe",
+      "fromEmail": "john@sender.example",
+      "type": 3,
+      "status": 1,
+      "isDefault": false,
+      "createdAt": "2024-08-28T04:42:10.131Z",
+      "healthScore": 55,
+      "emailServiceProvider": "gsuite",
+      "user": {"firstName": "John", "lastName": "Doe"},
+      "settings": [{"id": "OqwmgYpLaj", "code": "available-quota", "value": "6"}],
+      "client": null,
+      "hashId": "XdPd8p1PVo"
+    },
+    {
+      "id": "YePe9q2QWp",
+      "fromName": "Ops",
+      "fromEmail": "ops@outlook-sender.example",
+      "type": 2,
+      "status": 1,
+      "emailServiceProvider": "microsoft",
+      "client": null
+    },
+    {
+      "id": "ZfQf0r3RXq",
+      "fromName": "Maya",
+      "fromEmail": "maya@acme.example",
+      "type": 1,
+      "status": 1,
+      "emailServiceProvider": "smtp",
+      "client": {"id": "g9bzZq4aMd", "firstName": "Maya", "lastName": "Client", "email": "maya@acme.example", "status": "active", "companyName": "Acme"}
+    }
+  ],
+  "meta": {"totalItems": 3, "currentPage": 1, "itemsPerPage": 25, "totalPages": 1, "itemCount": 3},
+  "connectedEmailsCount": 3,
+  "disconnectedEmailsCount": 0
+}

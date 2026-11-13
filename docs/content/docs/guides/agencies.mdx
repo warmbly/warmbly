@@ -331,6 +331,10 @@ curl https://api.warmbly.com/v1/campaigns \
 
 Every request checks that the workspace is still one of your clients before anything else happens, so a client you detach, or one that leaves the agency, is out of reach on the next request. The agency's own endpoints under `/v1/agency/<agency id>` take no header. Client workspace ids are in `GET /v1/agency/<agency id>/clients`. See [agency API keys](/api/authentication/#agency-api-keys) for examples in JavaScript, Python and Go, and [the endpoint map](/api/endpoints/#agencies) for which agency endpoints a key can call.
 
+### Use the MCP server
+
+An agency key also connects an AI client to the [MCP server](/api/mcp/#agencies). Without the `Warmbly-Organization` header, the client sees agency tools (clients, the agency home, usage, and migrations into clients) and every workspace tool the key allows, each taking an `organization_id` that names the client to act in. Each call runs the same client check as a REST request. With the header, the client works in that one client only.
+
 ### What a key acts as
 
 A key acts for the owner or admin who created it, with their Admin access in each client and never more than the permissions you picked. It stops working when that person stops being an owner or admin of the agency, changes or resets their password, or is banned. Changes made with it show in each client's activity log under that person, marked as made with the key.
@@ -340,7 +344,7 @@ A key acts for the owner or admin who created it, with their Admin access in eac
 - Add or change staff, rename the agency, or change its brand or portal domain.
 - Start a checkout, buy a top-up or AI balance, or open the billing portal: those open a browser page.
 - Create, change or revoke API keys, the agency's or a workspace's, or manage OAuth apps.
-- Open the realtime connection or use the MCP server. There are no OAuth apps for agencies yet.
+- Open the realtime connection. There are no OAuth apps for agencies yet.
 
 Agency keys belong to the agency, so a [workspace archive](/guides/workspace-export-import/) does not carry them.
 

@@ -1,0 +1,5 @@
+[
+  {"id": 228361167, "email_or_domain": "competitor.com", "created_at": "2025-11-25T12:38:45.193Z", "source": "Manual", "client_id": null},
+  {"id": 228361168, "email_or_domain": "Spam@Example.com", "created_at": "2025-11-25T12:38:45.193Z", "source": "Smartlead.ai Bounce Detection", "client_id": 301},
+  {"id": 228361169, "email_or_domain": "x@beta.com", "created_at": "2025-11-25T12:38:45.193Z", "source": "Manual", "client_id": 302}
+]

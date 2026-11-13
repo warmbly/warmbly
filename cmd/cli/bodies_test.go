@@ -20,6 +20,7 @@ type capturedRequest struct {
 	path   string
 	query  url.Values
 	body   []byte
+	org    string
 }
 
 // runAgainst runs one CLI invocation against a recording server and returns the request it made.
@@ -29,6 +30,7 @@ func runAgainst(t *testing.T, args ...string) capturedRequest {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got.method, got.path, got.query = r.Method, r.URL.Path, r.URL.Query()
 		got.body, _ = io.ReadAll(r.Body)
+		got.org = r.Header.Get("Warmbly-Organization")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	}))
@@ -153,6 +155,54 @@ func TestCommandBodiesMatchTheAPI(t *testing.T) {
 		strictDecode(t, runAgainst(t, "integration", "push", "C", "--contacts", "a,b").body, &sel)
 		if len(sel.Contacts) != 2 {
 			t.Fatalf("decoded %+v", sel)
+		}
+	})
+
+	t.Run("migration create", func(t *testing.T) {
+		r := runAgainst(t, "migration", "create", "--input", `{"provider":"smartlead","credentials":[{"api_key":"k"}]}`)
+		var m models.NewToolMigration
+		strictDecode(t, r.body, &m)
+		if r.path != "/v1/migrations" || m.Provider != "smartlead" || len(m.Credentials) != 1 || m.Credentials[0]["api_key"] != "k" {
+			t.Fatalf("sent %s %+v", r.path, m)
+		}
+	})
+
+	t.Run("migration start", func(t *testing.T) {
+		r := runAgainst(t, "migration", "start", "M", "--kinds", "campaigns,leads", "--in-flight", "skip", "--warmup")
+		var s models.StartToolMigration
+		strictDecode(t, r.body, &s)
+		if r.path != "/v1/migrations/M/start" || len(s.Options.Kinds) != 2 || s.Options.InFlight != models.ToolMigrationSkip || !s.Options.Warmup {
+			t.Fatalf("sent %s %+v", r.path, s)
+		}
+	})
+
+	t.Run("agency migration start", func(t *testing.T) {
+		r := runAgainst(t, "agency", "migration", "start", "A", "M", "--input", `{"options":{"kinds":["leads"]},"targets":[{"workspace_id":"w","key":0,"create_name":"Acme"}]}`)
+		var s models.StartToolMigration
+		strictDecode(t, r.body, &s)
+		if r.path != "/v1/agency/A/migrations/M/start" || len(s.Targets) != 1 {
+			t.Fatalf("sent %s %+v", r.path, s)
+		}
+	})
+
+	t.Run("agency clients create", func(t *testing.T) {
+		r := runAgainst(t, "agency", "clients", "create", "A", "--name", "Acme")
+		m := bodyKeys(t, r.body)
+		if r.path != "/v1/agency/A/clients" || m["name"] != "Acme" || len(m) != 1 {
+			t.Fatalf("sent %s %v", r.path, m)
+		}
+	})
+
+	t.Run("organization header", func(t *testing.T) {
+		if r := runAgainst(t, "campaign", "list", "--organization", "org-1"); r.org != "org-1" {
+			t.Fatalf("flag sent header %q", r.org)
+		}
+		t.Setenv("WARMBLY_ORGANIZATION", "org-2")
+		if r := runAgainst(t, "campaign", "list"); r.org != "org-2" {
+			t.Fatalf("env sent header %q", r.org)
+		}
+		if r := runAgainst(t, "campaign", "list", "--organization", "org-3"); r.org != "org-3" {
+			t.Fatalf("flag did not win over env: %q", r.org)
 		}
 	})
 

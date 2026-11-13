@@ -1,8 +1,8 @@
 // Warmbly MCP server (server direction). Exposes the shared tool registry over
 // the MCP streamable-HTTP transport at POST /api/v1/mcp, authenticated by an API
-// key or OAuth token holding AI_AGENT. Each tool is gated by its RequiredAPIPerm
-// bits, tools/list reflects only what the key's permission mask allows, and
-// send-class tools are never exposed. tools/list carries the core tools plus
+// key, an agency API key or an OAuth token. Each tool is gated by its
+// RequiredAPIPerm bits, tools/list reflects only what the key's permission mask
+// allows, and send-class tools are never exposed. tools/list carries the core tools plus
 // find_tools and call_tool, which reach the rest; ?tools=all lists everything.
 package handler
 
@@ -55,6 +55,10 @@ func (h *Handler) MCPEndpoint(c *gin.Context) {
 	}
 
 	orgID := middleware.GetOrganizationID(c)
+	if agencyID := middleware.GetAgencyKeyAgencyID(c); agencyID != nil && orgID == nil {
+		h.mcpAgency(c, req, *agencyID)
+		return
+	}
 	if orgID == nil {
 		c.JSON(http.StatusOK, rpcError(req.ID, -32000, "no organization for this key"))
 		return
@@ -75,23 +79,54 @@ func (h *Handler) MCPEndpoint(c *gin.Context) {
 		inv.UserID = uid
 	}
 	bindOAuthMember(c, &inv)
+	bindAgencyKey(c, &inv)
+	switch req.Method {
+	case "tools/list":
+		c.JSON(http.StatusOK, rpcResult(req.ID, gin.H{"tools": h.mcpToolList(inv, mcpListAll(c))}))
+	case "tools/call":
+		h.mcpToolCall(c, inv, req)
+	default:
+		mcpCommon(c, req, mcpInstructions)
+	}
+}
+
+// mcpCommon answers the methods every session handles the same way.
+func mcpCommon(c *gin.Context, req jsonRPCRequest, instructions string) {
 	switch req.Method {
 	case "initialize":
 		c.JSON(http.StatusOK, rpcResult(req.ID, gin.H{
 			"protocolVersion": mcpProtocolVersion,
 			"capabilities":    gin.H{"tools": gin.H{}},
 			"serverInfo":      gin.H{"name": "warmbly", "version": "1.0"},
-			"instructions":    aitools.ProductPrimer + mcpInstructions,
+			"instructions":    aitools.ProductPrimer + instructions,
 		}))
-	case "tools/list":
-		c.JSON(http.StatusOK, rpcResult(req.ID, gin.H{"tools": h.mcpToolList(inv, mcpListAll(c))}))
-	case "tools/call":
-		h.mcpToolCall(c, inv, req)
 	case "ping":
 		c.JSON(http.StatusOK, rpcResult(req.ID, gin.H{}))
 	default:
 		c.JSON(http.StatusOK, rpcError(req.ID, -32601, "method not found"))
 	}
+}
+
+// bindAgencyKey names an agency API key on the invocation so its audit entries show the key.
+func bindAgencyKey(c *gin.Context, inv *aitools.Invocation) {
+	if id := middleware.GetAgencyKeyID(c); id != nil {
+		inv.AgencyKeyID = *id
+		inv.AgencyKeyName = middleware.GetAPIKeyName(c)
+	}
+}
+
+type mcpCallRequest struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+func mcpCallParams(c *gin.Context, req jsonRPCRequest) (mcpCallRequest, bool) {
+	var params mcpCallRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil || params.Name == "" {
+		c.JSON(http.StatusOK, rpcError(req.ID, -32602, "invalid params"))
+		return params, false
+	}
+	return params, true
 }
 
 const mcpInstructions = `
@@ -201,15 +236,15 @@ func (h *Handler) mcpFindToolsResult(inv aitools.Invocation, args json.RawMessag
 }
 
 func (h *Handler) mcpToolCall(c *gin.Context, inv aitools.Invocation, req jsonRPCRequest) {
-	var params struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(req.Params, &params); err != nil || params.Name == "" {
-		c.JSON(http.StatusOK, rpcError(req.ID, -32602, "invalid params"))
+	params, ok := mcpCallParams(c, req)
+	if !ok {
 		return
 	}
+	h.mcpRunTool(c, inv, req, params)
+}
 
+// mcpRunTool runs one workspace tool, or the find_tools and call_tool discovery pair.
+func (h *Handler) mcpRunTool(c *gin.Context, inv aitools.Invocation, req jsonRPCRequest, params mcpCallRequest) {
 	var (
 		out string
 		err error
@@ -236,6 +271,12 @@ func (h *Handler) mcpToolCall(c *gin.Context, inv aitools.Invocation, req jsonRP
 		}
 		out, err = h.AITools.Call(c.Request.Context(), inv, params.Name, params.Arguments)
 	}
+	mcpToolResult(c, req, params.Name, out, err)
+}
+
+// mcpToolResult renders a tool's outcome: a protocol error for an unknown or
+// forbidden tool, otherwise a result that says whether the tool failed.
+func mcpToolResult(c *gin.Context, req jsonRPCRequest, name, out string, err error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, aitools.ErrToolNotFound):
@@ -247,7 +288,7 @@ func (h *Handler) mcpToolCall(c *gin.Context, inv aitools.Invocation, req jsonRP
 			// react rather than treating it as a protocol failure.
 			msg, ok := aitools.PublicMessage(err)
 			if !ok {
-				log.Error().Str("request_id", c.GetString("request_id")).Str("tool", params.Name).Err(err).Msg("mcp tool failed")
+				log.Error().Str("request_id", c.GetString("request_id")).Str("tool", name).Err(err).Msg("mcp tool failed")
 				msg = "The tool failed on the server. Try again later."
 			}
 			c.JSON(http.StatusOK, rpcResult(req.ID, gin.H{

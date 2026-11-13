@@ -1,0 +1,3 @@
+{"created":"2024-03-07T14:30:00+00:00","health":"degraded","id":124,"isArchived":true,"name":"Old Follow-up","ownerUserId":42,"status":"paused",
+ "emailAccounts":[],"settings":{"dailyThrottling":0,"daysToFinishProspect":14,"disableOpensTracking":false,"emailSendingDelaySeconds":0,"emailsCountPerDay":0,"enableLinksTracking":false,"repliesHandlingType":"continueSending","isSendingPlainTextEnabled":true},
+ "steps":[{"delayInMinutes":0,"executionMode":"automatic","id":2001,"type":"email","variants":[{"id":9,"subject":"Hello {{FirstName}}","message":"Hi {{FirstName}}"}]}]}

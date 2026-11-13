@@ -11,7 +11,7 @@ This page is the source of truth for what an API key can and cannot reach. Every
 
 When an endpoint says "JWT permission: X / API permission: Y", the dual-auth middleware checks the relevant one based on which credential the caller used.
 
-An [agency API key](/api/authentication/#agency-api-keys) (`wmagency_`) reaches every **API key accepted** route below in one client workspace of its agency, named by the `Warmbly-Organization` header, under the same permission as a workspace key; the exceptions are API key self-service and OAuth apps, which answer `403` `agency_key_not_allowed`. It never reaches a **JWT only** route or the MCP server, except the [agency routes](#agencies) that say they accept it.
+An [agency API key](/api/authentication/#agency-api-keys) (`wmagency_`) reaches every **API key accepted** route below in one client workspace of its agency, named by the `Warmbly-Organization` header, under the same permission as a workspace key; the exceptions are API key self-service and OAuth apps, which answer `403` `agency_key_not_allowed`. It never reaches a **JWT only** route, except the [agency routes](#agencies) that say they accept it. It does reach the [MCP server](/api/mcp/#agencies), with or without the header.
 
 A member restricted to [selected resources](/guides/team-roles/#access-scope) is held to a short list of routes whatever credential they use, and those routes filter to their grants. The reads are `GET /campaigns`, `/campaigns-overview`, `/campaigns/:id` with its `/logs`, `/steps` and `/ab-variants`, `GET /analytics/dashboard` (whose `campaign_ids` and `folder_ids` filters must name granted campaigns and folders), `/analytics/campaigns/compare`, `/analytics/campaigns/:id` with `/daily` and `/hourly`, `GET /analytics/accounts` and `/analytics/accounts/:id`, `GET /emails` and `/emails/:id`, and the unibox reads `GET /unibox`, `/unibox/count`, `/unibox/overview`, `/unibox/thread`, `/unibox/thread/labels`, `/unibox/scheduled` and `/unibox/:id` (which, for them, does not mark the message read). Their own account routes under `/auth/*`, `/me/*`, `GET /organization`, `/organization/current`, `/organization/switch/:id`, `/invitations`, `GET /subscription`, `/subscription/features`, `GET /timezones` and `POST /getaway` keep working. With a role that [lets clients act](/guides/team-roles/#client-roles), they can also call `PUT /unibox/thread/labels`, `PATCH /unibox/seen`, `PATCH /unibox/folder`, `POST /unibox/reply`, `POST /unibox/snooze`, `DELETE /unibox/snooze` and `DELETE /unibox/scheduled/:task_id` (with `access_unibox`), `PATCH /campaigns/:id`, `POST /campaigns/:id/steps`, `PATCH` and `DELETE /campaigns/:id/steps/:sid` and `PATCH /campaigns/:id/step-layout` (with `manage_campaigns`), and `POST /campaigns/:id/start` and `/stop` (with `send_campaigns`). Each write is checked against their grants before anything changes: a reply needs a granted sending mailbox and a `thread_id` whose messages all sit in granted mailboxes, inbox changes need every named message or conversation in granted mailboxes, `PATCH /campaigns/:id` refuses `status`, `email_tags`, `sender_strategy`, `folders`, `tracking_domain`, `cc` and `bcc`, steps accept only email, wait and end actions, and a campaign edit, a step change and a start each need the campaign to send only from granted mailboxes in an explicit list with no mailbox tags. Every other route, and a write without such a role, answers `403` `member_access_restricted`, and a campaign or mailbox outside their grants answers `404`. An API key's own mailbox allowlist still applies on top: the key reaches the mailboxes on both lists.
 
@@ -221,6 +221,31 @@ The `cc` calls under the same path set the contacts copied on every email to one
 The import pair is two steps over the same file: preview parses it and suggests a column mapping (matching headers to your existing custom fields), commit applies the mapping you chose. Commit takes the stricter `BULK_CONTACTS` scope because one call writes up to 50,000 rows. A mapping problem, an unusable custom-field name or no `email` column, is a `400` on the whole request; see [contacts](/api/reference/contacts/).
 
 AI contact research is charged to the workspace balance for the tokens and web searches it uses (a run that finds nothing is still charged for its searching) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
+
+### Tool migrations
+
+[Migrate from another tool](/guides/migrate-from-another-tool/): read a Smartlead, Instantly or other outreach tool account and bring its blocklist, mailboxes, campaigns and leads into the workspace.
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/migrations/providers` | `IMPORT_TOOLS` |
+| GET | `/migrations` | `IMPORT_TOOLS` |
+| POST | `/migrations` | `IMPORT_TOOLS` |
+| GET | `/migrations/:id` | `IMPORT_TOOLS` |
+| POST | `/migrations/:id/start` | `IMPORT_TOOLS` |
+| POST | `/migrations/:id/cancel` | `IMPORT_TOOLS` |
+| POST | `/migrations/:id/link-senders` | `IMPORT_TOOLS` |
+| DELETE | `/migrations/:id` | `IMPORT_TOOLS` |
+
+JWT permission: `manage_contacts` on every route. Starting a migration that brings campaigns also needs `manage_campaigns`, and one that brings mailboxes `manage_emails`, otherwise it answers `403` `tool_migration_permission`; so does a member restricted to [selected resources](/guides/team-roles/#access-scope).
+
+- `GET /migrations/providers` lists each tool with `id`, `label`, the credential `fields` it asks for, `kinds` (what its API shares), `workspaces`, `multi_key`, `mailbox_secrets` and `notes`.
+- `POST /migrations` takes `provider`, an optional `label` and `credentials` (one object per key, keyed by the provider's field names; more than one only where `multi_key` is true). Every key is checked with the tool before it answers `201`, so a refused key is a `422` `tool_migration_key_rejected` and nothing is stored. The migration starts in `scanning`, and `GET /migrations/:id` shows `ready` with an `inventory` per source workspace once the scan is done. Accepts `Idempotency-Key`.
+- `POST /migrations/:id/start` takes `options` (`kinds`, optional `campaign_ids`, `in_flight` as `continue`, `restart` or `skip`, `skip_finished` and `warmup`; `in_flight` defaults to `skip`) and, to leave a source workspace out, `targets` entries with `workspace_id`, `key` and `skip: true`. Every other source workspace lands in this workspace. A retry of a start that already went through answers the running migration.
+- `POST /migrations/:id/link-senders` adds mailboxes connected since the run to the draft campaigns that named them as senders; a second call changes nothing more. `POST /migrations/:id/cancel` stops at the next checkpoint and keeps what came over.
+- `DELETE /migrations/:id` removes a migration that is not scanning or running from the list and keeps everything it imported (`204`); otherwise `409` `tool_migration_running`.
+
+A migration started with any key or token never uses mailbox passwords from the other tool: every mailbox is listed in `followup.reconnect` instead. The tool's key is stored encrypted and deleted when the migration finishes, is canceled or removed, or sits idle for 7 days (`credentials_held` turns `false`); no route returns it. Lists use `data` plus `pagination` with `cursor` and `limit` (1 to 100). Refusals are listed under [tool migration refusals](/api/error-codes/#tool-migration-refusals).
 
 ### Meetings
 
@@ -902,6 +927,7 @@ Besides a signed-in session, the routes in the first rows of the table below acc
 | `AGENCY_MANAGE_CLIENTS` | `POST /agency/:agencyId/clients`, `POST /agency/:agencyId/clients/attach`, `PATCH` and `DELETE /agency/:agencyId/clients/:orgId` |
 | `AGENCY_READ_USAGE` | `GET /agency/:agencyId/usage`, `GET /agency/:agencyId/ai-balance` |
 | `AGENCY_TRANSFER_AI` | `POST /agency/:agencyId/clients/:orgId/ai-balance` |
+| `AGENCY_MIGRATE` | `GET /agency/:agencyId/migrations/providers`, `GET` and `POST /agency/:agencyId/migrations`, `GET` and `DELETE /agency/:agencyId/migrations/:id`, `POST /agency/:agencyId/migrations/:id/start`, `/cancel` and `/link-senders`. A start that creates a new client also needs `AGENCY_MANAGE_CLIENTS` |
 | Session only | `POST /agency`, `PATCH /agency/:agencyId`, staff and invitation writes, every `/billing/*` route (checkout, top-ups and the portal open a browser page), brand, logo, icon, sign-in image and portal domain writes, and the `/api-keys` routes |
 
 A key passes the recent-confirmation check the session routes ask for, since it presents its credential on every call; moving AI balance still takes an `Idempotency-Key` and moves the money once per key.
@@ -957,6 +983,13 @@ A key passes the recent-confirmation check the session routes ask for, since it 
 | POST | `/agency/:agencyId/api-keys` | Owner, admin: `name`, `permissions`, optional `allowed_ips`, `rate_limit_per_minute` and `expires_at`. The answer carries `secret`, shown once. `400 invalid_agency_key_permissions` for a bit an agency key cannot hold |
 | PATCH | `/agency/:agencyId/api-keys/:keyId` | Owner, admin: `name` and `allowed_ips` of an active key; `404 agency_api_key_not_found` otherwise |
 | DELETE | `/agency/:agencyId/api-keys/:keyId` | Owner, admin: revokes the key. `204`, also for a key already revoked |
+| GET | `/agency/:agencyId/migrations/providers` | Staff: the tools an agency can [migrate](/guides/migrate-from-another-tool/#agencies) from, as `GET /migrations/providers` returns them |
+| GET | `/agency/:agencyId/migrations` | Staff: the agency's migrations, newest first, as `data` plus `pagination` |
+| POST | `/agency/:agencyId/migrations` | Owner, admin: `provider`, optional `label` and `credentials`, as for [a workspace migration](#tool-migrations). Accepts `Idempotency-Key` |
+| GET | `/agency/:agencyId/migrations/:id` | Staff: one migration, with its `inventory` per source workspace and its `targets` |
+| POST | `/agency/:agencyId/migrations/:id/start` | Owner, admin: `options` as for a workspace migration, and `targets`, one per source workspace (`workspace_id` and `key` from the inventory) with either `organization_id` (an existing client), `create_name` (a new client) or `skip: true`. The caller needs an accepted membership in each client covering the whole workspace and the permissions the chosen kinds need, else `403` `tool_migration_permission`; a workspace that is not a client, or a target naming both or neither, answers `400` `tool_migration_target_invalid` |
+| POST | `/agency/:agencyId/migrations/:id/cancel`, `/link-senders` | Owner, admin |
+| DELETE | `/agency/:agencyId/migrations/:id` | Owner, admin: removes a migration that is not running from the list; what it imported stays |
 
 `POST /agency`, the client creates, adding staff, every checkout, creating an API key and moving AI balance honor `Idempotency-Key`; a move retried with the same key moves the money once. The other writes set a value, so a retry lands on the same state. Moving AI balance, like the billing routes and creating, editing or revoking an agency API key, asks a session for a [recent confirmation](#actions-that-need-a-recent-confirmation). On an instance without billing (`BILLING_PROVIDER=none`) the billing routes and moving AI balance answer `503 agency_billing_disabled`, the pool has no cap and AI is not charged. `GET /organization/current` carries `agency` (`id`, `name`, `can_leave`) on a client workspace, `GET /organization` carries the same `agency` on each membership row whose workspace is a client, and that workspace's `POST /subscription/checkout` answers `409 agency_billed`.
 

@@ -54,8 +54,8 @@ func (s *campaignService) Create(ctx context.Context, userID string, orgID *uuid
 
 	// Daily creation throttle (config.DailyThrottleNewCampaigns). Caps
 	// per-day new-campaign rate per org so an unlimited plan can't be
-	// abused to ramp instantly.
-	if s.throttle != nil {
+	// abused to ramp instantly. A tool migration is held to its own cap instead.
+	if s.throttle != nil && !migrationCreate(ctx) {
 		if xerr := s.throttle.CheckAndIncrement(ctx, *orgID, dailythrottle.ResourceCampaign, config.DailyThrottleNewCampaigns); xerr != nil {
 			return nil, xerr
 		}

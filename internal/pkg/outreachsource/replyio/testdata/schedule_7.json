@@ -1,0 +1,7 @@
+{"excludeHolidays":true,"followUpTimings":[],"id":7,"isDefault":true,"name":"Business hours","status":"active","timezoneId":"Eastern Standard Time","useFollowUpSchedule":false,"useProspectTimezone":true,
+ "mainTimings":[
+  {"isActive":true,"weekDay":"Monday","timeRanges":[{"fromTime":{"hour":9,"minute":0},"toTime":{"hour":17,"minute":0}}]},
+  {"isActive":true,"weekDay":"Wednesday","timeRanges":[{"fromTime":{"hour":9,"minute":0},"toTime":{"hour":17,"minute":0}}]},
+  {"isActive":true,"weekDay":"Friday","timeRanges":[{"fromTime":{"hour":8,"minute":30},"toTime":{"hour":12,"minute":0}}]},
+  {"isActive":false,"weekDay":"Saturday","timeRanges":[]}
+ ]}

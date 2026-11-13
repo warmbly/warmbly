@@ -1,0 +1,20 @@
+{
+  "payload": {
+    "message": "Successfully fetched client list",
+    "payload": [
+      {
+        "id": "g9bzZq4aMd",
+        "firstName": "Maya",
+        "lastName": "Client",
+        "email": "maya@acme.example",
+        "companyName": "Acme",
+        "permission": "limited-access",
+        "createdDate": "2024-06-17T05:55:38.434Z",
+        "activeSequence": "1",
+        "totalProspects": "0",
+        "emailSent": "0",
+        "activeEmailAccounts": "1"
+      }
+    ]
+  }
+}

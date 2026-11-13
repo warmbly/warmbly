@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "id": "01a1d05e-0000-7000-8000-000000000001",
+      "admin_workspace_id": "01a1d05a-877c-70a5-842d-eb707afa9498",
+      "sub_workspace_id": "01a1d05e-1111-7000-8000-00000000c11e",
+      "status": "accepted",
+      "billing_shared": true,
+      "timestamp_created": "2025-02-01T09:00:00.000Z",
+      "timestamp_updated": "2025-02-01T09:00:00.000Z",
+      "sub_workspace_name": "Client One",
+      "admin_workspace_name": "Acme Agency"
+    },
+    {
+      "id": "01a1d05e-0000-7000-8000-000000000002",
+      "admin_workspace_id": "01a1d05a-877c-70a5-842d-eb707afa9498",
+      "sub_workspace_id": "01a1d05e-2222-7000-8000-00000000c12e",
+      "status": "pending",
+      "billing_shared": true,
+      "timestamp_created": "2025-02-02T09:00:00.000Z",
+      "timestamp_updated": "2025-02-02T09:00:00.000Z",
+      "sub_workspace_name": "Client Two",
+      "admin_workspace_name": "Acme Agency"
+    }
+  ],
+  "next_starting_after": "01a1d05e-0000-7000-8000-000000000002"
+}

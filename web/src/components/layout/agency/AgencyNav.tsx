@@ -6,6 +6,7 @@ import React from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import {
+    ArrowRightLeftIcon,
     Building2Icon,
     MailIcon,
     CreditCardIcon,
@@ -41,7 +42,8 @@ type ItemPath =
     | "/app/agency/billing"
     | "/app/agency/staff"
     | "/app/agency/branding"
-    | "/app/agency/api-keys";
+    | "/app/agency/api-keys"
+    | "/app/agency/migrate";
 
 const ITEMS: { to: ItemPath; label: string; icon: LucideIcon; exact?: boolean; badge?: "replies" }[] = [
     { to: "/app/agency", label: "Overview", icon: LayoutDashboardIcon, exact: true },
@@ -53,6 +55,7 @@ const ITEMS: { to: ItemPath; label: string; icon: LucideIcon; exact?: boolean; b
     { to: "/app/agency/staff", label: "Staff", icon: UsersIcon },
     { to: "/app/agency/branding", label: "Branding", icon: PaletteIcon },
     { to: "/app/agency/api-keys", label: "API keys", icon: KeyRoundIcon },
+    { to: "/app/agency/migrate", label: "Migrate", icon: ArrowRightLeftIcon },
 ];
 
 type Health = "critical" | "warning" | "ok";

@@ -1,0 +1,10 @@
+{"data": {"workspace": {"leads": {
+  "nodes": [
+    {
+      "id": "lead_3", "email": "kim@example.com", "firstName": "Kim", "lastName": "Ng", "fullName": "Kim Ng",
+      "title": null, "role": null, "phone": null, "linkedinId": null, "score": null, "language": null, "doNotContact": false,
+      "tags": {"nodes": []}, "customProperties": {"nodes": [{"id": "cpr_3", "name": "Company Size", "value": "50-200"}]}
+    }
+  ],
+  "pageInfo": {"hasNextPage": false, "endCursor": "Mw"}
+}}}}

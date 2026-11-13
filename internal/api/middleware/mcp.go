@@ -11,19 +11,24 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// MCPAuthMiddleware authenticates the MCP streamable-HTTP endpoint with either an
-// API key (the static-header path) or an OAuth 2.1 access token (the one-command
-// `claude mcp add` path). On any missing/invalid credential it returns 401 with an
+// MCPAuthMiddleware authenticates the MCP streamable-HTTP endpoint with an API key
+// (the static-header path), an agency API key, or an OAuth 2.1 access token (the
+// one-command `claude mcp add` path). On any missing/invalid credential it returns 401 with an
 // RFC 9728 WWW-Authenticate challenge pointing at the protected-resource metadata,
 // so a spec-compliant MCP client discovers the authorization server and completes
 // the OAuth flow without the user pasting anything.
 func (h *Handler) MCPAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if refuseAgencyKeyHeader(c) {
-			return
-		}
 		switch {
+		case isAgencyKeyHeader(authHeader):
+			raw := strings.TrimPrefix(authHeader, "Bearer ")
+			// With the header the key acts in that one client, exactly as on the REST API.
+			if c.GetHeader(models.AgencyOrganizationHeader) != "" {
+				h.validateAgencyKeyForWorkspace(c, raw)
+				return
+			}
+			h.validateAgencyKeyForAgency(c, raw)
 		case strings.HasPrefix(authHeader, "Bearer "+apikey.KeyPrefix):
 			// Reuse the full API-key path (IP allowlist, per-key rate limit, usage).
 			h.validateAPIKey(c, strings.TrimPrefix(authHeader, "Bearer "))

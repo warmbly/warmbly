@@ -1,0 +1,21 @@
+{
+  "seq_main": {
+    "_id": "seq_main",
+    "steps": [
+      {"_id":"stp_1","delay":0,"emailTemplateId":"etp_1","index":1,"sequenceId":"seq_main","sequenceStep":0,"type":"email",
+       "subject":"{{firstName|there}}, quick question about {{companyName}}",
+       "message":"<p>{% spin %}{% variation %}Hi{% variation %}Hello{% endspin %} {{firstName}},</p><p>{{icebreaker}}</p><p>{{sender.name}}</p>{{signature}}"},
+      {"_id":"stp_2","delay":2,"index":2,"sequenceId":"seq_main","sequenceStep":1,"type":"linkedinInvite","message":"Hi {{firstName}}, would love to connect."},
+      {"_id":"stp_3","delay":3,"emailTemplateId":"etp_3","index":3,"sequenceId":"seq_main","sequenceStep":2,"type":"email","subject":"",
+       "message":"<p>Following up, {{firstName}}. {% if jobTitle == \"CEO\" %}As a founder{% endif %}</p>","abTest":true,"emailTemplateBId":"etp_3b"},
+      {"_id":"stp_4","delay":1,"index":4,"sequenceId":"seq_main","sequenceStep":3,"type":"conditional",
+       "conditions":[{"sequenceId":"seq_branch","key":"emailsOpened","label":"If lead opened an email","delay":2,"delayType":"within"},{"sequenceId":"seq_else","fallback":true}]}
+    ],
+    "level": 0
+  },
+  "seq_branch": {
+    "_id": "seq_branch",
+    "steps": [{"_id":"stp_b1","delay":0,"index":1,"sequenceId":"seq_branch","sequenceStep":0,"type":"email","subject":"Saw you opened","message":"<p>Hi</p>"}],
+    "level": 1, "parentId": "seq_main", "conditionalStepIndex": 4
+  }
+}

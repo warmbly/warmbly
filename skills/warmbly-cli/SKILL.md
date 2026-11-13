@@ -83,6 +83,8 @@ gives the arguments and flags. Ids are positional, not flags.
 | `placement` | inbox placement tests: overview, test, list, view, cancel, seed inboxes, a campaign's scheduled test, batches across many mailboxes, fleet coverage |
 | `webhook`, `key`, `oauth-app`, `integration` | the developer surface |
 | `org`, `team`, `settings`, `warmup-routing` | the workspace surface a key can reach |
+| `migration` | migrate in from another outreach tool: providers, list, view, create, start, cancel, link-senders, delete |
+| `agency` | an agency's clients, overview, usage, mailboxes, and `agency migration` into client workspaces |
 | `tool` | the AI tool registry, listed and called |
 | `events tail` | the live event stream |
 | `api` | any endpoint at all |
@@ -161,6 +163,42 @@ Everything else is safe to run freely.
   `placement batch BATCH_ID` groups the result by sending domain and provider,
   and `batch-senders BATCH_ID` lists mailboxes worst first: a whole domain low
   is that domain, one mailbox low on a healthy domain is that mailbox.
+
+## Migrating in from another tool
+
+```bash
+warmbly migration providers --json            # field keys each tool needs
+printf '{"provider":"smartlead","credentials":[{"api_key":"%s"}]}' "$SMARTLEAD_API_KEY" \
+  | warmbly migration create --input - --json
+warmbly migration view MIGRATION_ID --json     # wait for status "ready", read the inventory
+warmbly migration start MIGRATION_ID --kinds blocklist,campaigns,leads --in-flight continue
+```
+
+- Never put the source key on the command line or in a file you leave behind;
+  pipe it in. The server seals it, never returns it, and wipes it when the
+  migration ends.
+- Show the user the scanned inventory before `start`, and ask before
+  `--warmup`: it starts warmup mail on every mailbox that connects.
+- Imported campaigns are drafts. They never launch on their own; leave
+  launching to the user (`campaign preflight`, then `campaign start`).
+- Mailboxes the migration could not connect are listed under each target's
+  follow-up; after the user reconnects them, `migration link-senders` attaches
+  them to the drafts.
+
+## Agencies
+
+An agency key (`wmagency_...`) goes in `WARMBLY_TOKEN`; `auth login` takes
+workspace keys only.
+
+- `warmbly agency list` gives the agency id; `agency clients list AGENCY_ID`
+  the client workspace ids.
+- Any other command acts in one client with `--organization CLIENT_ID` (or
+  `WARMBLY_ORGANIZATION`). Without it, a workspace command answers
+  `agency_key_organization_required`.
+- `agency migration start AGENCY_ID MIGRATION_ID --input @targets.json` maps
+  every scanned source workspace to `organization_id`, `create_name` or
+  `skip`. Creating a client needs `AGENCY_MANAGE_CLIENTS`; confirm new client
+  names with the user first.
 
 ## Errors
 

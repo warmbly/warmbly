@@ -1,0 +1,8 @@
+{"hasMore":false,"items":[
+  {"accountId":100,"addingDate":"2024-03-08T10:00:00+00:00","callStatus":"toCall","city":"San Francisco","company":"Tech Solutions Inc","companySize":"501-1000","country":"United States","createdAt":"2024-03-08T10:00:00","customFields":[{"key":"leadSource","value":"Conference"},{"key":"budget","value":"100k-250k"},{"key":"Enriching","value":null,"enrichmentStatus":"inprogress"}],"domain":"company.com","email":"john.doe@company.com","firstName":"John","id":12345,"industry":"Software & Technology","isOptedOut":false,"lastName":"Doe","linkedInUrl":"https://www.linkedin.com/in/johndoe","meetingStatus":"none","notes":"Met at SaaS Conference 2024","ownerUserId":42,"phone":"+1-415-555-0123","phoneStatus":"valid","stage":"New","state":"CA","timeZoneId":"America/Los_Angeles","title":"Senior Product Manager"},
+  {"id":12346,"email":"amy@beta.io","firstName":"Amy","lastName":"Lee","company":"Beta","title":"CTO","stage":"Interested","customFields":[],"isOptedOut":false,"meetingStatus":"none","timeZoneId":"GMT Standard Time"},
+  {"id":12348,"email":"bob@delta.com","firstName":"Bob","lastName":"Ray","company":"Delta","customFields":[],"isOptedOut":false,"meetingStatus":"none"},
+  {"id":12349,"email":"eve@eps.com","firstName":"Eve","lastName":"Ng","company":"Eps","customFields":[],"isOptedOut":true,"meetingStatus":"none"},
+  {"id":20001,"email":"Loose@Free.io","firstName":"Lou","lastName":"Se","company":"Free","customFields":[{"key":"Deal Size","value":"12"}],"isOptedOut":false,"meetingStatus":"meetingBooked","companySize":"Empty"},
+  {"id":20002,"email":"","firstName":"No","customFields":[],"isOptedOut":false,"meetingStatus":"none"}
+]}

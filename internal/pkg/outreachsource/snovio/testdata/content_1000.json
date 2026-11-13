@@ -1,0 +1,1 @@
+{"data": {"id": 1000, "subject": "{{SPINTAX|Quick idea|Question}} for {{company_name}}", "body": "<p>Hi {{first_name}},</p><p>{{full_name}} at {{position}} in {{location}}</p><p>{{sender_account_name}}</p>", "plain_text": false, "usage": "active"}}

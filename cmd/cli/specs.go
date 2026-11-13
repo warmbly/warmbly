@@ -38,6 +38,7 @@ func resourceSpecs() []resource {
 	out = append(out, analyticsSpec(), placementSpec(), auditSpec(), advisorSpec())
 	out = append(out, webhookSpec(), keySpec(), oauthAppSpec(), toolSpec())
 	out = append(out, orgSpec(), teamSpec(), settingsSpec(), warmupRoutingSpec(), integrationSpec())
+	out = append(out, migrationSpec(), agencySpec())
 	return out
 }
 
@@ -2368,6 +2369,184 @@ connection stays in the dashboard. Everything after that is here.`,
 				Method: http.MethodDelete, Path: "/integrations/connections/{id}",
 				Args:    []argSpec{{Name: "id", Help: "The connection's id"}},
 				Success: "Integration disconnected.",
+			},
+		},
+	}
+}
+
+// migrationEndpoints is the migration command set; base is /migrations or an
+// agency's, and lead is the positional arguments the base needs.
+func migrationEndpoints(base string, lead []argSpec, agency bool) []endpoint {
+	withLead := func(extra ...argSpec) []argSpec { return append(append([]argSpec{}, lead...), extra...) }
+	id := argSpec{Name: "id", Help: "The migration's id"}
+	show := output.Table{Columns: []output.Column{
+		col("ID", "id"), col("PROVIDER", "provider"), colt("LABEL", "label", 30), col("STATUS", "status"),
+		colf("STARTED", "started_at", "time"), colf("FINISHED", "finished_at", "time"),
+	}}
+	createExample := "  $ printf '{\"provider\":\"smartlead\",\"credentials\":[{\"api_key\":\"%s\"}]}' \"$SMARTLEAD_API_KEY\" \\\n      | warmbly migration create --input -\n  $ warmbly migration create --input @smartlead.json"
+	startExample := "  $ warmbly migration start MIG --kinds blocklist,campaigns,leads --in-flight continue"
+	startLong := `Start a scanned migration (status ready). Choose what to bring over and how
+leads part way through a sequence are treated.
+
+Imported campaigns arrive as drafts and are never launched.`
+	if agency {
+		createExample = "  $ warmbly agency migration create AGENCY --input @smartlead.json"
+		startExample = "  $ warmbly agency migration start AGENCY MIG --input @targets.json"
+		startLong += `
+
+An agency maps every scanned source workspace onto a client in "targets":
+{"options":{...},"targets":[{"workspace_id":"...","key":0,"organization_id":"..."},
+{"workspace_id":"...","key":0,"create_name":"Acme"},{"workspace_id":"...","skip":true}]}.
+Creating a client needs AGENCY_MANAGE_CLIENTS as well as AGENCY_MIGRATE.`
+	}
+	return []endpoint{
+		{
+			Name: "providers", Short: "List the tools Warmbly migrates from and the credentials each needs",
+			Method: http.MethodGet, Path: base + "/providers", Args: withLead(),
+			Table: output.Table{Root: "data", Columns: []output.Column{
+				col("ID", "id"), col("NAME", "label"), col("WORKSPACES", "workspaces"), col("KEY PER WORKSPACE", "multi_key"), col("MAILBOX PASSWORDS", "mailbox_secrets"),
+			}},
+		},
+		{
+			Name: "list", Aliases: []string{"ls"}, Short: "List migrations, newest first",
+			Method: http.MethodGet, Path: base, Args: withLead(), Paginate: true, Flag: withPaging(),
+			Table: output.Table{Root: "data", Columns: []output.Column{
+				col("ID", "id"), col("PROVIDER", "provider"), colt("LABEL", "label", 30), col("STATUS", "status"), colf("CREATED", "created_at", "time"),
+			}, Empty: "No migrations yet."},
+		},
+		{
+			Name: "view", Aliases: []string{"get", "show"}, Short: "Show a migration: inventory, progress and follow-up",
+			Method: http.MethodGet, Path: base + "/{id}", Args: withLead(id), Table: show,
+		},
+		{
+			Name: "create", Short: "Connect another tool by its API key and scan what it holds",
+			Long: `Check the key and scan the source account. Nothing is imported until
+` + "`start`" + `.
+
+The body is {"provider":"smartlead","label":"...","credentials":[{"api_key":"..."}]},
+one credentials object per key, keyed by the fields ` + "`providers`" + ` lists. Pipe
+it in or read it from a file so the key stays out of your shell history. The
+server seals it and never returns it.`,
+			Method: http.MethodPost, Path: base, Args: withLead(), Body: bodyRequired, Idempotent: true,
+			Example: createExample,
+			Table:   show,
+		},
+		{
+			Name: "start", Short: "Start a scanned migration",
+			Long:   startLong,
+			Method: http.MethodPost, Path: base + "/{id}/start", Args: withLead(id), Body: bodyOptional,
+			Example: startExample,
+			Flag: []flagSpec{
+				{Name: "kinds", Help: "What to bring over: blocklist, mailboxes, campaigns, leads", Kind: flagStrings, Key: "options[kinds]"},
+				{Name: "campaign-ids", Help: "Only these source campaign ids", Kind: flagStrings, Key: "options[campaign_ids]"},
+				{Name: "in-flight", Help: "Leads mid-sequence: skip (default) or restart", Key: "options[in_flight]"},
+				{Name: "skip-finished", Help: "Leave out completed or archived campaigns", Kind: flagBool, Key: "options[skip_finished]"},
+				{Name: "warmup", Help: "Start warmup on mailboxes that connect", Kind: flagBool, Key: "options[warmup]"},
+			},
+			Table: show,
+		},
+		{
+			Name: "cancel", Short: "Cancel a migration and wipe its stored keys",
+			Method: http.MethodPost, Path: base + "/{id}/cancel", Args: withLead(id), Table: show,
+		},
+		{
+			Name: "link-senders", Short: "Link draft campaigns to sender mailboxes connected since",
+			Method: http.MethodPost, Path: base + "/{id}/link-senders", Args: withLead(id), Table: show,
+		},
+		{
+			Name: "delete", Aliases: []string{"rm", "dismiss"}, Short: "Remove a finished migration from the list",
+			Method: http.MethodDelete, Path: base + "/{id}", Args: withLead(id),
+			Success: "Migration removed.",
+		},
+	}
+}
+
+func migrationSpec() resource {
+	return resource{
+		Name:    "migration",
+		Aliases: []string{"migrations", "migrate"},
+		Short:   "Migrate in from another outreach tool",
+		Group:   groupData,
+		Long: `Bring a workspace over from Smartlead, Instantly, lemlist and other tools:
+the blocklist, mailboxes, campaigns and leads.
+
+Create a migration with the tool's API key, look at what the scan found, then
+start it. Imported campaigns arrive as drafts and are never launched.`,
+		Endpoints: migrationEndpoints("/migrations", nil, false),
+	}
+}
+
+func agencySpec() resource {
+	agencyArg := []argSpec{{Name: "agency", Help: "The agency's id, from `warmbly agency list`"}}
+	return resource{
+		Name:    "agency",
+		Aliases: []string{"agencies"},
+		Short:   "Agencies: clients, the agency home and migrations into clients",
+		Group:   groupData,
+		Long: `Work across an agency's client workspaces with an agency API key
+(wmagency_...) in WARMBLY_TOKEN, or a signed-in session.
+
+To run any other command inside one client, add --organization <client id>
+(or set WARMBLY_ORGANIZATION).`,
+		Endpoints: []endpoint{
+			{
+				Name: "list", Aliases: []string{"ls"}, Short: "List your agencies",
+				Method: http.MethodGet, Path: "/agency",
+				Table: output.Table{Root: "data", Columns: []output.Column{col("ID", "id"), colt("NAME", "name", 40), col("STATUS", "status")}, Empty: "You are not part of an agency."},
+			},
+			{
+				Name: "view", Aliases: []string{"get", "show"}, Short: "Show one agency",
+				Method: http.MethodGet, Path: "/agency/{agency}", Args: agencyArg,
+			},
+			{
+				Name: "overview", Short: "Every client at a glance, problems first",
+				Method: http.MethodGet, Path: "/agency/{agency}/overview", Args: agencyArg,
+			},
+			{
+				Name: "usage", Short: "The shared send pool and what each client used",
+				Method: http.MethodGet, Path: "/agency/{agency}/usage", Args: agencyArg,
+			},
+			{
+				Name: "mailboxes", Short: "Mailboxes across client workspaces",
+				Method: http.MethodGet, Path: "/agency/{agency}/mailboxes", Args: agencyArg,
+				Flag: withPaging(
+					flagSpec{Name: "client", Help: "Only these client workspace ids", Kind: flagStrings, Query: true},
+					flagSpec{Name: "query", Short: "q", Help: "Search addresses", Query: true, Key: "q"},
+					flagSpec{Name: "attention", Help: "Only mailboxes that need attention", Kind: flagBool, Query: true},
+				),
+			},
+		},
+		Children: []resource{
+			{
+				Name:    "clients",
+				Aliases: []string{"client"},
+				Short:   "The agency's client workspaces",
+				Endpoints: []endpoint{
+					{
+						Name: "list", Aliases: []string{"ls"}, Short: "List client workspaces",
+						Method: http.MethodGet, Path: "/agency/{agency}/clients", Args: agencyArg,
+						Table: output.Table{Root: "data", Columns: []output.Column{
+							col("ID", "organization_id"), colt("NAME", "name", 40), colf("ADDED", "added_at", "time"),
+						}, Empty: "No client workspaces yet."},
+					},
+					{
+						Name: "create", Short: "Create a client workspace",
+						Method: http.MethodPost, Path: "/agency/{agency}/clients", Args: agencyArg, Body: bodyRequired, Idempotent: true,
+						Example: "  $ warmbly agency clients create AGENCY --name \"Acme\" --timezone Europe/London",
+						Flag: []flagSpec{
+							{Name: "name", Help: "The client workspace's name"},
+							{Name: "timezone", Help: "IANA timezone, e.g. Europe/London"},
+						},
+					},
+				},
+			},
+			{
+				Name:    "migration",
+				Aliases: []string{"migrations", "migrate"},
+				Short:   "Migrate client accounts in from another outreach tool",
+				Long: `One source account, its workspaces mapped onto client workspaces.
+An agency key needs AGENCY_MIGRATE.`,
+				Endpoints: migrationEndpoints("/agency/{agency}/migrations", agencyArg, true),
 			},
 		},
 	}

@@ -1,0 +1,17 @@
+{"data": {"workspace": {"leads": {
+  "nodes": [
+    {
+      "id": "lead_1", "email": "Pat@Example.com", "firstName": "Pat", "lastName": "Lee", "fullName": "Pat Lee",
+      "title": "Head of Growth", "role": "Marketing", "phone": "+1 555 0100", "linkedinId": "https://www.linkedin.com/in/patlee",
+      "score": 7, "language": "en", "doNotContact": false,
+      "tags": {"nodes": [{"name": "vip"}, {"name": "2026"}]},
+      "customProperties": {"nodes": [{"id": "cpr_1", "name": "Opening_Line", "value": "Loved your talk"}, {"id": "cpr_2", "name": "City", "value": null}]}
+    },
+    {
+      "id": "lead_2", "email": "dnc@example.com", "firstName": null, "lastName": null, "fullName": "",
+      "title": null, "role": null, "phone": null, "linkedinId": null, "score": null, "language": null, "doNotContact": true,
+      "tags": {"nodes": []}, "customProperties": {"nodes": []}
+    }
+  ],
+  "pageInfo": {"hasNextPage": true, "endCursor": "Mg"}
+}}}}

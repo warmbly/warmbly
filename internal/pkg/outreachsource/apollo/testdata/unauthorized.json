@@ -1,0 +1,7 @@
+{
+  "error": "Invalid access credentials.",
+  "error_details": {
+    "code": "AUTH.AUTHENTICATION.CREDENTIALS_INVALID",
+    "message": "Invalid access credentials."
+  }
+}

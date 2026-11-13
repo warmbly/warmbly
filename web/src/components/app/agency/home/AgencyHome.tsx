@@ -5,6 +5,7 @@ import React from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
     AlertTriangleIcon,
+    ArrowRightLeftIcon,
     ArrowUpRightIcon,
     BarChart3Icon,
     ChevronRightIcon,
@@ -133,6 +134,11 @@ export default function AgencyHome() {
         <Page>
             <PageTopbar eyebrow="Overview" subtitle={agency.name}>
                 {canManage && (
+                    <TopbarAction variant="ghost" icon={<ArrowRightLeftIcon className="w-3 h-3" />} href="/app/agency/migrate" className="hidden sm:inline-flex">
+                        Migrate from another tool
+                    </TopbarAction>
+                )}
+                {canManage && (
                     <TopbarAction icon={<PlusIcon className="w-3 h-3" />} onClick={() => setAdding(true)}>
                         Add client
                     </TopbarAction>
@@ -197,7 +203,16 @@ export default function AgencyHome() {
                     <EmptyBlock
                         title="No clients yet"
                         body="Each client gets its own workspace. Add one, then send it a connect link so it can add its own mailboxes."
-                        cta={canManage ? <TopbarAction onClick={() => setAdding(true)}>Add client</TopbarAction> : undefined}
+                        cta={
+                            canManage ? (
+                                <>
+                                    <TopbarAction onClick={() => setAdding(true)}>Add client</TopbarAction>
+                                    <TopbarAction variant="ghost" href="/app/agency/migrate">
+                                        Migrate from Smartlead, Instantly and more
+                                    </TopbarAction>
+                                </>
+                            ) : undefined
+                        }
                     />
                 ) : (
                     <div className="animate-in fade-in duration-300 fill-mode-both motion-reduce:animate-none">

@@ -1,0 +1,3 @@
+{"nextToken": "senders-2", "results": [
+  {"object": "sender", "id": "abc", "emailAddress": "mysender@company.com", "fromName": "Firm ABC", "created": "2017-08-19T02:31:22.218Z"}
+]}

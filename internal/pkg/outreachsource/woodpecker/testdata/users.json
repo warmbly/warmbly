@@ -1,0 +1,7 @@
+{
+  "content": [
+    {"id": 1235, "name": "Jim Halpert", "email": "jim@dundermifflin.com", "role": "user"},
+    {"id": 1234, "name": "Michael Scott", "email": "michael@dundermifflin.com", "role": "admin"}
+  ],
+  "pagination_data": {"total_elements": 2, "total_pages": 1, "current_page_number": 1, "page_size": 50}
+}

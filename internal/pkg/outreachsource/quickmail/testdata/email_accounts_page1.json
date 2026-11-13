@@ -1,0 +1,7 @@
+{"data": {"emailAccounts": {
+  "nodes": [
+    {"id": "eac_1", "name": "Jane Smith", "email": "Jane@Acme.io", "type": "google", "dailySendingLimit": 40},
+    {"id": "eac_2", "name": "Sam Lee", "email": "sam@acme.io", "type": "outlook", "dailySendingLimit": null}
+  ],
+  "pageInfo": {"hasNextPage": true, "endCursor": "Mg"}
+}}}

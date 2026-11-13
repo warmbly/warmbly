@@ -1,0 +1,5 @@
+[
+  {"id": 8512947, "name": "Campaign list", "contacts": 3, "isDeleted": false, "creationDate": {"date": "2020-04-07 08:25:44.000000", "timezone_type": 3, "timezone": "UTC"}, "deletionDate": null},
+  {"id": 1818597, "name": "Loose list", "contacts": 1, "isDeleted": false, "creationDate": {"date": "2020-04-07 08:25:44.000000", "timezone_type": 3, "timezone": "UTC"}, "deletionDate": null},
+  {"id": 1505383, "name": "All prospects", "contacts": 10, "isDeleted": true, "creationDate": {"date": "2019-12-17 15:07:30.000000", "timezone_type": 3, "timezone": "UTC"}, "deletionDate": {"date": "2020-02-17 14:05:44.000000", "timezone_type": 3, "timezone": "UTC"}}
+]

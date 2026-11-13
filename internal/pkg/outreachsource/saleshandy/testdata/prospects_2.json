@@ -1,0 +1,10 @@
+{
+  "payload": [
+    {
+      "id": "mCuNpjPgzD",
+      "email": "alan@turing.example",
+      "attributes": [{"id": "y", "key": "First Name", "value": "Alan"}, {"id": "z", "key": "State", "value": "Bletchley"}],
+      "tags": []
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+[
+  {"id": 1234567892, "email": "gavin@hooli.com", "first_name": "Gavin", "last_name": "Belson", "company": "Hooli", "updated": "2025-03-18T10:00:00+0100", "encrypted": false, "snippet_labels": {}, "campaign_id": 12345679, "campaign_name": "Four step campaign", "campaign_status": "PAUSED", "status": "BOUNCED"}
+]
