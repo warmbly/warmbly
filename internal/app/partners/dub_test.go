@@ -3,8 +3,10 @@ package partners
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -15,8 +17,9 @@ import (
 )
 
 type memStore struct {
-	mu   sync.Mutex
-	refs map[uuid.UUID]*models.PartnerReferral
+	mu        sync.Mutex
+	refs      map[uuid.UUID]*models.PartnerReferral
+	attempted map[uuid.UUID]time.Time
 }
 
 func (m *memStore) RecordPartnerReferral(_ context.Context, orgID uuid.UUID, clickID string) error {
@@ -47,14 +50,36 @@ func (m *memStore) MarkPartnerLeadReported(_ context.Context, orgID uuid.UUID) e
 	return nil
 }
 
+func (m *memStore) MarkPartnerLeadAttempted(_ context.Context, orgID uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.attempted[orgID] = time.Now()
+	return nil
+}
+
+// ListUnreportedPartnerReferrals mirrors the SQL: never-tried first, then least recently tried, then oldest.
 func (m *memStore) ListUnreportedPartnerReferrals(_ context.Context, after, before time.Time, limit int) ([]models.PartnerReferral, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []models.PartnerReferral
 	for _, ref := range m.refs {
-		if ref.LeadReportedAt == nil && !ref.CreatedAt.Before(after) && ref.CreatedAt.Before(before) && len(out) < limit {
+		if ref.LeadReportedAt == nil && !ref.CreatedAt.Before(after) && ref.CreatedAt.Before(before) {
 			out = append(out, *ref)
 		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		ai, aok := m.attempted[out[i].OrganizationID]
+		aj, bok := m.attempted[out[j].OrganizationID]
+		if aok != bok {
+			return !aok
+		}
+		if aok && !ai.Equal(aj) {
+			return ai.Before(aj)
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
 }
@@ -62,9 +87,11 @@ func (m *memStore) ListUnreportedPartnerReferrals(_ context.Context, after, befo
 type fakeDub struct {
 	mu     sync.Mutex
 	status int
-	leads  []map[string]any
-	auth   []string
-	got    chan struct{}
+	// failClicks answers 404 for these click ids whatever status says.
+	failClicks map[string]bool
+	leads      []map[string]any
+	auth       []string
+	got        chan struct{}
 }
 
 func newFakeDub(t *testing.T, status int) (*fakeDub, *httptest.Server) {
@@ -79,6 +106,9 @@ func newFakeDub(t *testing.T, status int) (*fakeDub, *httptest.Server) {
 		f.leads = append(f.leads, body)
 		f.auth = append(f.auth, r.Header.Get("Authorization"))
 		status := f.status
+		if click, _ := body["clickId"].(string); f.failClicks[click] {
+			status = http.StatusNotFound
+		}
 		f.mu.Unlock()
 		w.WriteHeader(status)
 		if status >= 400 {
@@ -93,7 +123,7 @@ func newFakeDub(t *testing.T, status int) (*fakeDub, *httptest.Server) {
 }
 
 func newService(t *testing.T, srv *httptest.Server) (*Service, *memStore) {
-	store := &memStore{refs: map[uuid.UUID]*models.PartnerReferral{}}
+	store := &memStore{refs: map[uuid.UUID]*models.PartnerReferral{}, attempted: map[uuid.UUID]time.Time{}}
 	s := New("dub_test_key", store)
 	s.baseURL = srv.URL
 	return s, store
@@ -254,5 +284,29 @@ func TestSweepReportsOnlySettledRecentUnreportedSignups(t *testing.T) {
 	}
 	if ref, _ := store.GetPartnerReferral(context.Background(), stuck); ref.LeadReportedAt == nil {
 		t.Fatal("a swept lead Dub accepted must be marked reported")
+	}
+}
+
+// A full batch of clicks Dub keeps refusing must not starve a later signup.
+func TestSweepRotatesPastReferralsThatKeepFailing(t *testing.T) {
+	f, srv := newFakeDub(t, http.StatusOK)
+	f.got = make(chan struct{}, 512)
+	f.failClicks = map[string]bool{}
+	s, store := newService(t, srv)
+	now := time.Now()
+	for i := 0; i < retryBatch; i++ {
+		org := uuid.New()
+		click := fmt.Sprintf("bad%d", i)
+		f.failClicks[click] = true
+		store.refs[org] = &models.PartnerReferral{OrganizationID: org, DubClickID: click, CreatedAt: now.Add(-2 * time.Hour)}
+	}
+	good := uuid.New()
+	store.refs[good] = &models.PartnerReferral{OrganizationID: good, DubClickID: "good", CreatedAt: now.Add(-time.Hour)}
+
+	s.retryUnreported(context.Background(), now)
+	s.retryUnreported(context.Background(), now)
+
+	if ref, _ := store.GetPartnerReferral(context.Background(), good); ref.LeadReportedAt == nil {
+		t.Fatal("the valid referral was starved by a batch of failing ones")
 	}
 }

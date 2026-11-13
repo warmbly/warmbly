@@ -46,6 +46,7 @@ type Store interface {
 	RecordPartnerReferral(ctx context.Context, orgID uuid.UUID, dubClickID string) error
 	GetPartnerReferral(ctx context.Context, orgID uuid.UUID) (*models.PartnerReferral, error)
 	MarkPartnerLeadReported(ctx context.Context, orgID uuid.UUID) error
+	MarkPartnerLeadAttempted(ctx context.Context, orgID uuid.UUID) error
 	ListUnreportedPartnerReferrals(ctx context.Context, createdAfter, createdBefore time.Time, limit int) ([]models.PartnerReferral, error)
 }
 
@@ -155,6 +156,10 @@ type leadRequest struct {
 func (s *Service) reportLead(ctx context.Context, orgID uuid.UUID, clickID string, customer Customer) error {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
+	// A row that keeps failing moves behind the others in the sweep, so it cannot starve them.
+	if err := s.store.MarkPartnerLeadAttempted(ctx, orgID); err != nil {
+		return fmt.Errorf("mark partner lead attempted: %w", err)
+	}
 
 	body, err := json.Marshal(leadRequest{
 		ClickID:            clickID,

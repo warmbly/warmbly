@@ -18,7 +18,8 @@ type PartnerReferralRepository interface {
 	// GetPartnerReferral returns nil when the workspace did not come from a partner.
 	GetPartnerReferral(ctx context.Context, orgID uuid.UUID) (*models.PartnerReferral, error)
 	MarkPartnerLeadReported(ctx context.Context, orgID uuid.UUID) error
-	// ListUnreportedPartnerReferrals returns referrals created in [createdAfter, createdBefore) Dub has not accepted, oldest first.
+	MarkPartnerLeadAttempted(ctx context.Context, orgID uuid.UUID) error
+	// ListUnreportedPartnerReferrals returns referrals created in [createdAfter, createdBefore) Dub has not accepted, least recently tried first.
 	ListUnreportedPartnerReferrals(ctx context.Context, createdAfter, createdBefore time.Time, limit int) ([]models.PartnerReferral, error)
 }
 
@@ -65,7 +66,7 @@ func (r *partnerReferralRepository) ListUnreportedPartnerReferrals(ctx context.C
 		SELECT organization_id, dub_click_id, created_at
 		FROM organization_partner_referrals
 		WHERE lead_reported_at IS NULL AND created_at >= $1 AND created_at < $2
-		ORDER BY created_at
+		ORDER BY lead_attempted_at NULLS FIRST, created_at
 		LIMIT $3`, createdAfter, createdBefore, limit)
 	if err != nil {
 		return nil, err
@@ -80,4 +81,11 @@ func (r *partnerReferralRepository) ListUnreportedPartnerReferrals(ctx context.C
 		out = append(out, ref)
 	}
 	return out, rows.Err()
+}
+
+func (r *partnerReferralRepository) MarkPartnerLeadAttempted(ctx context.Context, orgID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE organization_partner_referrals SET lead_attempted_at = now()
+		WHERE organization_id = $1`, orgID)
+	return err
 }
