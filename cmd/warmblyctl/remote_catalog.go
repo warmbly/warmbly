@@ -155,6 +155,8 @@ var remoteAdminRoutes = []remoteAdminRoute{
 	{"GET", "/admin/fleet/release", []string{"ViewWorkers"}, false, ""},
 	{"PUT", "/admin/fleet/release", []string{"ManageWorkers"}, false, ""},
 	{"GET", "/admin/fleet/capacity", []string{"ViewWorkers"}, false, ""},
+	{"GET", "/admin/fleet/scale", []string{"ViewWorkers"}, false, ""},
+	{"PATCH", "/admin/fleet/scale", []string{"ManageWorkers"}, true, ""},
 	{"GET", "/admin/fleet/decisions", []string{"ViewWorkers"}, false, ""},
 	{"GET", "/admin/fleet/dedicated", []string{"ViewWorkers"}, false, ""},
 	{"POST", "/admin/fleet/dedicated/:orgId/release", []string{"ManageWorkers"}, false, ""},

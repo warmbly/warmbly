@@ -2332,6 +2332,8 @@ func Run(
 		adminRoutes.GET("/fleet/release", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetRelease)
 		adminRoutes.PUT("/fleet/release", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminFleetSetRelease)
 		adminRoutes.GET("/fleet/capacity", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetCapacity)
+		adminRoutes.GET("/fleet/scale", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetScale)
+		adminRoutes.PATCH("/fleet/scale", middleware.RequireAdminPermission(models.AdminPermManageWorkers), middleware.RequireFreshAuth(), h.AdminFleetSetMax)
 		adminRoutes.GET("/fleet/decisions", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetDecisions)
 		adminRoutes.GET("/fleet/dedicated", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetDedicated)
 		adminRoutes.POST("/fleet/dedicated/:orgId/release", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminFleetReleaseIsolatedEgress)

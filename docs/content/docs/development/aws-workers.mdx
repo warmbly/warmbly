@@ -125,8 +125,12 @@ unset only when workers reach the event bus some other way.
    Without it nothing publishes `WorkerMemoryPercent`, so the fleet scales out
    on CPU only and never scales in.
 
+5. Optionally set `FLEET_AUTOSCALING_GROUP` on the backend to the group's name
+   (`<name>-fleet`), so the cap can be changed from the admin panel (see
+   [change the fleet cap](#change-the-fleet-cap)).
+
 The `fleet` output names the group, its subnets and security group, the join
-token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
+token parameter, the cap's ceiling, the metric contract and `nat_ipv4_addresses`. Workers appear in
 `warmblyctl fleet list` within a few minutes of launching.
 
 ### Variables
@@ -141,7 +145,8 @@ token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
 | `fleet_cpu_credits` | `standard` | CPU credit mode for burstable types |
 | `fleet_root_volume_gb` | `20` | Encrypted gp3 root volume size |
 | `fleet_min_size` | `2` | Smallest fleet |
-| `fleet_max_size` | `10` | Largest fleet |
+| `fleet_max_size` | `10` | Starting cap on the fleet's size. The [admin panel](#change-the-fleet-cap) owns the cap afterwards, so a later change here is ignored |
+| `fleet_max_ceiling` | `null` | Highest cap the admin panel may set, written to the group's `warmbly:max-ceiling` tag. `null` uses the larger of `fleet_max_size` and 100 |
 | `fleet_desired_capacity` | `null` | Starting size; scaling owns it afterwards. `null` starts at the minimum |
 | `fleet_worker_capacity` | `auto` | `WARMBLY_WORKER_CAPACITY` on every fleet worker: `auto`, or a whole number of mailboxes from 1 to 99999999 |
 | `fleet_region_label` | empty | Optional `--region` label for placement |
@@ -220,6 +225,55 @@ while the fleet has fewer than 100 workers, and waits
 `fleet_refresh_warmup_seconds` between replacements. The AMI is resolved when
 each instance launches, so new AMIs reach new workers without refreshing
 existing ones. Health checks are EC2 status checks.
+
+### Change the fleet cap
+
+The group's cap is the most workers scaling may add. With
+`FLEET_AUTOSCALING_GROUP` set on the backend, the admin panel's Fleet page shows
+the group's size against its cap on the Capacity tab, and the cap can be
+changed there. It warns once the fleet reaches 80% of the cap and again when it
+reaches the cap, and the backend logs `worker fleet is at its size cap` once an
+hour while it stays there.
+
+The new cap must be at least the running fleet and `fleet_min_size`, and at most
+the ceiling. The one way lowering it stops a worker is a scale-out landing in the
+moment between that check and the change: the group then removes every worker
+that scale-out added above the new cap at once, without the quiet period the
+fleet's own scale-in waits for, and picks them the way any scale-in does: AWS
+first picks the Availability Zone with the most workers, then the newest worker
+in it, which can be one that holds mailboxes. Each leaves through the drain hook
+and its mailboxes are placed on the rest of the fleet. A
+change asks for a fresh confirmation of the operator's identity and is recorded
+in the admin audit log.
+
+`fleet_max_size` sets only the starting cap: Terraform ignores the cap after the
+group exists, so a later apply does not undo a change made in the admin panel.
+A plan whose `fleet_max_size` differs from the group's cap warns through the
+`fleet_cap` check instead of changing it; change the cap in the admin panel, or
+with `aws autoscaling update-auto-scaling-group --max-size`, and set
+`fleet_max_size` to match to clear the warning. The ceiling is
+`fleet_max_ceiling`, or the larger of `fleet_max_size` and 100 when it is unset;
+raise it and apply to allow a higher cap.
+
+The backend's role needs:
+
+```json
+[
+  {
+    "Effect": "Allow",
+    "Action": "autoscaling:DescribeAutoScalingGroups",
+    "Resource": "*"
+  },
+  {
+    "Effect": "Allow",
+    "Action": "autoscaling:UpdateAutoScalingGroup",
+    "Resource": "arn:aws:autoscaling:<region>:<account>:autoScalingGroup:*:autoScalingGroupName/<name>-fleet",
+    "Condition": { "NumericLessThanEquals": { "autoscaling:MaxSize": "<fleet_max_ceiling>" } }
+  }
+]
+```
+
+The condition holds the ceiling in IAM as well, whatever the tag says.
 
 ### Metric contract
 

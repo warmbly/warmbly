@@ -40,6 +40,7 @@ var remoteAdminHelpers = []remoteAdminHelper{
 	{"workers mailboxes", "GET", "/admin/workers/:id/emails", "id"},
 	{"fleet nodes", "GET", "/admin/fleet/nodes", ""},
 	{"fleet capacity", "GET", "/admin/fleet/capacity", ""},
+	{"fleet scale", "GET", "/admin/fleet/scale", ""},
 	{"fleet decisions", "GET", "/admin/fleet/decisions", ""},
 	{"fleet dedicated", "GET", "/admin/fleet/dedicated", ""},
 	{"fleet release", "GET", "/admin/fleet/release", ""},
