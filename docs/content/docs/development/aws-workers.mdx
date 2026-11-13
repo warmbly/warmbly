@@ -72,7 +72,8 @@ backend to the parameter name, `/<name>/fleet/join-token` unless
 `ssm:GetParameter` and `ssm:PutParameter` on it. When the parameter uses a
 customer managed key (`fleet_join_token_kms_key_arn`), also set
 [`FLEET_JOIN_TOKEN_KMS_KEY`](/development/configuration/#workers) to that key and
-give the backend's role `kms:Encrypt` and `kms:Decrypt` on it. Within a minute of starting,
+give the backend's role `kms:Encrypt`, `kms:GenerateDataKey` and `kms:Decrypt`
+on it. Within a minute of starting,
 the backend issues a 30-day join token and stores it there as a SecureString.
 It checks every hour and issues a new one when the stored token expires within
 10 days or no longer joins, so launches never meet an expired token. Workers
