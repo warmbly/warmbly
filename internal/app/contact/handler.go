@@ -62,6 +62,9 @@ func (s *contactService) newAddresses(ctx context.Context, userID string, orgID 
 
 func (s *contactService) Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
 	if xerr := s.checkContactLimit(ctx, orgID, len(contacts)); xerr != nil {
+		if xerr.Identifier != errx.ContactLimitReachedCode {
+			return nil, xerr
+		}
 		// Re-adding an address the workspace holds updates it, so only new ones count.
 		fresh, lerr := s.newAddresses(ctx, userID, orgID, contacts)
 		if lerr != nil {

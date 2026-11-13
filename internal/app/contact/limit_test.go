@@ -59,7 +59,7 @@ func TestContactLimitFollowsTheWorkspace(t *testing.T) {
 	if xerr := svc.checkContactLimit(ctx, team, 500); xerr != nil {
 		t.Fatalf("paid workspace refused 500 more contacts: %v", xerr.Message)
 	}
-	if xerr := svc.checkContactLimit(ctx, trial, 20); xerr == nil || xerr.Identifier != "contact_limit_reached" {
+	if xerr := svc.checkContactLimit(ctx, trial, 20); xerr == nil || xerr.Identifier != errx.ContactLimitReachedCode {
 		t.Fatalf("trial workspace past its 100: got %v, want contact_limit_reached", xerr)
 	}
 	if xerr := svc.checkContactLimit(ctx, team, 9851); xerr == nil {
@@ -85,5 +85,21 @@ func TestContactLimitCountsOnlyNewAddresses(t *testing.T) {
 	fresh, xerr = svc.newAddresses(ctx, user, org, []models.AddContact{{Email: held[0]}, {Email: "someone@else.test"}})
 	if xerr != nil || fresh != 1 {
 		t.Fatalf("one new address counted %d (err %v), want 1", fresh, xerr)
+	}
+}
+
+type failingLimit struct{}
+
+func (failingLimit) ContactLimit(context.Context, uuid.UUID) (int, *errx.Error) {
+	return 0, errx.InternalError()
+}
+
+// A limit that cannot be read refuses the add, even when every address is already held.
+func TestContactAddRefusesWhenTheLimitCannotBeRead(t *testing.T) {
+	org := uuid.New()
+	held := addresses(3, "held.test")
+	svc := &contactService{limits: failingLimit{}, contactRepository: limitContacts{byOrg: map[uuid.UUID][]string{org: held}}}
+	if _, xerr := svc.Add(context.Background(), uuid.NewString(), org, []models.AddContact{{Email: held[0]}}); xerr == nil || xerr.Code != errx.Internal {
+		t.Fatalf("add with an unreadable limit = %v, want the internal error", xerr)
 	}
 }
