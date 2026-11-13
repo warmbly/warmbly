@@ -88,6 +88,8 @@ func Run(ctx context.Context, issuer Issuer, parameter, kmsKey string) error {
 		return fmt.Errorf("fleet join token: aws config: %w", err)
 	}
 	store := &parameterStore{client: ssm.NewFromConfig(cfg), name: parameter, kmsKey: kmsKey}
+	// Logged until a check succeeds, so an operator can see the stored token joins before launching.
+	confirmed := false
 	for {
 		wait := checkEvery
 		renewed, err := Sync(ctx, store, issuer, time.Now())
@@ -97,6 +99,10 @@ func Run(ctx context.Context, issuer Issuer, parameter, kmsKey string) error {
 			wait = retryEvery
 		case renewed:
 			log.Info().Str("parameter", parameter).Msg("fleet join token renewed")
+			confirmed = true
+		case !confirmed:
+			log.Info().Str("parameter", parameter).Msg("fleet join token is current")
+			confirmed = true
 		}
 		select {
 		case <-ctx.Done():
