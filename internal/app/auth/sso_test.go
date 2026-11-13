@@ -67,7 +67,7 @@ func TestSSOExchangeRefusesAnUnboundCollection(t *testing.T) {
 
 func TestSSOBeginRefusesAnUnconfiguredProvider(t *testing.T) {
 	s := &authService{}
-	if _, err := s.SSOBegin(context.Background(), models.IdentityProviderGoogle); err == nil {
+	if _, err := s.SSOBegin(context.Background(), models.IdentityProviderGoogle, models.OrgAcquisition{}); err == nil {
 		t.Fatal("expected a refusal for a provider this deployment has no client for")
 	}
 }

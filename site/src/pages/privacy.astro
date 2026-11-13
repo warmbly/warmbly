@@ -22,7 +22,7 @@ const sections = [
   title="Privacy Policy | Warmbly"
   description="How Warmbly collects, uses, stores, and protects your personal data and mailbox information. Read our full privacy policy and the choices you have."
   effective="2026-05-27"
-  updated="2026-11-08"
+  updated="2026-11-13"
   sections={sections}
 >
 
@@ -71,6 +71,10 @@ const sections = [
   <p>
     We measure visits to warmbly.com with PostHog, in its cookieless mode. Nothing is stored in your browser for this: no cookie, no local storage, no session storage, which is why you have not been asked to accept any. PostHog derives a visitor count on its own servers from a hash of a daily-rotated secret, your IP address, your browser's user agent and the site's domain. The secret is deleted at the end of each day, so the hash cannot be carried from one day to the next and cannot be turned back into you. On the website we record page views, clicks, scrolling, page performance, the country the visit came from and any script error, and no event carries your name, your email address or any account id. There is no session recording on the website.
   </p>
+  <h3>Partner referrals</h3>
+  <p>
+    If you reach warmbly.com through a link from one of our partners (an address ending in <code>?via=</code> and the partner's name), your browser asks the service that runs our partner program to record the visit, sending it the page address and the page you came from; like any web request, that also shows the service your IP address and browser. The service answers with a click identifier, which replaces the partner's name in the address and, like the campaign parameters described below, travels only in the address of the links you follow (as <code>wb_click</code>). Nothing is stored in your browser for it, so a later visit that does not come through the partner's link is not credited to them. When a referred visitor creates an account, we send that service the click identifier, an identifier for the new workspace, and the account owner's name and email address; it uses them to attribute the signup to the partner and to detect partners referring themselves. When that workspace pays for a subscription, the service reads the payment from our Stripe account to calculate the partner's commission, and a refund cancels it.
+  </p>
   <h3>Product analytics and session replay</h3>
   <p>
     Once you sign in to the dashboard, we measure how you use it under your account: which screens you open, what you click, how fast pages load, any error the app hits and where you are connecting from, together with your account id, email, name and organization. When a dashboard session hits an error, we also record it as a replay: a reconstruction of the screen and your clicks, kept by PostHog for the retention period configured there. Anything typed into a password field, the one-time codes you enter, and the keys, tokens and secrets the dashboard shows you are masked in the browser before anything is sent and never leave your machine. PostHog stores an identifier in your browser for this, in local storage and a cookie, so that your sessions belong to you and not to a stranger.
@@ -80,7 +84,7 @@ const sections = [
   </p>
   <h3>How you found us</h3>
   <p>
-    When you create an account, we record how you arrived: the first page on warmbly.com you landed on, the site that referred you (its domain only), and any campaign parameters in the link you arrived by (the standard <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_term</code> and <code>utm_content</code>). While you browse warmbly.com these travel in the address of the links you follow, and they are read from the sign-up or sign-in link's address at the moment you create the account, stored once on your organization, and never updated afterwards. Nothing is stored in your browser.
+    When you create an account, we record how you arrived: the first page on warmbly.com you landed on, the site that referred you (its domain only), and any campaign parameters in the link you arrived by (the standard <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_term</code> and <code>utm_content</code>). While you browse warmbly.com these travel in the address of the links you follow, and they are read from the sign-up or sign-in link's address at the moment you create the account, stored once on your organization, and never updated afterwards. Nothing is stored in your browser for this.
   </p>
   <p>
     We keep this because knowing which channels bring customers is how we decide what to build and where to spend. It is part of your account record and is also set on your analytics profile, so it is exported and deleted with the rest of your data.
@@ -151,7 +155,7 @@ const sections = [
 <section id="sharing" class="scroll-mt-24">
   <h2>08. Sharing with third parties</h2>
   <p>
-    We share personal data with infrastructure and operational providers that we depend on to run Warmbly. These include AWS for compute, storage, encryption, and queues, Cloudflare for edge security and bot protection, Stripe for billing, PostHog for the website measurement, product analytics, session replay and error reporting described above, and the email providers you connect to Warmbly.
+    We share personal data with infrastructure and operational providers that we depend on to run Warmbly. These include AWS for compute, storage, encryption, and queues, Cloudflare for edge security and bot protection, Stripe for billing, our partner-program provider for the partner referrals described above, PostHog for the website measurement, product analytics, session replay and error reporting described above, and the email providers you connect to Warmbly.
   </p>
   <p>
     We do not sell personal data. We do not share personal data with advertisers. We will disclose personal data when required by law, when we have your consent, or when necessary to investigate or stop abuse.

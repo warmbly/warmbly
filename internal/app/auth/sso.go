@@ -77,6 +77,8 @@ type ssoFlow struct {
 	SessionID uuid.UUID `json:"session_id"`
 	// ReturnOrigin is the verified portal domain the flow began on; empty returns to APP_URL.
 	ReturnOrigin string `json:"return_origin,omitempty"`
+	// Acquisition is where the browser came from, applied if the flow creates a workspace.
+	Acquisition models.OrgAcquisition `json:"acquisition,omitzero"`
 }
 
 // SSOCallbackResult is where the callback sends the browser: Reauth is set
@@ -199,13 +201,13 @@ func (s *authService) SSOExchange(ctx context.Context, code, binding string) (*m
 }
 
 // SSOBegin starts an authorization request against one provider.
-func (s *authService) SSOBegin(ctx context.Context, provider string) (*SSORedirect, *errx.Error) {
+func (s *authService) SSOBegin(ctx context.Context, provider string, acquisition models.OrgAcquisition) (*SSORedirect, *errx.Error) {
 	p, ok := s.providers[provider]
 	if !ok || p == nil {
 		return nil, errx.ErrExternalProvider
 	}
 
-	return s.beginFlow(ctx, p, ssoFlow{Provider: provider}, "")
+	return s.beginFlow(ctx, p, ssoFlow{Provider: provider, Acquisition: acquisition.Normalize()}, "")
 }
 
 // beginFlow mints the state, nonce, verifier and binding for one authorization
@@ -338,6 +340,7 @@ func (s *authService) ssoCallbackComplete(ctx context.Context, in SSOCallback, r
 		email,
 		firstName,
 		lastName,
+		flow.Acquisition,
 	)
 	if rerr != nil {
 		return "", rerr

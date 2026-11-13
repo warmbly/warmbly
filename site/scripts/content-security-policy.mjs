@@ -23,7 +23,10 @@ export function inlineHashes(html) {
   return scripts;
 }
 
-export function contentSecurityPolicy(scripts, analyticsHost) {
+// The partner program's click endpoint, reached only when PUBLIC_PARTNER_LINK_DOMAIN is set.
+export const PARTNER_CLICK_ORIGIN = 'https://api.dub.co';
+
+export function contentSecurityPolicy(scripts, analyticsHost, partnerClicks = false) {
   const analytics = [];
   if (analyticsHost) {
     const url = new URL(analyticsHost);
@@ -44,13 +47,14 @@ export function contentSecurityPolicy(scripts, analyticsHost) {
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: ${analytics.join(' ')}`,
     "font-src 'self'",
-    `connect-src 'self' https://cloudflareinsights.com ${analytics.join(' ')}`,
+    `connect-src 'self' https://cloudflareinsights.com ${[...analytics, ...(partnerClicks ? [PARTNER_CLICK_ORIGIN] : [])].join(' ')}`,
     "worker-src 'self' blob:",
   ].join('; ');
 }
 
 export default function contentSecurityPolicyHeaders() {
   let analyticsHost;
+  let partnerClicks = false;
   return {
     name: 'marketing-content-security-policy',
     hooks: {
@@ -60,6 +64,7 @@ export default function contentSecurityPolicyHeaders() {
           configResolved: ({ mode, envDir }) => {
             const env = loadEnv(mode, envDir, 'PUBLIC_POSTHOG_');
             analyticsHost = env.PUBLIC_POSTHOG_KEY ? env.PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com' : undefined;
+            partnerClicks = !!loadEnv(mode, envDir, 'PUBLIC_PARTNER_').PUBLIC_PARTNER_LINK_DOMAIN;
           },
         }] } });
       },
@@ -71,7 +76,7 @@ export default function contentSecurityPolicyHeaders() {
           for (const hash of page) hashes.add(hash);
         }
         if (!hashes.size) throw new Error('No marketing page scripts found for CSP');
-        const policy = contentSecurityPolicy(hashes, analyticsHost);
+        const policy = contentSecurityPolicy(hashes, analyticsHost, partnerClicks);
         const header = `  Content-Security-Policy: ${policy}`;
         // Pages rejects header lines longer than 2,000 characters.
         if (header.length > 2000) throw new Error(`Marketing CSP exceeds the Pages header limit (${header.length})`);

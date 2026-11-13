@@ -1143,6 +1143,7 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"organization_partner_referrals":   "The partner-program click and the Dub customer it became belong to this instance's Dub workspace, and commissions keep following the Stripe customer here. The destination has no partner program for it.",
 	"mailbox_connect_links":            "Single-use sign-in links whose URL points at the source instance and whose secret only the recipient holds. The mailboxes they connected travel; open links do not, so new ones are created on the destination.",
 	"agency_clients":                   "The link to an agency, its billing and its shared send pool belongs to the source instance. An imported workspace starts outside any agency; the agency attaches it again on the destination.",
 	"agency_vendor_connections":        "Inbox vendor accounts an agency holds for its clients, kept against the agency and sealed with the instance key. A client workspace's own connection to one travels without the agency's key.",

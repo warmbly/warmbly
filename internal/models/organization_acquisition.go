@@ -26,12 +26,26 @@ type OrgAcquisition struct {
 	UTMCampaign    string    `json:"utm_campaign,omitempty"`
 	UTMTerm        string    `json:"utm_term,omitempty"`
 	UTMContent     string    `json:"utm_content,omitempty"`
+	// PartnerClickID is the partner-program click the signup carried. It rides
+	// the signup to the new workspace and is stored apart from the channel
+	// (organization_partner_referrals), never in organization_acquisition.
+	PartnerClickID string `json:"partner_click_id,omitempty"`
 }
 
 // Empty reports whether the signup carried no attribution at all, which is the
 // normal case for someone who typed the dashboard's address. Nothing is stored
 // for an empty record.
 func (a OrgAcquisition) Empty() bool {
+	return a.channelEmpty() && a.PartnerClickID == ""
+}
+
+// Channel is the record without the partner click: what organization_acquisition holds.
+func (a OrgAcquisition) Channel() OrgAcquisition {
+	a.PartnerClickID = ""
+	return a
+}
+
+func (a OrgAcquisition) channelEmpty() bool {
 	return a.LandingPath == "" && a.ReferrerHost == "" &&
 		a.UTMSource == "" && a.UTMMedium == "" && a.UTMCampaign == "" &&
 		a.UTMTerm == "" && a.UTMContent == ""
@@ -51,6 +65,7 @@ func (a OrgAcquisition) Normalize() OrgAcquisition {
 		UTMCampaign:    clampField(a.UTMCampaign),
 		UTMTerm:        clampField(a.UTMTerm),
 		UTMContent:     clampField(a.UTMContent),
+		PartnerClickID: NormalizeDubClickID(a.PartnerClickID),
 	}
 }
 

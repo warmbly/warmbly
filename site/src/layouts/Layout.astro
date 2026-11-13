@@ -45,6 +45,11 @@ const posthogHost = import.meta.env.PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog
 // SDK builds toolbar links against the proxy, which does not serve the app.
 const posthogUiHost = import.meta.env.PUBLIC_POSTHOG_UI_HOST ?? 'https://us.posthog.com';
 
+// The partner program's link domain (a Dub domain such as go.warmbly.com).
+// Set, ?via=<partner> on any page records the click; unset, the build has no
+// partner-click code and its CSP allows no partner-program host.
+const partnerLinkDomain = (import.meta.env.PUBLIC_PARTNER_LINK_DOMAIN ?? '').trim();
+
 const siteOrigin = (Astro.site ?? new URL('https://warmbly.com')).toString().replace(/\/$/, '');
 const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://warmbly.com').toString();
 const ogImageAbsolute = new URL(ogImage, Astro.site ?? 'https://warmbly.com').toString();
@@ -292,11 +297,24 @@ const websiteJsonLd = {
 
       Done here rather than in each CTA because there are dozens of these
       links across the site and a new one should not have to remember.
+
+      A partner referral travels the same way. A partner link is ?via=<partner>
+      (or the link service's own dub_id after a short link); once the partner
+      script below has recorded the click, its id replaces both in the address
+      bar as wb_click and is carried in links like the parameters above. Until
+      then via itself is carried, so the next page records it. No cookie: a
+      signup on a later, unlinked visit is not credited.
     -->
     <script is:inline>
       (function () {
         var DASHBOARD_HOST = 'app.warmbly.com';
         var UTM = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
+        // A partner click id is a short nanoid; anything else was not issued for a click.
+        var PARTNER_CLICK = /^[A-Za-z0-9_-]{1,64}$/;
+        // A partner's link key (the via value), e.g. john or acme-agency.
+        var PARTNER_KEY = /^[A-Za-z0-9._-]{1,100}$/;
+
+        renamePartnerParam();
 
         // This script sits in <head>, so the anchors it rewrites do not exist
         // yet. Wait for the parsed document before touching any of them.
@@ -337,7 +355,35 @@ const websiteJsonLd = {
           ref = externalHost(ref);
           if (!ref && document.referrer) ref = externalHost(document.referrer);
           if (ref) carried.set('wb_ref', ref.slice(0, 255));
+
+          var click = partnerClick();
+          if (click) carried.set('wb_click', click);
+          else if (partnerKey()) carried.set('via', partnerKey());
           return carried;
+        }
+
+        function partnerKey() {
+          var key = (new URLSearchParams(location.search).get('via') || '').trim();
+          return PARTNER_KEY.test(key) ? key : '';
+        }
+
+        function partnerClick() {
+          var params = new URLSearchParams(location.search);
+          var click = (params.get('wb_click') || params.get('dub_id') || '').trim();
+          return PARTNER_CLICK.test(click) ? click : '';
+        }
+
+        // The link service names its parameter after itself; show ours instead.
+        function renamePartnerParam() {
+          var params = new URLSearchParams(location.search);
+          if (!params.has('dub_id')) return;
+          var click = partnerClick();
+          params.delete('dub_id');
+          if (click) params.set('wb_click', click);
+          var search = params.toString();
+          try {
+            history.replaceState(history.state, '', location.pathname + (search ? '?' + search : '') + location.hash);
+          } catch (e) { /* The click still travels in the links. */ }
         }
 
         function externalHost(value) {
@@ -360,9 +406,12 @@ const websiteJsonLd = {
           var toPage = url.origin === location.origin && !/\.[a-z0-9]+$/i.test(url.pathname) &&
             (url.pathname !== location.pathname || url.search !== location.search);
           if (!toDashboard && !toPage) return;
-          acquisition().forEach(function (value, name) {
+          var carried = acquisition();
+          carried.forEach(function (value, name) {
             url.searchParams.set(name, value);
           });
+          // A link decorated before the click was recorded keeps no stale via.
+          if (carried.has('wb_click')) url.searchParams.delete('via');
           link.href = url.toString();
         }
 
@@ -371,6 +420,34 @@ const websiteJsonLd = {
         }
       })();
     </script>
+    <!--
+      Partner click: ?via=<partner> asks the partner program to record the
+      click and swaps via for the click id (wb_click) in the address bar, so a
+      reload records nothing twice. One request, made by this browser so the
+      click carries its own location; no cookie, no third-party script. A
+      failed request leaves via in place for the next page to retry.
+    -->
+    {partnerLinkDomain && (
+      <script is:inline define:vars={{ partnerLinkDomain }}>
+        (function () {
+          var params = new URLSearchParams(location.search);
+          var key = (params.get('via') || '').trim();
+          if (!/^[A-Za-z0-9._-]{1,100}$/.test(key) || /^[A-Za-z0-9_-]{1,64}$/.test(params.get('wb_click') || '')) return;
+          fetch('https://api.dub.co/track/click', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: partnerLinkDomain, key: key, url: location.href, referrer: document.referrer }),
+          }).then(function (res) { return res.ok ? res.json() : null; }).then(function (data) {
+            var click = data && data.clickId;
+            if (typeof click !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(click)) return;
+            var now = new URLSearchParams(location.search);
+            now.delete('via');
+            now.set('wb_click', click);
+            history.replaceState(history.state, '', location.pathname + '?' + now.toString() + location.hash);
+          }).catch(function () { /* Blocked or offline: via stays for the next page. */ });
+        })();
+      </script>
+    )}
     <!-- Phone diagnostics: ?noshell / ?noanim switch heavy subsystems off (global.css). -->
     <script is:inline>
       var diagParams = new URLSearchParams(location.search);

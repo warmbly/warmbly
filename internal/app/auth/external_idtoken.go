@@ -74,7 +74,7 @@ func (s *authService) externalIDTokenAuth(ctx context.Context, verifier IDTokenV
 	// it, because the unique index is on the raw column.
 	email.Address = normalizeEmail(email.Address)
 
-	res, rerr := s.resolveFederatedUser(ctx, provider, claims.Issuer, claims.Subject, email, firstName, lastName)
+	res, rerr := s.resolveFederatedUser(ctx, provider, claims.Issuer, claims.Subject, email, firstName, lastName, models.OrgAcquisition{})
 	if rerr != nil {
 		return nil, rerr
 	}
@@ -110,12 +110,12 @@ func (s *authService) finishFederatedLogin(ctx context.Context, res federatedRes
 // issuer already: a second subject claiming an address that is already
 // federated is an impersonation attempt, not a re-login. A password account
 // is not linked on the address alone: the link waits for its password.
-func (s *authService) resolveFederatedUser(ctx context.Context, provider, issuer, subject string, email *mail.Address, firstName, lastName string) (federatedResolution, *errx.Error) {
-	return s.resolveFederated(ctx, provider, issuer, subject, email, firstName, lastName, true)
+func (s *authService) resolveFederatedUser(ctx context.Context, provider, issuer, subject string, email *mail.Address, firstName, lastName string, acq models.OrgAcquisition) (federatedResolution, *errx.Error) {
+	return s.resolveFederated(ctx, provider, issuer, subject, email, firstName, lastName, acq, true)
 }
 
 // resolveFederated is resolveFederatedUser; retry allows one re-resolution after losing a provisioning race.
-func (s *authService) resolveFederated(ctx context.Context, provider, issuer, subject string, email *mail.Address, firstName, lastName string, retry bool) (federatedResolution, *errx.Error) {
+func (s *authService) resolveFederated(ctx context.Context, provider, issuer, subject string, email *mail.Address, firstName, lastName string, acq models.OrgAcquisition, retry bool) (federatedResolution, *errx.Error) {
 	identity := models.UserIdentity{
 		Provider: provider,
 		Issuer:   issuer,
@@ -149,11 +149,11 @@ func (s *authService) resolveFederated(ctx context.Context, provider, issuer, su
 			return federatedResolution{}, xerr
 		}
 		var cerr error
-		u, cerr = s.createExternalUser(ctx, email, firstName, lastName)
+		u, cerr = s.createExternalUser(ctx, email, firstName, lastName, acq)
 		if errors.Is(cerr, repository.ErrUserEmailTaken) {
 			// A concurrent sign-in created the account first; resolve against it like any existing one.
 			if retry {
-				return s.resolveFederated(ctx, provider, issuer, subject, email, firstName, lastName, false)
+				return s.resolveFederated(ctx, provider, issuer, subject, email, firstName, lastName, acq, false)
 			}
 			return federatedResolution{}, errx.ErrAccountExists
 		}
@@ -240,7 +240,7 @@ func (s *authService) linkIdentity(ctx context.Context, userID uuid.UUID, identi
 // user row (they can set a password later via reset), the provider-asserted
 // name when available, and the same invitation, org and trial bootstrap as
 // RegistrationConfirm.
-func (s *authService) createExternalUser(ctx context.Context, email *mail.Address, firstName, lastName string) (*models.User, error) {
+func (s *authService) createExternalUser(ctx context.Context, email *mail.Address, firstName, lastName string, acq models.OrgAcquisition) (*models.User, error) {
 	u, err := s.userRepository.CreateUser(ctx, email, "")
 	if err != nil {
 		return nil, err
@@ -277,6 +277,7 @@ func (s *authService) createExternalUser(ctx context.Context, email *mail.Addres
 			// Don't fail the sign-in if org creation fails.
 		}
 	}
+	s.attributeWorkspace(ctx, u, org, acq)
 
 	if s.trialService != nil && org != nil {
 		if terr := s.trialService.StartFreeTrialWithOrg(ctx, u.ID, org.ID); terr != nil {

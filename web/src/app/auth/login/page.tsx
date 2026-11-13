@@ -581,14 +581,14 @@ export default function LoginPage() {
        opening a popup, and the provider returns to /auth/sso. */
     const handleProvider = useCallback(async (provider: string) => {
         try {
-            const { url } = await beginSSO(provider);
+            const { url } = await beginSSO(provider, acquisition);
             rememberSSONext(new URLSearchParams(window.location.search).get("next"));
             rememberPortalHandoff(handoffHost);
             window.location.href = url;
         } catch (e) {
             toast.error(buildError(e as AppError));
         }
-    }, [handoffHost]);
+    }, [handoffHost, acquisition]);
     const handleSSO = useCallback(() => handleProvider("oidc"), [handleProvider]);
 
     /* ── Step 1: Email ─────────────────────── */

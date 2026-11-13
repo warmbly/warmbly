@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/app/orgrisk"
+	"github.com/warmbly/warmbly/internal/app/partners"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -112,16 +113,7 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 		}
 	}
 
-	// Where the workspace came from, written once and never updated.
-	// Best-effort: attribution is a reporting nicety and must never be the
-	// reason a signup fails.
-	if s.acquisition != nil && org != nil && !attr.Acquisition.Empty() {
-		acq := attr.Acquisition
-		acq.OrganizationID = org.ID
-		if err := s.acquisition.RecordOrganizationAcquisition(ctx, &acq); err != nil {
-			errs.CaptureException(err)
-		}
-	}
+	s.attributeWorkspace(ctx, u, org, attr.Acquisition)
 
 	// Fold the signup's own risk into the new workspace's posture. A signup
 	// signal alone can only ever reach `watch`, which by definition changes
@@ -152,6 +144,28 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 	s.countSignup(u, org, attr, origin)
 
 	return u, nil
+}
+
+// attributeWorkspace records where a new workspace came from, once, and tells
+// the partner program about a signup that came through a partner's link.
+// Best-effort: attribution must never be the reason a signup fails.
+func (s *authService) attributeWorkspace(ctx context.Context, u *models.User, org *models.Organization, acq models.OrgAcquisition) {
+	if org == nil {
+		return
+	}
+	acq = acq.Normalize()
+	acq.OrganizationID = org.ID
+	if channel := acq.Channel(); s.acquisition != nil && !channel.Empty() {
+		if err := s.acquisition.RecordOrganizationAcquisition(ctx, &channel); err != nil {
+			errs.CaptureException(err)
+		}
+	}
+	if s.partners != nil && acq.PartnerClickID != "" && u != nil {
+		s.partners.RecordSignup(ctx, org.ID, acq.PartnerClickID, partners.Customer{
+			Email: u.Email,
+			Name:  displayname.FullName(u.FirstName, u.LastName),
+		})
+	}
 }
 
 // analyticsRequest names the new account and workspace on a server-side
