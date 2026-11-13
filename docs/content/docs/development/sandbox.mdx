@@ -121,6 +121,10 @@ The mock keeps its state in memory, so a restart puts every domain back the way 
 
 The first InboxKit mailbox on each domain is listed as its admin, and the mock answers InboxKit's trusted-app and mailbox sign-in requests: a trusted-app request completes after about 5 seconds, and a sign-in request fails after about 20, because nothing in the sandbox can sign in to Google. The `.test` domains are not hosted by Google, so an import never takes that path on its own; it is there for exercising the vendor client against the mock.
 
+### Smartlead for tool migrations
+
+The same mock also plays Smartlead's API at `/smartlead`, so [Migrate from another tool](/guides/migrate-from-another-tool/) runs end to end with no Smartlead account. With `MAILVENDOR_SANDBOX_URL` set, the backend reads Smartlead from the mock, and any API key works. The account is an agency with two clients, "Northwind Studio" (two campaigns, 28 leads, three mailboxes) and "Brightline Legal" (one campaign, 18 leads, two mailboxes), plus one campaign of 12 leads and one mailbox assigned to no client. The campaigns carry A/B variants, merge tokens with fallbacks, spintax, a condition and sender placeholders; the leads span every status the import maps; and the block list has two entries that apply to every client and two of each client's own. The mailboxes are Google and Microsoft, so they come over as mailboxes to sign in again.
+
 ## Demo script
 
 A tour that shows the platform working end to end:

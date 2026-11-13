@@ -1,0 +1,7 @@
+{"data": {"workspace": {"leads": {
+  "nodes": [
+    {"id": "lead_9", "email": "loose@example.com", "firstName": "Lou", "lastName": null, "doNotContact": false,
+     "tags": {"nodes": []}, "customProperties": {"nodes": []}}
+  ],
+  "pageInfo": {"hasNextPage": false, "endCursor": null}
+}}}}

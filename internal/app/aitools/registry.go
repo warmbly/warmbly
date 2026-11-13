@@ -33,6 +33,12 @@ type Invocation struct {
 	ActsForMember bool
 	// FreshAuthed marks a member session that confirmed the account holder within the reauth window.
 	FreshAuthed bool
+	// ViaDashboardSession marks a person signed in to the dashboard, set only by that path; the
+	// Slack agent and autopilot act as a member without being one.
+	ViaDashboardSession bool
+	// AgencyKeyID / AgencyKeyName name an agency API key acting in a client workspace, recorded on its audit entries.
+	AgencyKeyID   uuid.UUID
+	AgencyKeyName string
 	// IP / UserAgent flow into the audit trail for write-class tools.
 	IP        string
 	UserAgent string
@@ -67,6 +73,9 @@ type Tool struct {
 	JWTOnly bool
 	// AlwaysAsk keeps the tool out of workspace "always allow" policies: it starts sending, or changes who has access.
 	AlwaysAsk bool
+	// KeyOnly offers the tool to API-key and OAuth callers only: its arguments carry a secret,
+	// and the dashboard and Slack agents keep and show the arguments of every call.
+	KeyOnly bool
 	// FreshAuth holds a member to the same recent confirmation the tool's REST route requires.
 	FreshAuth bool
 	// NeedsAPI marks a tool that calls the public API through Invocation.API.
@@ -90,6 +99,9 @@ func (t Tool) run(ctx context.Context, inv Invocation, args json.RawMessage) (st
 // required-permission means "no extra gate" (still runs as the user).
 func (t Tool) allowed(inv Invocation) bool {
 	if t.NeedsAPI && inv.API == nil {
+		return false
+	}
+	if t.KeyOnly && !inv.IsAPIKey {
 		return false
 	}
 	if inv.IsAPIKey {

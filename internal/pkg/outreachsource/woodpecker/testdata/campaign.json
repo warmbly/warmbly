@@ -1,0 +1,65 @@
+{
+  "id": 12345679,
+  "name": "Four step campaign",
+  "status": "PAUSED",
+  "bounce_shield_autopaused_at": "2025-02-10T14:14:57+01:00",
+  "email_account_ids": [987654, 123456],
+  "settings": {
+    "timezone": "Europe/Warsaw",
+    "prospect_timezone": true,
+    "daily_enroll": 10,
+    "gdpr_unsubscribe": true,
+    "list_unsubscribe": true,
+    "open_disabled_list": ["google.com", "OTHER_PROVIDER"],
+    "auto_pause_prospect_from_domain": true,
+    "auto_pause_prospect_from_domain_statuses": ["REPLIED", "BOUNCED"],
+    "catch_all_verification_mode": "MAXIMUM",
+    "count_followup_delay_in_working_days": false
+  },
+  "steps": {
+    "id": "e688d52a-b867-4690-acf2-3809286915b1",
+    "type": "START",
+    "followup": {
+      "id": "169486a5-e375-48cd-81a1-01a7f2a1895f",
+      "type": "LINKEDIN",
+      "body": {"action_type": "VISIT_PROFILE", "linkedin_account_id": 200002, "versions": [{"id": "2af5", "version": "A", "message": ""}]},
+      "followup_after": {"range": "HOUR", "value": 2},
+      "followup": {
+        "id": "36c4fb2c-6f4f-45bf-aeae-4903501193hd",
+        "type": "EMAIL",
+        "delivery_time": {
+          "MONDAY": [{"from": "09:00", "to": "18:00"}],
+          "TUESDAY": [{"from": "09:00", "to": "18:00"}],
+          "WEDNESDAY": [{"from": "09:00", "to": "18:00"}],
+          "THURSDAY": [{"from": "09:00", "to": "18:00"}]
+        },
+        "body": {
+          "versions": [
+            {"id": "2af5c021", "version": "A", "subject": "Quick idea for {{COMPANY}}", "message": "<div>Hi {{FIRST_NAME | \"there\"}},</div><div>See <a href=\"{{CLICK=https://woodpecker.co}}\">this</a> about {{SNIPPET_3}}.</div><div><a href=\"{{UNSUBSCRIBE}}\">unsubscribe</a></div>", "signature": "SENDER", "track_opens": true},
+            {"id": "c61b5583", "version": "B", "subject": "Example subject line - version B", "message": "<div>{{SPINTAX | \"Hi\" | \"Hello\" | \"Good morning\"}} {{FIRST_NAME}},</div><div>Yet another example.</div>", "signature": "SENDER", "track_opens": false}
+          ]
+        },
+        "followup_after": {"range": "DAY", "value": 4},
+        "followup": {
+          "id": "78e2a01a-ebac-1962-ac17-589a862ce3c4",
+          "type": "LINKEDIN",
+          "body": {"action_type": "CONNECTION_REQUEST", "linkedin_account_id": 200002, "versions": [{"id": "e76d", "version": "A", "message": ""}]},
+          "followup_after": {"range": "DAY", "value": 1},
+          "followup": {
+            "id": "a99e297f-8423-4600-8c24-5bc21b936302",
+            "type": "EMAIL",
+            "delivery_time": {"THURSDAY": [{"from": "06:00", "to": "08:00"}, {"from": "13:00", "to": "15:00"}]},
+            "body": {
+              "versions": [
+                {"id": "06cb0a70", "version": "A", "subject": null, "message": "<div>Following up, version A</div>", "signature": "SENDER", "track_opens": false},
+                {"id": "4d7d78ee", "version": "B", "subject": null, "message": "<div>Following up, version B</div>", "signature": "NO_SIGNATURE", "track_opens": false}
+              ]
+            },
+            "followup_after": {"range": "DAY", "value": 3},
+            "followup": null
+          }
+        }
+      }
+    }
+  }
+}

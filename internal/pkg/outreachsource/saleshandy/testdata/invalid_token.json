@@ -1,0 +1,1 @@
+{"error": true, "type": "auth", "code": 1001, "message": "Invalid access token", "payload": null}

@@ -1,0 +1,5 @@
+{"hasMore":false,"items":[
+  {"connectionStatus":"connected","dailyLimit":40,"email":"Sales@Acme.io","emailAccountType":"gmail","id":1,"isDefault":true,"ownerUserId":42,"senderName":"Jane Doe","tags":["Primary"]},
+  {"connectionStatus":"connected","dailyLimit":30,"email":"outreach@acme.io","emailAccountType":"custom","id":2,"isDefault":false,"ownerUserId":42,"senderName":"Jane D","tags":[]},
+  {"connectionStatus":"disconnected","dailyLimit":20,"email":"ops@acme.io","emailAccountType":"exchange","id":3,"isDefault":false,"ownerUserId":43,"senderName":"Ops","tags":[]}
+]}

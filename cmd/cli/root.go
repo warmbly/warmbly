@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/warmbly/warmbly/internal/cli/config"
 )
 
 // Command groups, so `warmbly --help` reads as a product rather than an
@@ -50,6 +52,7 @@ the scopes you approved, on the hosted service or on your own instance.`,
 	p.BoolVar(&f.AssumeYes, "yes", false, "Answer every prompt with yes, including sends")
 	p.BoolVar(&f.NoColor, "no-color", false, "Never colourise output")
 	p.BoolVar(&f.Debug, "debug", false, "Print each request to stderr")
+	p.StringVar(&f.Organization, "organization", "", "Client workspace an agency key acts in (default: $"+config.OrganizationEnv+")")
 
 	cmd.PersistentPreRun = func(*cobra.Command, []string) {
 		if f.NoColor {

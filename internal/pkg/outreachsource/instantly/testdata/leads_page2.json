@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "01a1d05e-ffec-71bd-932c-000000000003",
+      "timestamp_created": "2025-08-25T10:00:00.000Z",
+      "campaign": "01956fbd-0eb1-72db-a565-82977a586084",
+      "status": -1,
+      "email": "cy@umbrella.com",
+      "first_name": "Cy",
+      "email_reply_count": 0,
+      "company_domain": "umbrella.com",
+      "lt_interest_status": null,
+      "timestamp_last_contact": "2025-08-27T10:00:00.000Z"
+    }
+  ],
+  "next_starting_after": "01a1d05e-ffec-71bd-932c-000000000003"
+}

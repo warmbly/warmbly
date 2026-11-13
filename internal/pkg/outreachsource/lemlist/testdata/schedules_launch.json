@@ -1,0 +1,4 @@
+[
+  {"_id":"skd_main","name":"Default schedule","secondsToWait":1200,"timezone":"Europe/Paris","start":"09:00","end":"18:00","weekdays":[1,2,3,4,5],"teamId":"tea_b4rMsi2trBhahaha","createdBy":"usr_z7biYanHn06hmOlXs","createdAt":"2025-02-06T15:35:52.079Z"},
+  {"_id":"skd_alt","name":"Weekend","secondsToWait":600,"timezone":"Europe/London","start":"10:00","end":"12:00","weekdays":[6,7],"teamId":"tea_b4rMsi2trBhahaha","createdBy":"usr_z7biYanHn06hmOlXs","createdAt":"2025-02-06T15:35:52.079Z"}
+]

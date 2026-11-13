@@ -1,0 +1,7 @@
+[
+  {"id": 1, "name": "Interested", "sentiment_type": "positive", "created_at": "2024-01-15T10:30:00.000Z"},
+  {"id": 2, "name": "Not Interested", "sentiment_type": "negative", "created_at": "2024-01-15T10:30:00.000Z"},
+  {"id": 3, "name": "Meeting Booked", "sentiment_type": "positive", "created_at": "2024-01-15T10:30:00.000Z"},
+  {"id": 4, "name": "Out Of Office", "sentiment_type": null, "created_at": "2024-01-15T10:30:00.000Z"},
+  {"id": 789, "name": "Follow Up Later", "sentiment_type": null, "created_at": "2025-11-20T14:22:00.000Z"}
+]

@@ -1,0 +1,4 @@
+[
+  {"id": 12345679, "name": "Four step campaign", "status": "PAUSED", "created": "2025-02-10T13:14:57+0100", "from_name": "Erlich Bachman", "from_names": ["Erlich Bachman", "Jared Dunn"], "gdpr_unsubscribe": true, "folder_name": "SaaS in America", "folder_id": 987, "from_email": "erlich@usebachmanity.com", "from_emails": ["erlich@usebachmanity.com", "jared.dunn@piedpiper.com"], "per_day": 10, "bcc": "", "cc": "", "error": ""},
+  {"id": 1235678, "name": "Conditional campaign", "status": "RUNNING", "created": "2025-02-03T16:10:11+0100", "from_name": "Erlich Bachman", "from_names": ["Erlich Bachman"], "gdpr_unsubscribe": false, "folder_name": "", "folder_id": 0, "from_email": "erlich@usebachmanity.com", "from_emails": [], "per_day": 35, "bcc": "", "cc": "", "error": ""}
+]

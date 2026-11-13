@@ -89,6 +89,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/team"
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/toolmigrate"
 	"github.com/warmbly/warmbly/internal/app/trial"
 	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/app/tz"
@@ -296,6 +297,10 @@ type Handler struct {
 	// AITools is the shared tool registry the dashboard agent and MCP server
 	// run on. Handlers bound to the invoking user's permissions.
 	AITools *aitools.Registry
+	// AgencyTools are the agency-wide tools an agency API key sees on the MCP server. Nil-safe.
+	AgencyTools *aitools.AgencyRegistry
+	// ToolMigrations brings data over from other outreach tools. Nil-safe.
+	ToolMigrations toolmigrate.API
 
 	// AIAgentService orchestrates the dashboard agent (sessions, SSE runs,
 	// approvals, per-iteration credits). Nil when no LLM provider is configured.

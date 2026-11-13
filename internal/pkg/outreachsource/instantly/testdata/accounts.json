@@ -1,0 +1,59 @@
+{
+  "items": [
+    {
+      "email": "Jane@acme.io",
+      "timestamp_created": "2025-03-01T09:00:00.000Z",
+      "timestamp_updated": "2025-03-01T09:00:00.000Z",
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "warmup": {"limit": 40},
+      "daily_limit": 50,
+      "tracking_domain_name": null,
+      "status": 1,
+      "organization": "01a1d05a-877c-70a5-842d-eb707afa9498",
+      "warmup_status": 1,
+      "provider_code": 2,
+      "setup_pending": false,
+      "is_managed_account": false,
+      "sending_gap": 10,
+      "signature": "<p>Jane Doe, Acme</p>",
+      "reply_to": null,
+      "tags": [{"id": "01a1d05e-fd53-7bf0-9fab-b39007e5eeee", "label": "Primary"}]
+    },
+    {
+      "email": "sam@acme-mail.com",
+      "timestamp_created": "2025-03-02T09:00:00.000Z",
+      "timestamp_updated": "2025-03-02T09:00:00.000Z",
+      "first_name": "Sam",
+      "last_name": null,
+      "warmup": {"limit": 20},
+      "daily_limit": 30,
+      "status": 1,
+      "organization": "01a1d05a-877c-70a5-842d-eb707afa9498",
+      "warmup_status": 0,
+      "provider_code": 1,
+      "setup_pending": false,
+      "is_managed_account": false,
+      "sending_gap": 10,
+      "signature": null,
+      "reply_to": "replies@acme.io",
+      "tags": null
+    },
+    {
+      "email": "lee@acme.onmicrosoft.com",
+      "timestamp_created": "2025-03-03T09:00:00.000Z",
+      "timestamp_updated": "2025-03-03T09:00:00.000Z",
+      "first_name": "Lee",
+      "last_name": "Park",
+      "warmup": {"limit": 20},
+      "daily_limit": null,
+      "status": 2,
+      "organization": "01a1d05a-877c-70a5-842d-eb707afa9498",
+      "provider_code": 3,
+      "setup_pending": false,
+      "is_managed_account": false,
+      "sending_gap": 10
+    }
+  ],
+  "next_starting_after": "2025-03-03T09:00:00.000Z&lee@acme.onmicrosoft.com"
+}

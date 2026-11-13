@@ -1,0 +1,4 @@
+[
+  {"id": 237945, "campaign": "New Campaign", "list_id": 8512947, "status": "Paused", "created_at": 1639469976, "updated_at": 1639470026, "started_at": 1639470021, "hash": "e272be8f9a6894f5b5894fe2ef77095e"},
+  {"id": 237956, "campaign": "Old campaign", "list_id": 7654321, "status": "Draft", "created_at": 1638808262, "updated_at": 1638808262, "started_at": null, "hash": "f97fce248b77e9a1ae770b21c7bd783d"}
+]

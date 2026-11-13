@@ -1,0 +1,10 @@
+{"campaignId":"cam_launch","timezone":"Europe/Paris","senderStrategy":"random",
+ "general":{"labels":[],"sequenceId":"seq_main","sequenceSharing":false,"unsubscribeMode":"contact","addUnsubscribeLink":true,"unsubscribeLinkText":"Unsubscribe"},
+ "senders":{"espMatching":false,"espRouting":null},
+ "automation":{"autoReview":false,"autoReviewConditions":["unverified"]},
+ "tracking":{"trackOpens":true,"trackClicks":false,"trackReplies":true},
+ "onReplied":{"createNewTask":false,"campaignProgress":"stop","propagateProgressToCompany":false,"disableOutOfOffice":false},
+ "onLinkClicked":{"createNewTask":false,"campaignProgress":"continue","propagateProgressToCompany":false,"specificLinks":[]},
+ "onMeetingBooked":{"campaignProgress":"stop","propagateProgressToCompany":true},
+ "aiFeatures":{"scoreReplies":false,"onInterestedReply":{"enabled":false,"pauseAllCampaignsForLead":false,"pauseCampaignForCompany":false,"pauseAllCampaignsForCompany":false},"onNotInterestedReply":{"enabled":false,"pauseAllCampaignsForLead":false,"pauseCampaignForCompany":false,"pauseAllCampaignsForCompany":false}},
+ "schedule":{"isTimezoneBasedSchedule":false,"timezoneBasedScheduleId":null,"scheduleIds":["skd_main"],"holidayCountries":[],"sendingPattern":{"newLeadsPriorityRatio":0.5}}}

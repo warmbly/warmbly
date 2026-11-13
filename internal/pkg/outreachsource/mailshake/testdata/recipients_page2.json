@@ -1,0 +1,6 @@
+{"nextToken": null, "results": [
+  {"object": "recipient", "id": 5, "emailAddress": "eve@doe.com", "fullName": "Eve Doe", "first": "Eve", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "isPaused": false, "contactID": 5, "fields": {}},
+  {"object": "recipient", "id": 6, "emailAddress": "max@doe.com", "fullName": "", "first": "", "last": "", "created": "2017-04-06T17:45:07.188Z", "isPaused": false, "contactID": 6, "fields": {}},
+  {"object": "recipient", "id": 7, "emailAddress": "ann@doe.com", "fullName": "Ann Doe", "first": "Ann", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "isPaused": false, "contactID": 7, "fields": {}},
+  {"object": "recipient", "id": 8, "emailAddress": "kim@doe.com", "fullName": "Kim Doe", "first": "Kim", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "isPaused": false, "contactID": 8, "fields": {}}
+]}

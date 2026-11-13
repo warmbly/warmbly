@@ -1,0 +1,8 @@
+{
+  "message": "The maximum number of api calls allowed for api/v1/emailer_campaigns/search is 50 times per minute.",
+  "error_details": {
+    "code": "RATE_LIMIT.QUOTA.EXCEEDED",
+    "message": "Rate limit exceeded",
+    "suggestions": [{"label": "Wait and retry", "retry_after_seconds": 3}]
+  }
+}

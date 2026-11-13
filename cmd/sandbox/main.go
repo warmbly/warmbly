@@ -86,7 +86,7 @@ func serveVendors(ctx context.Context, cfg sandbox.Config) {
 		<-ctx.Done()
 		_ = srv.Close()
 	}()
-	log.Printf("mock inbox vendors on http://%s (inboxkit, mailforge); set MAILVENDOR_SANDBOX_URL on the backend", cfg.VendorAddr)
+	log.Printf("mock inbox vendors on http://%s (inboxkit, mailforge, smartlead); set MAILVENDOR_SANDBOX_URL on the backend", cfg.VendorAddr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("mock inbox vendors: %v", err)
 	}

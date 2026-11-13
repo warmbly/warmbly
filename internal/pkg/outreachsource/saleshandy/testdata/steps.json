@@ -1,0 +1,47 @@
+{
+  "message": "Successfully fetched all sequences and their associated steps",
+  "payload": [
+    {
+      "id": "bwOLEx4l8G",
+      "name": "Step 1",
+      "number": 1,
+      "type": 1,
+      "absoluteDays": 1,
+      "variants": [
+        {
+          "id": "MAwgmlAKaN",
+          "payload": {
+            "subject": "{spin}Quick question|Idea{endspin} for {{Company}}",
+            "content": "<p>Hi {{First Name|'there'}},</p><p>Saw {{Company Domain}}.</p><p>{{SenderFirstName}}</p>{{SenderSignature}}",
+            "preheader": "Short note"
+          },
+          "taskNote": null,
+          "status": 1,
+          "type": 1
+        },
+        {
+          "id": "NBxhnmBLbO",
+          "payload": {"subject": "Hello {{firstName}}", "content": "<p>Variant B</p>"},
+          "status": 0,
+          "type": 1
+        }
+      ]
+    },
+    {
+      "id": "k9LmP2qRsT",
+      "name": "Step 2",
+      "number": 2,
+      "type": 2,
+      "absoluteDays": 2,
+      "variants": [{"id": "c1", "payload": {"connectionNote": "Hi"}, "status": 1, "type": 2}]
+    },
+    {
+      "id": "Zx8Wv7Ut6S",
+      "name": "Step 3",
+      "number": 3,
+      "type": 1,
+      "absoluteDays": 4,
+      "waitN": 30
+    }
+  ]
+}

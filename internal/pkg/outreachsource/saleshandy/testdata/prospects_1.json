@@ -1,0 +1,30 @@
+{
+  "payload": [
+    {
+      "id": "jzRkmgMdwA",
+      "createdAt": "2022-01-13T09:48:35.824Z",
+      "email": "ada@lovelace.example",
+      "verificationStatus": "valid",
+      "attributes": [
+        {"id": "lPYGOLkyzV", "key": "First Name", "value": "Ada"},
+        {"id": "lPYGOLkyzW", "key": "Last Name", "value": "Lovelace"},
+        {"id": "lPYGOLkyzX", "key": "Email", "value": "ada@lovelace.example"},
+        {"id": "lPYGOLkyzY", "key": "Company", "value": "Analytical"},
+        {"id": "lPYGOLkyzZ", "key": "Phone Number", "value": "+44 20 7946 0000"},
+        {"id": "lPYGOLkyza", "key": "City", "value": "London"},
+        {"id": "lPYGOLkyzb", "key": "Country", "value": "UK"},
+        {"id": "lPYGOLkyzc", "key": "LinkedIn", "value": "https://linkedin.com/in/ada"},
+        {"id": "lPYGOLkyzd", "key": "Job Title", "value": "Engineer"},
+        {"id": "lPYGOLkyze", "key": "Company Domain", "value": "analytical.example"},
+        {"id": "lPYGOLkyzf", "key": "Deal Stage", "value": "Warm"}
+      ],
+      "tags": []
+    },
+    {
+      "id": "kAsLnhNexB",
+      "email": "grace@hopper.example",
+      "attributes": [{"id": "x", "key": "First Name", "value": "Grace"}],
+      "tags": []
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "object": "campaign", "id": 2, "title": "Archived outreach", "created": "2017-09-01T10:00:00.000Z", "isArchived": true, "isPaused": false,
+  "messages": [
+    {"object": "message", "id": 10, "type": "initial", "subject": "Hello {{name}}", "replyToID": null, "isPaused": false},
+    {"object": "message", "id": 11, "type": "follow-up", "subject": null, "replyToID": 10, "isPaused": true}
+  ],
+  "sender": {"object": "sender", "id": "def", "emailAddress": "sally@gmail.com", "fromName": "Sally Doe", "created": "2017-08-19T02:31:22.218Z"},
+  "url": "https://mailshake.com/app/#/..."
+}

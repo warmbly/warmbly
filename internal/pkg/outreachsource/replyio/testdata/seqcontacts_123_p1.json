@@ -1,0 +1,4 @@
+{"hasMore":true,"items":[
+  {"addingDate":"2024-03-09T10:00:00+00:00","callStatus":"none","company":"Tech Solutions Inc","contactId":12345,"currentStep":{"stepId":1325,"displayName":"3"},"email":"john.doe@company.com","emailAccountId":1,"emailDisposition":{"isReplied":false,"isBounced":false},"firstName":"John","isOptedOut":false,"lastName":"Doe","meetingStatus":"none","sequenceId":123,"statusInSequence":"active","title":"Senior Product Manager"},
+  {"addingDate":"2024-03-09T10:00:00+00:00","callStatus":"none","company":"Beta","contactId":12346,"currentStep":{"stepId":null,"displayName":"Finished"},"email":"amy@beta.io","emailAccountId":1,"emailDisposition":{"isReplied":true,"isBounced":false},"firstName":"Amy","isOptedOut":false,"lastName":"Lee","meetingStatus":"none","sequenceId":123,"statusInSequence":"finished","title":"CTO"}
+]}

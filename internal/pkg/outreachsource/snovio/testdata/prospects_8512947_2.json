@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "list": {"name": "Campaign list", "contacts": 3, "emailsCount": []},
+  "prospects": [
+    {"id": "aa11", "name": "Rita Moss", "firstName": "Rita", "lastName": "Moss", "emails": [{"email": "rita@moss.example"}]},
+    {"id": "nomail", "name": "No Mail", "firstName": "No", "lastName": "Mail", "emails": []}
+  ]
+}

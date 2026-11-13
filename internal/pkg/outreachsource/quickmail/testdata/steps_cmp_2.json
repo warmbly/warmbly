@@ -1,0 +1,8 @@
+{"data": {"campaign": {"steps": {
+  "nodes": [
+    {"id": "stp_9", "position": 1, "variations": {"nodes": [
+      {"id": "var_9", "position": 1, "type": "email", "info": {"__typename": "EmailVariation", "subject": "Hello", "body": "{% if lead.tag.vip == true %}Hi VIP{% else %}Hi {{lead.first_name}}{% endif %}"}}
+    ], "pageInfo": {"hasNextPage": false, "endCursor": "MQ"}}}
+  ],
+  "pageInfo": {"hasNextPage": false, "endCursor": "MQ"}
+}}}}

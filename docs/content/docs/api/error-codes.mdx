@@ -1652,6 +1652,32 @@ The client's connect page shows these, each in its own words:
 
 A workspace at its mailbox allowance refuses the connect with the usual `mailbox_allowance_reached`, which the page words for the client.
 
+## Tool migration refusals
+
+The [migration](/guides/migrate-from-another-tool/) routes (`/migrations` and `/agency/:agencyId/migrations`) answer these. Problems inside a running migration are not HTTP errors: the migration or the source workspace carries them in `error`, and what did not carry over is listed in each target's `followup.notes`.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `tool_migration_provider_unknown` | 400 | `provider` is not one of the tools `GET /migrations/providers` lists |
+| `tool_migration_key_rejected` | 422 | The other tool refused a key, or the key lacks the access the migration needs. The `message` is the tool's reason, and names which key (`Key 2: ...`) when there are several. Nothing is stored |
+| `tool_migration_provider_unavailable` | 503 | The other tool did not answer in time or could not be read. Try again in a few minutes |
+| `tool_migration_limit` | 409 | 5 migrations are already scanning or running in this workspace or agency. Wait for one to finish, or cancel one |
+| `tool_migration_not_ready` | 409 | `POST /migrations/:id/start` on a migration whose scan has not finished, failed, or that already finished or was canceled. Wait for `ready`, or start a new migration |
+| `tool_migration_running` | 409 | `DELETE /migrations/:id` on a migration that is still scanning or running. Cancel it first |
+| `tool_migration_target_invalid` | 400 | A `targets` entry names a source workspace the scan did not find, names one twice, names one that could not be read, maps to a workspace that is not one of the agency's clients, or gives both or neither of `organization_id` and `create_name`. A workspace's own migration accepts only `skip` |
+| `tool_migration_in_flight_unsupported` | 400 | `in_flight` is `continue`, which is not available. Choose `skip` or `restart` |
+| `tool_migration_permission` | 403 | The caller lacks a permission the migration needs: `manage_contacts`, plus `manage_campaigns` for campaigns and `manage_emails` for mailboxes, in the workspace or in each client it writes to. Also answered to a member restricted to selected resources, to agency staff who are not the owner or an admin, and to staff without an accepted membership in a client |
+| `tool_migration_not_found` | 404 | No migration with that id in this workspace or agency |
+
+```json
+{
+  "error": "Unprocessable",
+  "message": "Key 2: the API key was not accepted.",
+  "code": "tool_migration_key_rejected",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
 ## Admin send hold errors
 
 [`POST /admin/sends/holds/:id/resolve`](/development/send-safety/#from-the-admin-panel) adds three codes:

@@ -136,6 +136,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/team"
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/toolmigrate"
 	"github.com/warmbly/warmbly/internal/app/trial"
 	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/app/tz"
@@ -220,6 +221,8 @@ func main() {
 	var emailService email.EmailService
 	var mailboxImportService *mailboximport.Service
 	var contactImportService *contactimport.Service
+	var toolMigrationService *toolmigrate.Service
+	var toolMigrations toolmigrate.API
 	var hubspotService *hubspot.Service
 	var pipedriveService *pipedrive.Service
 	var crmModes *crmmode.Registry
@@ -1765,6 +1768,26 @@ func main() {
 			aware.WireAttachments(attachmentRepoForHandler)
 		}
 
+		// Migrations from other outreach tools; the mailbox importer is wired once it exists.
+		toolMigrationDeps := toolmigrate.Deps{
+			Repo:       repository.NewToolMigrationRepository(primaryDB),
+			Registry:   toolmigrate.Registry(),
+			Sealer:     credEncrypter,
+			Contacts:   contactService,
+			Campaigns:  campaignService,
+			Steps:      sequenceService,
+			Outreach:   advancedService,
+			Categories: contactRepostory,
+			Members:    organizationService,
+			Auditor:    auditService,
+		}
+		if agencyService != nil {
+			toolMigrationDeps.Agencies = agencyService
+			toolMigrationDeps.AgencyClients = repository.NewAgencyHomeRepository(primaryDB.Pool)
+		}
+		toolMigrationService = toolmigrate.NewService(toolMigrationDeps)
+		toolMigrations = toolMigrationService
+
 		// Shared AI tool registry: every tool calls a service-layer function as
 		// the invoking user, so the dashboard agent (M3) and MCP server (M8) can
 		// never exceed the caller's permissions. Built once here with the same
@@ -1785,23 +1808,24 @@ func main() {
 				}
 				return leadFinderServiceForHandler.WorkspaceWebSearch(ctx, orgID)
 			},
-			Cache:        cache,
-			Emails:       emailService,
-			EmailSend:    emailSendService,
-			Compose:      composeService,
-			Warmup:       warmupService,
-			Sequences:    sequenceService,
-			Org:          organizationService,
-			APIKeys:      apiKeyService,
-			Webhooks:     webhookServiceForHandler,
-			Subscription: subscriptionService,
-			Segments:     segmentService,
-			Forms:        formService,
-			Advanced:     advancedService,
-			Suppressions: advancedService,
-			FeatureGate:  featureGateService,
-			Skills:       skillsService,
-			AppBaseURL:   cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
+			Cache:          cache,
+			Emails:         emailService,
+			EmailSend:      emailSendService,
+			Compose:        composeService,
+			Warmup:         warmupService,
+			Sequences:      sequenceService,
+			Org:            organizationService,
+			APIKeys:        apiKeyService,
+			Webhooks:       webhookServiceForHandler,
+			Subscription:   subscriptionService,
+			Segments:       segmentService,
+			Forms:          formService,
+			Advanced:       advancedService,
+			Suppressions:   advancedService,
+			FeatureGate:    featureGateService,
+			ToolMigrations: toolMigrations,
+			Skills:         skillsService,
+			AppBaseURL:     cfg.GetStringOptional(ctx, "APP_BASE_URL", "app_base_url", ""),
 			// tasksService is built later in boot, so it is read at call time.
 			WarmupScheduler: func(ctx context.Context, accountID uuid.UUID) error {
 				if tasksService == nil {
@@ -2191,6 +2215,7 @@ func main() {
 			go mailboxAvatars.Start(ctx)
 		}
 		vendorConnService.SetImporter(mailboxImportService)
+		toolMigrationService.WireMailboxes(mailboxImportService)
 		vendorConnService.WireSigninSwitch(auditService, func(ctx context.Context) bool {
 			return instanceSettings == nil || instanceSettings.AutoVendorReconnect(ctx)
 		})
@@ -2450,6 +2475,7 @@ func main() {
 			})
 			go contactImportService.Run(ctx)
 		}
+		go toolMigrationService.Run(ctx)
 		if contactService != nil {
 			// The lead finder's keyed providers read the workspace's own key first,
 			// then the operator's; OpenStreetMap needs none.
@@ -2722,6 +2748,7 @@ func main() {
 		EmailService:         emailService,
 		MailboxImportService: mailboxImportService,
 		ContactImportService: contactImportService,
+		ToolMigrations:       toolMigrations,
 		DelegationService:    delegationService,
 		VendorConnService:    vendorConnService,
 		SendingDomainService: sendingDomainService,
@@ -2908,6 +2935,12 @@ func main() {
 		// fallback (audit.NewNoOpService) remains for entrypoints without
 		// a database.
 		AuditService: auditService,
+	}
+	// Agency keys on the MCP server see the agency tools, migrations included.
+	if agencyService != nil {
+		h.AgencyTools = aitools.BuildAgencyRegistry(aitools.AgencyDeps{
+			Agency: agencyService, Home: agencyHomeService, ToolMigrations: toolMigrations, Audit: auditService,
+		})
 	}
 
 	m := &middleware.Handler{

@@ -1,0 +1,12 @@
+{"data": {"campaign": {"steps": {
+  "nodes": [
+    {"id": "stp_1", "position": 1, "variations": {"nodes": [
+      {"id": "var_1", "position": 1, "type": "wait", "info": {"__typename": "WaitVariation", "unit": "days", "value": 1, "business": true}}
+    ], "pageInfo": {"hasNextPage": false, "endCursor": "MQ"}}},
+    {"id": "stp_2", "position": 2, "variations": {"nodes": [
+      {"id": "var_2b", "position": 2, "type": "email", "info": {"__typename": "EmailVariation", "subject": "Idea for {{company.name}}", "body": "Hey {{ lead.first_name | capitalize }}, happy {{=day+0}}."}},
+      {"id": "var_2a", "position": 1, "type": "email", "info": {"__typename": "EmailVariation", "subject": "Quick question, {{ lead.first_name | default: &quot;there&quot; }}", "body": "<p>(( Hi | Hello )) {{lead.first_name}} at {{company.name}}.</p><p>{{lead.custom.Opening_Line}} {{lead.title}}</p><p>{{inbox.friendly_name}}</p>{{inbox.signature}}<a href=\"{{=unsubscribe}}\">unsubscribe</a>"}}
+    ], "pageInfo": {"hasNextPage": false, "endCursor": "Mg"}}}
+  ],
+  "pageInfo": {"hasNextPage": true, "endCursor": "Mg"}
+}}}}

@@ -641,6 +641,8 @@ export function useRealtimeEvents() {
             ['organizations', 'exports'],
             ['organizations', 'imports'],
           ],
+          // A migration from another tool created, started, finished or canceled; a finished one brought data in.
+          tool_migration: [['tool-migrations'], ['campaigns'], ['contacts'], ['emails'], ['suppressions']],
           crm_note: [['crm'], ['contacts']],
           crm_pipeline: [['crm', 'pipelines'], ['crm', 'deals']],
           crm_stage: [['crm', 'pipelines'], ['crm', 'deals']],

@@ -7,6 +7,7 @@
     "---Sending---",
     "mailboxes",
     "mailbox-import",
+    "migrate-from-another-tool",
     "sending-domains",
     "sending-behavior",
     "warmup",

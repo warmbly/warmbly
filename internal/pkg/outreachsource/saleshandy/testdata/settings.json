@@ -1,0 +1,14 @@
+{
+  "message": "Sequence settings fetched",
+  "payload": {
+    "settings": [
+      {"code": 1, "value": "If you'd prefer not to receive email from me, <a href=\"{{link}}\" target=\"_blank\">Unsubscribe here</a>."},
+      {"code": 3, "value": "1"},
+      {"code": 4, "value": "0"},
+      {"code": 5, "value": "1"},
+      {"code": 9, "value": "0"}
+    ],
+    "schedule": {"id": "aB3xK9", "name": "Weekdays 9-5", "timezone": "America/New_York", "isDefault": true},
+    "client": null
+  }
+}

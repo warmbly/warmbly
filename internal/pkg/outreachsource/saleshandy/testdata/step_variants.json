@@ -1,0 +1,15 @@
+[
+  {
+    "id": "PqRsTuVwXy",
+    "payload": {
+      "content": "<div>Following up, {{First Name}}.</div>",
+      "preheader": "",
+      "subject": ""
+    },
+    "taskNote": null,
+    "status": 1,
+    "type": 1,
+    "executionType": 1,
+    "stepStatus": 1
+  }
+]

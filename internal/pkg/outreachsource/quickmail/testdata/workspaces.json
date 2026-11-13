@@ -1,0 +1,4 @@
+{"data": {"workspaces": {
+  "nodes": [{"id": "wrk_1", "name": "Client One"}, {"id": "wrk_2", "name": " Client Two "}],
+  "pageInfo": {"hasNextPage": false, "endCursor": "Mg"}
+}}}

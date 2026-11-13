@@ -29,6 +29,8 @@ const (
 	APIKeyEnv = "WARMBLY_API_KEY"
 	HostEnv   = "WARMBLY_HOST"
 	APIURLEnv = "WARMBLY_API_URL"
+	// OrganizationEnv names the client workspace an agency key acts in.
+	OrganizationEnv = "WARMBLY_ORGANIZATION"
 )
 
 // Host is one signed-in instance.

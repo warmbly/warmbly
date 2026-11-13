@@ -182,6 +182,9 @@ const (
 
 	// A client report, its share link or its email schedule.
 	AuditEntityClientReport AuditEntityType = "client_report"
+
+	// A migration from another outreach tool created, started, canceled, finished or dismissed.
+	AuditEntityToolMigration AuditEntityType = "tool_migration"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

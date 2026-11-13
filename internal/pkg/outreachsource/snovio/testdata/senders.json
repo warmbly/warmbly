@@ -1,0 +1,6 @@
+{
+  "data": [
+    {"id": 11980, "sender_name": "Den Johnson", "email_from": "Den.Johnson@sender.example", "valid": true, "suspended": false, "limitation": 50, "provider": "hostinger", "tags": ["Den's account"], "imap": {"username": "den.johnson@sender.example", "valid": true}},
+    {"id": 12355, "sender_name": "Anna", "email_from": "anna@gmail-sender.example", "valid": true, "suspended": false, "limitation": 40, "provider": "gmail", "tags": ["Work"], "imap": {"username": "anna@gmail-sender.example", "valid": true}}
+  ]
+}

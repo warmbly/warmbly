@@ -100,6 +100,7 @@ import { webhookDropsQuery, webhooksListQuery } from "./lib/api/hooks/app/webhoo
 import { mailboxOAuthAppsQuery } from "./lib/api/hooks/app/emails/useMailboxOAuthApps";
 import { appliedDiscountsQuery } from "./lib/api/hooks/app/subscription/useAppliedDiscounts";
 import { planOffersQuery } from "./lib/api/hooks/app/subscription/usePlanOffers";
+import { toolMigrationProvidersQuery, toolMigrationsQuery } from "./lib/api/hooks/app/toolmigrate/useToolMigrations";
 
 // Declaring `params` here would become every route's inferred params; the router passes it anyway.
 export interface PageLoaderContext {
@@ -433,6 +434,12 @@ export const webhooksLoader = pageLoader((qc) =>
     can("MANAGE_SETTINGS") ? [qc.prefetchQuery(webhooksListQuery), qc.prefetchQuery(webhookDropsQuery)] : [],
 );
 
+export const migrateLoader = pageLoader((qc) =>
+    can("MANAGE_CONTACTS")
+        ? [qc.prefetchQuery(toolMigrationProvidersQuery({ kind: "workspace" })), qc.prefetchQuery(toolMigrationsQuery({ kind: "workspace" }))]
+        : [],
+);
+
 export const mailboxSignInLoader = pageLoader((qc) => (can("MANAGE_EMAILS") ? [qc.prefetchQuery(mailboxOAuthAppsQuery)] : []));
 
 // The overview tab for the owner, and the balance tab for anyone who manages billing, on a deployment that bills.
@@ -489,6 +496,11 @@ export const agencyMailboxesLoader = agencyPage((qc, id) => [
 export const agencyStaffLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyStaffQuery(id))]);
 export const agencyUsageLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyUsageQuery(id)), qc.prefetchQuery(agencyAIBalanceQuery(id))]);
 export const agencyBrandingLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyBrandQuery(id))]);
+export const agencyMigrateLoader = agencyPage((qc, id) => [
+    qc.prefetchQuery(toolMigrationProvidersQuery({ kind: "agency", agencyId: id })),
+    qc.prefetchQuery(toolMigrationsQuery({ kind: "agency", agencyId: id })),
+    qc.prefetchQuery(agencyClientsQuery(id)),
+]);
 // Only owners and admins can list the keys, so nobody else prefetches them.
 export const agencyAPIKeysLoader = pageLoader((qc) => [
     qc.fetchQuery(agenciesQuery).then((res) => {
