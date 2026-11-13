@@ -77,9 +77,11 @@ on it. The backend checks the parameter when it starts and then every hour, or
 five minutes after a failed check. When the parameter is missing, holds a token
 that no longer joins, or holds one that expires within 10 days, it stores a new
 30-day join token there as a SecureString; a stored token with longer left is
-kept. Workers already joined are unaffected by a new token. Before the first
-launch, confirm the parameter exists and that the backend logs no
-`fleet join token not renewed` warning.
+kept. Workers already joined are unaffected by a new token. Each check verifies
+the stored token against the instance, so a check that ends without a warning
+leaves a token that joins. Before the first launch, confirm the parameter
+exists and that the backend logged neither `fleet join token renewal disabled`
+(at start) nor `fleet join token not renewed` (on a check).
 
 Issuing a token revokes the previous one. Once the backend keeps the parameter,
 read the token from it to join a machine by hand rather than running
