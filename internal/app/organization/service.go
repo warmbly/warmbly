@@ -1629,9 +1629,9 @@ func (s *organizationService) SetLimitOverrides(ctx context.Context, orgID uuid.
 //  2. plan != nil   → use plan column
 //  3. otherwise     → fall back to the product-level hard cap
 //
-// Every field but mailboxes and daily sends is never nil: an "unlimited" plan
+// Every field but mailboxes, daily sends and contacts is never nil: an "unlimited" plan
 // is bounded by the product hard caps in config/constants.go. Mailboxes follow
-// MailboxAllowance and daily sends follow the sender's gate, where nil really
+// MailboxAllowance, daily sends and contacts follow the gate, where nil really
 // means unlimited. Admins can raise individual caps per-org by writing an override.
 func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimits, *errx.Error) {
 	plan, err := s.GetOrganizationLimits(ctx, orgID)
@@ -1691,17 +1691,18 @@ func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid
 	}, nil
 }
 
-// contactLimit is the ceiling the contact writes enforce, shown as the product cap where there is none.
+// contactLimit is the ceiling the contact writes enforce, nil when there is none.
 func (s *organizationService) contactLimit(ctx context.Context, orgID uuid.UUID, override int) (*int, *errx.Error) {
-	n := override
-	if s.gate != nil {
-		var xerr *errx.Error
-		if n, xerr = s.gate.ContactLimit(ctx, orgID); xerr != nil {
-			return nil, xerr
+	if s.gate == nil {
+		v := override
+		if v <= 0 {
+			v = config.HardCapContacts
 		}
+		return &v, nil
 	}
-	if n <= 0 {
-		n = config.HardCapContacts
+	n, xerr := s.gate.ContactLimit(ctx, orgID)
+	if xerr != nil || n <= 0 {
+		return nil, xerr
 	}
 	return &n, nil
 }

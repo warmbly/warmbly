@@ -1346,7 +1346,7 @@ The updated organization object.
 
 `GET /organization/current/limits`
 
-Returns the current organization's plan-resolved limits and current usage counts. `max_contacts` is the ceiling every contact write enforces against `total_contacts`: an approved limit increase, else the plan's, else the product cap.
+Returns the current organization's plan-resolved limits and current usage counts. `max_contacts` is the ceiling every contact write enforces against `total_contacts`: an approved limit increase, else the plan's, else the product cap. On a self-hosted instance it is absent, meaning no ceiling, unless an operator set a contact limit for the workspace.
 
 Auth: Session only (not available to API keys). Requires a selected organization.
 

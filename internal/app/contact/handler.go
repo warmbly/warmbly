@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/email"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
@@ -46,8 +47,8 @@ func (s *contactService) newAddresses(ctx context.Context, userID string, orgID 
 	seen := make(map[string]bool, len(contacts))
 	emails := make([]string, 0, len(contacts))
 	for i := range contacts {
-		e := strings.ToLower(strings.TrimSpace(contacts[i].Email))
-		if e != "" && !seen[e] {
+		e, ok := email.Normalize(contacts[i].Email)
+		if ok && !seen[e] {
 			seen[e] = true
 			emails = append(emails, e)
 		}
@@ -64,7 +65,7 @@ func (s *contactService) Add(ctx context.Context, userID string, orgID uuid.UUID
 		// Re-adding an address the workspace holds updates it, so only new ones count.
 		fresh, lerr := s.newAddresses(ctx, userID, orgID, contacts)
 		if lerr != nil {
-			return nil, xerr
+			return nil, lerr
 		}
 		if xerr := s.checkContactLimit(ctx, orgID, fresh); xerr != nil {
 			return nil, xerr

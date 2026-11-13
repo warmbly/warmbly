@@ -78,7 +78,7 @@ func TestContactLimitCountsOnlyNewAddresses(t *testing.T) {
 	ctx := context.Background()
 	user := uuid.NewString()
 
-	fresh, xerr := svc.newAddresses(ctx, user, org, []models.AddContact{{Email: strings.ToUpper(held[0])}, {Email: held[1]}, {Email: held[1]}})
+	fresh, xerr := svc.newAddresses(ctx, user, org, []models.AddContact{{Email: strings.ToUpper(held[0])}, {Email: "Dana <" + held[1] + ">"}, {Email: " " + held[1]}})
 	if xerr != nil || fresh != 0 {
 		t.Fatalf("re-adding held addresses counted %d new (err %v), want 0", fresh, xerr)
 	}
