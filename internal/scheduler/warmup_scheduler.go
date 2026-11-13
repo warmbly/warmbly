@@ -234,6 +234,13 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
+	// The day's plan is what the warmup chart and Target met compare sends against.
+	if s.warmupRepo != nil && targetVolume > 0 {
+		if err := s.warmupRepo.RecordDailyTarget(ctx, accountID, time.Now(), targetVolume); err != nil {
+			log.Warn().Err(err).Str("email_account_id", accountID.String()).Msg("could not record the day's warmup target")
+		}
+	}
+
 	// Resolve owns the band's volume half; only its spacing half applies here.
 	adj := adjustmentFor(healthState)
 

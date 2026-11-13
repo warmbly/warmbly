@@ -981,7 +981,7 @@ function AnalyticsTab({ warmup, replyTarget, loading, failed, retry }: { warmup?
     const chartData = warmup.daily_stats.map((d) => ({
         key: d.date,
         value: d.emails_sent,
-        hint: `${d.date}: ${d.emails_sent} sent / ${d.target_volume} target · ${d.emails_received ?? 0} received · ${d.emails_replied} replies`,
+        hint: `${d.date}: ${d.emails_sent} sent${d.target_volume > 0 ? ` / ${d.target_volume} target` : ""} · ${d.emails_received ?? 0} received · ${d.emails_replied} replies`,
     }));
     const received = s.total_received ?? 0;
     const exchange = s.total_sent > 0 ? `${Math.round((received / s.total_sent) * 100)}% of what it sent` : "from the pool";
@@ -994,7 +994,7 @@ function AnalyticsTab({ warmup, replyTarget, loading, failed, retry }: { warmup?
                 <StatCard label="Total sent" value={s.total_sent} sub={`${s.average_daily.toFixed(1)}/active day`} />
                 <StatCard label="Received" value={received} sub={exchange} accent />
                 <StatCard label="Replies" value={s.total_replied} sub={replySub} />
-                <StatCard label="Target met" value={`${Math.round(s.target_progress)}%`} sub="of planned volume" />
+                <StatCard label="Target met" value={targets.some((t) => t > 0) ? `${Math.round(s.target_progress)}%` : "—"} sub="of planned volume" />
                 <div className="col-span-2">
                     <StatCard label="Days active" value={s.days_active} sub={`${utcDay(warmup.date_range.from)} → ${utcDay(warmup.date_range.to)}`} />
                 </div>
@@ -1025,7 +1025,7 @@ function AnalyticsTab({ warmup, replyTarget, loading, failed, retry }: { warmup?
                     if (!d) return null;
                     return (
                         <p className="mt-2 text-[11px] text-slate-500 font-mono tabular-nums">
-                            {d.date}: {d.emails_sent} sent / {d.target_volume} target · {d.emails_received ?? 0} received · {d.emails_replied} replies
+                            {d.date}: {d.emails_sent} sent{d.target_volume > 0 ? ` / ${d.target_volume} target` : ""} · {d.emails_received ?? 0} received · {d.emails_replied} replies
                         </p>
                     );
                 })()}

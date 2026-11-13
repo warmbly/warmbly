@@ -130,6 +130,22 @@ func TestWarmupSummaryReportsEveryDisplayedMetric(t *testing.T) {
 	}
 }
 
+func TestWarmupTargetMetReadsOnlyDaysWithARecordedPlan(t *testing.T) {
+	repo := warmupAnalyticsRepoStub{stats: []models.WarmupDailyStats{
+		// Sends from before plans were recorded must not count against today's plan.
+		{Date: "2026-11-11", EmailsSent: 14, Active: true},
+		{Date: "2026-11-12", EmailsSent: 13, Active: true},
+		{Date: "2026-11-13", EmailsSent: 8, TargetVolume: 16, Active: true},
+	}}
+	got, xerr := (&analyticsService{analyticsRepo: repo}).GetWarmupAnalytics(context.Background(), uuid.New(), nil, time.Time{}, time.Now())
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	if math.Abs(got.Summary.TargetProgress-50) > 0.001 || got.Summary.TotalSent != 35 {
+		t.Fatalf("target_progress = %.3f total_sent = %d, want 50 and 35", got.Summary.TargetProgress, got.Summary.TotalSent)
+	}
+}
+
 func TestAccountStatusDoesNotTurnUsageErrorsIntoZero(t *testing.T) {
 	emailID := uuid.New()
 	svc := &analyticsService{
