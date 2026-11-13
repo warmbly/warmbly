@@ -204,6 +204,21 @@ run "fleet_max_size_stays_under_the_ceiling" {
   expect_failures = [aws_launch_template.fleet[0]]
 }
 
+# Runs against the group fleet_without_public_ipv4 applied with a cap of 10, so the edit is also reported.
+run "fleet_ceiling_follows_a_cap_above_the_default" {
+  command = plan
+  variables {
+    fleet_enabled      = true
+    fleet_instance_url = "https://app.example.com"
+    fleet_max_size     = 200
+  }
+  expect_failures = [check.fleet_cap]
+  assert {
+    condition     = one([for t in aws_autoscaling_group.fleet[0].tag : t.value if t.key == "warmbly:max-ceiling"]) == "200" && output.fleet.max_ceiling == 200
+    error_message = "With no ceiling set, a cap above 100 becomes the ceiling, so an existing configuration keeps planning."
+  }
+}
+
 run "fleet_needs_instance_url" {
   command = plan
   variables {

@@ -53,6 +53,8 @@ func TestSetMaxStaysBetweenTheFleetAndTheCeiling(t *testing.T) {
 		{name: "zero", group: fakeGroup{min: 0, max: 10, desired: 0, ceiling: "50"}, limit: 0, wantErr: ErrOutOfRange},
 		{name: "no ceiling tag", group: fakeGroup{min: 1, max: 10, desired: 3}, limit: 11, wantErr: ErrNoCeiling},
 		{name: "unreadable ceiling tag", group: fakeGroup{min: 1, max: 10, desired: 3, ceiling: "lots"}, limit: 11, wantErr: ErrNoCeiling},
+		{name: "ceiling tag beyond a group size", group: fakeGroup{min: 1, max: 10, desired: 3, ceiling: "3000000000"}, limit: 11, wantErr: ErrNoCeiling},
+		{name: "cap beyond a group size", group: fakeGroup{min: 1, max: 10, desired: 3, ceiling: "2147483647"}, limit: 3000000000, wantErr: ErrOutOfRange},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

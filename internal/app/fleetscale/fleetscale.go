@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -110,16 +111,18 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	}
 	for _, tag := range g.Tags {
 		if aws.ToString(tag.Key) == CeilingTag {
-			if n, err := strconv.Atoi(strings.TrimSpace(aws.ToString(tag.Value))); err == nil && n > 0 {
-				st.Ceiling = n
+			// A ceiling outside int32 cannot be a group size, so it reads as missing.
+			if n, err := strconv.ParseInt(strings.TrimSpace(aws.ToString(tag.Value)), 10, 32); err == nil && n > 0 {
+				st.Ceiling = int(n)
 			}
 		}
 	}
 	return st, nil
 }
 
-// SetMax moves the cap. It never goes below the group's minimum or its current
-// size, so lowering it never terminates a worker, and never above the ceiling.
+// SetMax moves the cap, never below the group's minimum or its current size and
+// never above the ceiling. A scale-out landing between the read and the update
+// is removed again: the group then stops its newest worker, through the drain hook.
 func (s *Service) SetMax(ctx context.Context, limit int) (Status, error) {
 	st, err := s.Status(ctx)
 	if err != nil {
@@ -143,7 +146,7 @@ func (s Status) allows(limit int) error {
 		return ErrNoCeiling
 	}
 	floor := max(1, s.Min, s.Desired)
-	if limit < floor || limit > s.Ceiling {
+	if limit < floor || limit > s.Ceiling || limit > math.MaxInt32 {
 		return fmt.Errorf("%w: choose %d to %d", ErrOutOfRange, floor, s.Ceiling)
 	}
 	return nil

@@ -31,7 +31,7 @@ function capState(s: AdminFleetScale): "at-cap" | "near-cap" | "ok" {
 export function FleetScalePanel() {
     const qc = useQueryClient();
     const confirm = useConfirm();
-    const { data, error } = useQuery({
+    const { data, error, refetch, isFetching } = useQuery({
         queryKey: QUERY_KEY,
         queryFn: getFleetScale,
         refetchInterval: 30_000,
@@ -53,8 +53,21 @@ export function FleetScalePanel() {
         onError: (err: Error) => toast.error(err.message || "Failed to change the fleet cap"),
     });
 
+    // Hidden only on an instance that does not manage a group; any other failure is shown.
     if (error instanceof APIError && error.code === FLEET_AUTOSCALING_NOT_CONFIGURED) return null;
-    if (!data) return null;
+    const retry = (
+        <Button type="button" size="sm" variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+            Retry
+        </Button>
+    );
+    if (!data) {
+        if (!error) return null;
+        return (
+            <Callout tone="danger" icon={AlertTriangle} title="Fleet autoscaling status could not be read" actions={retry} className="mb-4">
+                {error.message || "The backend did not answer."}
+            </Callout>
+        );
+    }
     const scale = data;
 
     const floor = Math.max(1, data.min, data.desired);
@@ -86,6 +99,14 @@ export function FleetScalePanel() {
                 <StatusDot tone={state === "at-cap" ? "danger" : state === "near-cap" ? "warning" : "success"} className="tabular-nums">
                     {data.in_service} running{data.pending > 0 ? ` (${data.pending} starting)` : ""} of max {data.max}, min {data.min}
                 </StatusDot>
+                {error && (
+                    <span className="flex items-center gap-2 text-xs text-muted-foreground" title={error.message}>
+                        Could not refresh; showing the last reading.
+                        <Button type="button" size="xs" variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
+                            Retry
+                        </Button>
+                    </span>
+                )}
                 <form
                     className="ml-auto flex items-center gap-2"
                     onSubmit={(e) => {

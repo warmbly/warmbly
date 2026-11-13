@@ -146,7 +146,7 @@ token parameter, the cap's ceiling, the metric contract and `nat_ipv4_addresses`
 | `fleet_root_volume_gb` | `20` | Encrypted gp3 root volume size |
 | `fleet_min_size` | `2` | Smallest fleet |
 | `fleet_max_size` | `10` | Starting cap on the fleet's size. The [admin panel](#change-the-fleet-cap) owns the cap afterwards, so a later change here is ignored |
-| `fleet_max_ceiling` | `100` | Highest cap the admin panel may set, written to the group's `warmbly:max-ceiling` tag |
+| `fleet_max_ceiling` | `null` | Highest cap the admin panel may set, written to the group's `warmbly:max-ceiling` tag. `null` uses the larger of `fleet_max_size` and 100 |
 | `fleet_desired_capacity` | `null` | Starting size; scaling owns it afterwards. `null` starts at the minimum |
 | `fleet_worker_capacity` | `auto` | `WARMBLY_WORKER_CAPACITY` on every fleet worker: `auto`, or a whole number of mailboxes from 1 to 99999999 |
 | `fleet_region_label` | empty | Optional `--region` label for placement |
@@ -236,11 +236,20 @@ reaches the cap, and the backend logs `worker fleet is at its size cap` once an
 hour while it stays there.
 
 The new cap must be at least the running fleet and `fleet_min_size`, and at most
-`fleet_max_ceiling`, so lowering it never stops a worker. A change asks for a
-fresh confirmation of the operator's identity and is recorded in the admin
-audit log. `fleet_max_size` sets only the starting cap: Terraform ignores the
-cap after the group exists, so a later apply does not undo a change made in the
-admin panel. Raise `fleet_max_ceiling` and apply to allow a higher cap.
+the ceiling, so lowering it never stops a running worker. If a scale-out lands
+between that check and the change, the group removes the worker above the new
+cap, which is the newest one and has no mailboxes, through the drain hook. A
+change asks for a fresh confirmation of the operator's identity and is recorded
+in the admin audit log.
+
+`fleet_max_size` sets only the starting cap: Terraform ignores the cap after the
+group exists, so a later apply does not undo a change made in the admin panel.
+A plan whose `fleet_max_size` differs from the group's cap warns through the
+`fleet_cap` check instead of changing it; change the cap in the admin panel, or
+with `aws autoscaling update-auto-scaling-group --max-size`, and set
+`fleet_max_size` to match to clear the warning. The ceiling is
+`fleet_max_ceiling`, or the larger of `fleet_max_size` and 100 when it is unset;
+raise it and apply to allow a higher cap.
 
 The backend's role needs:
 

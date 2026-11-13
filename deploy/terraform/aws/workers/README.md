@@ -105,9 +105,12 @@ needs `cloudwatch:PutMetricData`. Each worker's `node.local.env` gets
 `WARMBLY_WORKER_CAPACITY=auto` by default, so it sizes its mailbox target from
 its memory, and `GOMEMLIMIT` at 80% of the instance's memory.
 
-`fleet_max_size` is the starting cap. With `FLEET_AUTOSCALING_GROUP` set on the
-backend, the admin panel changes the cap afterwards, up to `fleet_max_ceiling`,
-and Terraform leaves it alone.
+`fleet_max_size` is the starting cap. Terraform leaves the cap alone after the
+group exists and warns through the `fleet_cap` check when `fleet_max_size` no
+longer matches it. With `FLEET_AUTOSCALING_GROUP` set on the backend, the admin
+panel changes the cap, up to `fleet_max_ceiling` (the larger of `fleet_max_size`
+and 100 when unset); otherwise use `aws autoscaling update-auto-scaling-group
+--max-size`.
 
 The design, variables, scaling metric contract, retirement of fixed hosts and
 cost notes are in [the AWS worker fleet guide](https://docs.warmbly.com/development/aws-workers/).

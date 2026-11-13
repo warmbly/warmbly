@@ -70,11 +70,11 @@ variable "fleet_max_size" {
 }
 
 variable "fleet_max_ceiling" {
-  description = "Highest cap the admin panel may set, written to the group's warmbly:max-ceiling tag"
+  description = "Highest cap the admin panel may set, written to the group's warmbly:max-ceiling tag. Null uses the larger of fleet_max_size and 100"
   type        = number
-  default     = 100
+  default     = null
   validation {
-    condition     = var.fleet_max_ceiling >= 1 && var.fleet_max_ceiling <= 10000 && floor(var.fleet_max_ceiling) == var.fleet_max_ceiling
+    condition     = var.fleet_max_ceiling == null || try(var.fleet_max_ceiling >= 1 && var.fleet_max_ceiling <= 10000 && floor(var.fleet_max_ceiling) == var.fleet_max_ceiling, false)
     error_message = "Use a whole number from 1 to 10000."
   }
 }
@@ -206,6 +206,8 @@ variable "nats_security_group_id" {
 locals {
   fleet                 = var.fleet_enabled
   fleet_join_token_name = coalesce(var.fleet_join_token_parameter, "/${var.name}/fleet/join-token")
+  # Derived when unset, so a configuration whose cap is already above 100 keeps planning.
+  fleet_max_ceiling = coalesce(var.fleet_max_ceiling, max(var.fleet_max_size, 100))
   # Resolved at each launch, so new workers boot a current AMI without a template change refreshing the fleet.
   al2023_arm64 = "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
   fleet_metric = {
@@ -371,7 +373,7 @@ resource "aws_launch_template" "fleet" {
       error_message = "Use 1 <= fleet_min_size <= fleet_desired_capacity <= fleet_max_size."
     }
     precondition {
-      condition     = var.fleet_max_size <= var.fleet_max_ceiling
+      condition     = var.fleet_max_ceiling == null || try(var.fleet_max_size <= var.fleet_max_ceiling, false)
       error_message = "fleet_max_size must not exceed fleet_max_ceiling."
     }
     precondition {
@@ -425,13 +427,21 @@ resource "aws_autoscaling_group" "fleet" {
   # The backend refuses a cap above this, and its IAM policy should hold the same bound.
   tag {
     key                 = "warmbly:max-ceiling"
-    value               = tostring(var.fleet_max_ceiling)
+    value               = tostring(local.fleet_max_ceiling)
     propagate_at_launch = false
   }
   depends_on = [aws_autoscaling_group.nat, aws_route_table_association.fleet, aws_vpc_security_group_egress_rule.fleet_ipv4]
   lifecycle {
     # fleet_max_size is the initial cap; the admin panel owns it afterwards.
     ignore_changes = [desired_capacity, max_size]
+  }
+}
+
+# ignore_changes cannot depend on a variable, so a later fleet_max_size edit is reported here instead of applied.
+check "fleet_cap" {
+  assert {
+    condition     = alltrue([for g in aws_autoscaling_group.fleet : g.max_size == var.fleet_max_size])
+    error_message = "The fleet's cap differs from fleet_max_size, which sets only the starting cap. Change it in the admin panel (Fleet, Capacity) or with aws autoscaling update-auto-scaling-group --max-size, then set fleet_max_size to match to clear this warning."
   }
 }
 
@@ -532,7 +542,7 @@ resource "aws_cloudwatch_metric_alarm" "fleet_scale_in" {
 output "fleet" {
   value = local.fleet ? {
     autoscaling_group    = aws_autoscaling_group.fleet[0].name
-    max_ceiling          = var.fleet_max_ceiling
+    max_ceiling          = local.fleet_max_ceiling
     security_group_id    = aws_security_group.fleet[0].id
     subnet_ids           = aws_subnet.fleet[*].id
     join_token_parameter = local.fleet_join_token_name
