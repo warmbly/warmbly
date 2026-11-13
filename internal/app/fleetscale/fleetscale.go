@@ -122,7 +122,7 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 
 // SetMax moves the cap, never below the group's minimum or its current size and
 // never above the ceiling. A scale-out landing between the read and the update
-// is removed again: the group then stops its newest worker, through the drain hook.
+// is undone by an ordinary one-worker scale-in, through the drain hook.
 func (s *Service) SetMax(ctx context.Context, limit int) (Status, error) {
 	st, err := s.Status(ctx)
 	if err != nil {
