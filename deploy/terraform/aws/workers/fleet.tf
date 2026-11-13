@@ -64,8 +64,19 @@ variable "fleet_min_size" {
 }
 
 variable "fleet_max_size" {
-  type    = number
-  default = 10
+  description = "Initial cap on the fleet's size; the admin panel moves it afterwards, between the running fleet and fleet_max_ceiling"
+  type        = number
+  default     = 10
+}
+
+variable "fleet_max_ceiling" {
+  description = "Highest cap the admin panel may set, written to the group's warmbly:max-ceiling tag"
+  type        = number
+  default     = 100
+  validation {
+    condition     = var.fleet_max_ceiling >= 1 && var.fleet_max_ceiling <= 10000 && floor(var.fleet_max_ceiling) == var.fleet_max_ceiling
+    error_message = "Use a whole number from 1 to 10000."
+  }
 }
 
 variable "fleet_desired_capacity" {
@@ -360,6 +371,10 @@ resource "aws_launch_template" "fleet" {
       error_message = "Use 1 <= fleet_min_size <= fleet_desired_capacity <= fleet_max_size."
     }
     precondition {
+      condition     = var.fleet_max_size <= var.fleet_max_ceiling
+      error_message = "fleet_max_size must not exceed fleet_max_ceiling."
+    }
+    precondition {
       condition     = var.fleet_scale_in_memory_below < var.fleet_target_memory && var.fleet_scale_in_cpu_below < var.fleet_target_cpu
       error_message = "Each scale-in threshold must sit under its scale-out counterpart."
     }
@@ -407,9 +422,16 @@ resource "aws_autoscaling_group" "fleet" {
     value               = "${var.name}-fleet-worker"
     propagate_at_launch = false
   }
+  # The backend refuses a cap above this, and its IAM policy should hold the same bound.
+  tag {
+    key                 = "warmbly:max-ceiling"
+    value               = tostring(var.fleet_max_ceiling)
+    propagate_at_launch = false
+  }
   depends_on = [aws_autoscaling_group.nat, aws_route_table_association.fleet, aws_vpc_security_group_egress_rule.fleet_ipv4]
   lifecycle {
-    ignore_changes = [desired_capacity]
+    # fleet_max_size is the initial cap; the admin panel owns it afterwards.
+    ignore_changes = [desired_capacity, max_size]
   }
 }
 
@@ -510,6 +532,7 @@ resource "aws_cloudwatch_metric_alarm" "fleet_scale_in" {
 output "fleet" {
   value = local.fleet ? {
     autoscaling_group    = aws_autoscaling_group.fleet[0].name
+    max_ceiling          = var.fleet_max_ceiling
     security_group_id    = aws_security_group.fleet[0].id
     subnet_ids           = aws_subnet.fleet[*].id
     join_token_parameter = local.fleet_join_token_name

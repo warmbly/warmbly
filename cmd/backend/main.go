@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/warmbly/warmbly/internal/app/fleetjoin"
 	"github.com/warmbly/warmbly/internal/app/fleetmetrics"
+	"github.com/warmbly/warmbly/internal/app/fleetscale"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"log"
 	"net/http"
@@ -359,6 +360,7 @@ func main() {
 		adminSyncRepo         repository.AdminSyncRepository
 		adminSendsRepo        repository.AdminSendsRepository
 		adminFleetRepo        repository.AdminFleetRepository
+		fleetScale            *fleetscale.Service
 		adminInsightRepo      repository.AdminInsightRepository
 		jobRunRepo            repository.JobRunRepository
 		webhookRepoForHandler repository.WebhookRepository
@@ -2342,6 +2344,17 @@ func main() {
 			})
 		}
 
+		// The worker Auto Scaling Group's cap, adjustable from the admin panel; unset on every other deployment.
+		if group := fleetscale.GroupName(); group != "" {
+			svc, err := fleetscale.New(ctx, group)
+			if err != nil {
+				log.Printf("Warning: fleet autoscaling disabled: %v", err)
+			} else {
+				fleetScale = svc
+				elector.Go("fleet_scale_cap", func(ctx context.Context) { fleetscale.Watch(ctx, svc) })
+			}
+		}
+
 		// Worker reconciler: assign + (re)load every active mailbox onto its
 		// worker. Workers hold accounts in memory only, so this is what makes a
 		// freshly onboarded account send/sync and re-seeds a restarted worker.
@@ -2927,6 +2940,7 @@ func main() {
 		AdminSyncRepo:    adminSyncRepo,
 		AdminSendsRepo:   adminSendsRepo,
 		AdminFleetRepo:   adminFleetRepo,
+		FleetScale:       fleetScale,
 		AdminInsightRepo: adminInsightRepo,
 		JobRuns:          jobRunRepo,
 		WebhookRepo:      webhookRepoForHandler,

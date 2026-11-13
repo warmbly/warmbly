@@ -44,6 +44,7 @@ import (
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/fleetnode"
+	"github.com/warmbly/warmbly/internal/app/fleetscale"
 	"github.com/warmbly/warmbly/internal/app/form"
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/hubspot"
@@ -475,7 +476,9 @@ type Handler struct {
 	AdminSendsRepo   repository.AdminSendsRepository
 	AdminFleetRepo   repository.AdminFleetRepository
 	AdminInsightRepo repository.AdminInsightRepository
-	JobRuns          repository.JobRunRepository
+	// FleetScale moves the worker Auto Scaling Group's cap; nil unless FLEET_AUTOSCALING_GROUP is set.
+	FleetScale *fleetscale.Service
+	JobRuns    repository.JobRunRepository
 	// WebhookRepo backs the operator's "reclaim stuck deliveries" action.
 	WebhookRepo repository.WebhookRepository
 

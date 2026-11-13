@@ -773,6 +773,12 @@ A session signed in on an agency's [portal domain](/guides/white-label/#where-cl
 | `portal_handoff_origin` | 403 | `POST /auth/portal/handoff` from anywhere but the main dashboard address, or from a session signed in on a portal |
 | `portal_not_found` | 404 | `POST /auth/portal/handoff` for a host that is not a verified portal whose agency signs its clients in on the main address |
 
+#### Fleet cap refusals
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `fleet_max_out_of_range` | 400 | `PATCH /admin/fleet/scale` asked for a cap below the running fleet or the group's minimum, or above its `warmbly:max-ceiling` tag. The message names the allowed range |
+
 #### Automation refusals
 
 | `code` | Status | Meaning |
@@ -1130,6 +1136,7 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `charge_in_progress` | 409 | `POST /subscription/balance/top-up` while another payment for the workspace is still going through. Try again in a minute |
 | `idempotency_outcome_unknown` | 409 | The request that first used this `Idempotency-Key` ended in a server error or never finished, so whether it took effect is unknown and it is not run again while the key is kept (24 hours). Retry with a new key only once you have established that the change did not happen. See [retry safety](/api/endpoints/#retry-safety) |
 | `mailbox_cloud_unenroll_failed` | 409 | The mailbox is linked to [Warmbly Cloud](/guides/warmbly-cloud/) and its link could not be released, so `DELETE /emails/{id}` would leave Warmbly Cloud holding its credential or its claim on it. The mailbox record remains, and restoration onto its worker is attempted |
+| `fleet_max_ceiling_missing` | 409 | `PATCH /admin/fleet/scale` on a worker Auto Scaling Group without a `warmbly:max-ceiling` tag. Apply the workers Terraform root, which sets it |
 
 `mailbox_cloud_unenroll_failed` is a self-hosted instance losing contact with Warmbly Cloud mid-delete. Deleting an enrolled mailbox has to revoke its enrollment before the record goes, because the pool holds the mailbox's own SMTP/IMAP credentials and that record is the only thing that knows the enrollment exists. The same call releases a cloud-managed mirror before the record goes, so the mailbox returns to the cloud workspace and can be adopted again instead of staying claimed by an instance that no longer keeps it. The mailbox record remains. Warmbly attempts to restore it onto its worker immediately, and the worker reconciler may restore it later if that attempt fails. Retry the delete once the instance can reach the cloud again. Unenrolling under **Settings > Warmbly Cloud** first does not help: it makes the same call.
 
@@ -1244,6 +1251,10 @@ A `503` whose `code` is `mailbox_provider_not_configured` is not transient and r
 - Set `BOX_GOOGLE_CLIENT_ID` and `BOX_GOOGLE_CLIENT_SECRET`, or `BOX_OUTLOOK_CLIENT_ID` and `BOX_OUTLOOK_CLIENT_SECRET`, in the `.env` at your install root, then restart
 - Or connect the mailbox over SMTP and IMAP instead, which needs no configuration
 - Full walkthrough: [connect mailboxes](/development/deployment-guide/#connect-mailboxes)
+
+#### `fleet_autoscaling_not_configured`
+
+`/admin/fleet/scale` on an instance whose backend does not set `FLEET_AUTOSCALING_GROUP`. Only an instance running the [AWS worker fleet](/development/aws-workers/#change-the-fleet-cap) sets it.
 
 #### `ai_not_configured`
 

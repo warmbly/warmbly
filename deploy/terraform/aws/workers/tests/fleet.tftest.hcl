@@ -97,6 +97,10 @@ run "fleet_without_public_ipv4" {
     error_message = "The fleet keeps two workers by default and never rebalances zones."
   }
   assert {
+    condition     = one([for t in aws_autoscaling_group.fleet[0].tag : t.value if t.key == "warmbly:max-ceiling"]) == "100" && output.fleet.max_ceiling == 100
+    error_message = "The group carries the ceiling the admin panel may raise its cap to."
+  }
+  assert {
     condition     = one(aws_autoscaling_group.fleet[0].initial_lifecycle_hook).heartbeat_timeout == 900 && aws_autoscaling_group.fleet[0].instance_refresh[0].preferences[0].min_healthy_percentage == 100 && aws_autoscaling_group.fleet[0].instance_refresh[0].preferences[0].max_healthy_percentage == 101
     error_message = "Termination is held 15 minutes and a refresh replaces one worker at a time."
   }
@@ -185,6 +189,17 @@ run "fleet_scale_in_sits_under_scale_out" {
     fleet_enabled               = true
     fleet_instance_url          = "https://app.example.com"
     fleet_scale_in_memory_below = 70
+  }
+  expect_failures = [aws_launch_template.fleet[0]]
+}
+
+run "fleet_max_size_stays_under_the_ceiling" {
+  command = plan
+  variables {
+    fleet_enabled      = true
+    fleet_instance_url = "https://app.example.com"
+    fleet_max_size     = 60
+    fleet_max_ceiling  = 50
   }
   expect_failures = [aws_launch_template.fleet[0]]
 }
