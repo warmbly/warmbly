@@ -128,8 +128,9 @@ func (r *taskRepository) isolateUnknownCampaignSend(ctx context.Context, task, m
 	}
 	if len(executorResult) != 0 {
 		var result models.SendEmailResult
+		// SentAt is when the worker recorded the result, set on failures too, so it is not evidence of delivery.
 		if json.Unmarshal(executorResult, &result) != nil || result.TaskID != task || resultState(result) != "unknown" ||
-			result.MessageID != "" || result.ProviderMsgID != "" || !result.SentAt.IsZero() {
+			result.MessageID != "" || result.ProviderMsgID != "" {
 			return false, nil
 		}
 	}

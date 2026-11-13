@@ -35,3 +35,32 @@ func TestDeferTransientSendRetry(t *testing.T) {
 		}
 	}
 }
+
+func TestDeferAdmissionDeniedSend(t *testing.T) {
+	for _, code := range []string{"SEND_ADMISSION_DENIED", "CAMPAIGN_DAILY_LIMIT_REACHED", "MAILBOX_SENDING_PLAN_DENIED"} {
+		l := CampaignLog{EventType: "email_failed", Message: AdmissionDeniedLogPrefix + ", will retry: x",
+			Metadata: map[string]interface{}{"level": "error", "code": code, "will_retry": true}}
+		l.DeferTransientSendRetry()
+		if l.EventType != "email_deferred" || l.Metadata["level"] != "info" || !strings.Contains(l.Message, "Nothing was sent") {
+			t.Fatalf("%s: %+v", code, l)
+		}
+	}
+	d := CampaignLog{EventType: "email_failed", Message: DispatchFailedLogPrefix + "ann@example.com's email, will retry: x",
+		Metadata: map[string]interface{}{"level": "error", "code": "SEND_ADMISSION_DENIED", "will_retry": true}}
+	d.DeferTransientSendRetry()
+	if d.EventType != "email_deferred" || !strings.HasPrefix(d.Message, "Sending to ann@example.com was postponed") {
+		t.Fatalf("dispatch denial: %+v", d)
+	}
+	w := CampaignLog{EventType: "email_failed", Message: DispatchFailedLogPrefix + "ann@example.com's email, will retry: x",
+		Metadata: map[string]interface{}{"level": "error", "code": "WORKER_UNAVAILABLE", "will_retry": true}}
+	w.DeferTransientSendRetry()
+	if w.EventType != "email_failed" || w.Metadata["level"] != "error" {
+		t.Fatalf("worker outage rewritten: %+v", w)
+	}
+	l := CampaignLog{EventType: "email_failed", Message: AdmissionDeniedLogPrefix + ", will retry: x",
+		Metadata: map[string]interface{}{"level": "error", "code": "RECIPIENT_SUPPRESSED", "will_retry": true}}
+	l.DeferTransientSendRetry()
+	if l.EventType != "email_failed" || l.Metadata["level"] != "error" {
+		t.Fatalf("suppressed recipient rewritten: %+v", l)
+	}
+}

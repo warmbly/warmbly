@@ -38,8 +38,12 @@ func TestLiveCampaignAdmissionFailureReleasesReservationWithoutAnAttempt(t *test
 			f.sender.fail = fmt.Errorf("dispatch: %w", denied)
 			id := f.tick(t)
 			var code, message string
-			if err := f.pool.QueryRow(t.Context(), `SELECT metadata->>'code' FROM campaign_logs WHERE campaign_id=$1 AND event_type='email_failed' ORDER BY created_at DESC LIMIT 1`, f.campaign).Scan(&code); err != nil || code != campaignDispatchFailureCode(denied) {
+			var level string
+			if err := f.pool.QueryRow(t.Context(), `SELECT metadata->>'code',metadata->>'level' FROM campaign_logs WHERE campaign_id=$1 AND event_type='email_deferred' ORDER BY created_at DESC LIMIT 1`, f.campaign).Scan(&code, &level); err != nil || code != campaignDispatchFailureCode(denied) {
 				t.Fatalf("admission mislabeled as a worker outage: %s %v", code, err)
+			}
+			if level != "info" {
+				t.Fatalf("a send postponed before it left was logged as %s", level)
 			}
 			if err := f.pool.QueryRow(t.Context(), `SELECT message FROM task_failures WHERE task_id=$1`, id).Scan(&message); err != nil || !strings.Contains(message, denied.Error()) {
 				t.Fatalf("task failure lost admission reason: %s %v", message, err)

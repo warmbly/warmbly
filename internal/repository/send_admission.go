@@ -632,8 +632,22 @@ func (r *taskRepository) releaseOutbound(ctx context.Context, task, mailbox, wor
 			 ON CONFLICT(task_id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message`, task, reason.Error()); err != nil {
 				return "", err
 			}
-			metadata := map[string]any{"level": "error", "code": SendAdmissionCode(reason), "contact_id": contact.String(), "sequence_id": sequence.String(), "account_id": mailbox.String(), "task_id": task.String(), "error": reason.Error(), "will_retry": true}
-			if _, err = tx.Exec(ctx, `INSERT INTO campaign_logs(campaign_id,event_type,message,metadata) VALUES($1,'email_failed',$2,$3)`, c, "Send admission denied before worker execution, will retry: "+reason.Error(), metadata); err != nil {
+			code := SendAdmissionCode(reason)
+			metadata := map[string]any{"level": "error", "code": code, "contact_id": contact.String(), "sequence_id": sequence.String(), "account_id": mailbox.String(), "task_id": task.String(), "error": reason.Error(), "will_retry": true}
+			eventType, msg := "email_failed", models.AdmissionDeniedLogPrefix+", will retry: "+reason.Error()
+			// Nothing left Warmbly and the send is retried, so a postponement is not something to act on.
+			var recipient string
+			if err = tx.QueryRow(ctx, `SELECT email FROM contacts WHERE id=$1`, contact).Scan(&recipient); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return "", err
+			}
+			if recipient == "" {
+				recipient = "the recipient"
+			}
+			if deferred, ok := models.AdmissionDeferredMessage(recipient, code); ok {
+				eventType, msg = "email_deferred", deferred
+				metadata["level"] = "info"
+			}
+			if _, err = tx.Exec(ctx, `INSERT INTO campaign_logs(campaign_id,event_type,message,metadata) VALUES($1,$2,$3,$4)`, c, eventType, msg, metadata); err != nil {
 				return "", err
 			}
 		}

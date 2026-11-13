@@ -32,7 +32,9 @@ func newCampaignIsolationFixture(t *testing.T) *campaignIsolationFixture {
 		t.Fatalf("begin: %+v %v", state, err)
 	}
 	f := &campaignIsolationFixture{base, request, contact, nonce}
-	f.exec(t, `UPDATE tasks SET send_reserved_at=NOW()-INTERVAL '1 hour',send_executor_started_at=NOW()-INTERVAL '1 hour',send_executor_result=jsonb_build_object('task_id',id,'success',false) WHERE id=$1`, request.TaskID)
+	f.exec(t, `UPDATE tasks SET send_reserved_at=NOW()-INTERVAL '1 hour',send_executor_started_at=NOW()-INTERVAL '1 hour',send_executor_result=jsonb_build_object('task_id',id,'success',false,'sent_at',NOW()-INTERVAL '1 hour',
+		'error',jsonb_build_object('code','SERVER_UNREACHABLE','failure',jsonb_build_object('disposition','ambiguous'))),
+		send_result_evidence=jsonb_build_object('disposition','ambiguous') WHERE id=$1`, request.TaskID)
 	f.exec(t, `UPDATE outbound_attempts SET attempted_at=NOW()-INTERVAL '1 hour' WHERE task_id=$1`, request.TaskID)
 	return f
 }
@@ -101,6 +103,7 @@ func TestLiveCampaignUnknownIsolationProtectsUnverifiedBoundaries(t *testing.T) 
 		{"malformed evidence", `UPDATE tasks SET send_executor_result='[]' WHERE id=$1`},
 		{"other task evidence", `UPDATE tasks SET send_executor_result=jsonb_build_object('task_id',gen_random_uuid()) WHERE id=$1`},
 		{"definitive result", `UPDATE tasks SET send_executor_result=jsonb_build_object('task_id',id,'success',true) WHERE id=$1`},
+		{"provider message id", `UPDATE tasks SET send_executor_result=send_executor_result||jsonb_build_object('provider_msg_id','AAMk1') WHERE id=$1`},
 		{"authentication hold", `UPDATE email_accounts SET send_recovery_reason='authentication' WHERE id=(SELECT email_account_id FROM tasks WHERE id=$1)`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -23,6 +23,7 @@ var scopedCampaignLogMessages = map[string]string{
 	"sender_reassigned":          "A lead's sender was reassigned",
 	"tracking_domain_unverified": "An unverified tracking domain was not used",
 	"email_failed":               "An email could not be sent", "email_sent": "Email sent",
+	"email_deferred":          "An email was postponed and will be retried",
 	"progress_write_failed":   "Recording send progress failed; the email will not be sent again",
 	"provider_match_deferred": "Leads are waiting for a same-provider sender",
 	"suppressed":              "A recipient was skipped", "paused_lead": "A paused lead was skipped",
@@ -127,7 +128,7 @@ func scopedCampaignLog(entry models.CampaignLog, allowed []uuid.UUID, addresses 
 				copyCampaignLogEnum(meta, src, "scope", "mailbox", "campaign")
 			}
 		}
-	case "email_sent", "email_failed", "progress_write_failed", "sender_reassigned":
+	case "email_sent", "email_failed", "email_deferred", "progress_write_failed", "sender_reassigned":
 		for _, key := range []string{"contact_id", "sequence_id", "task_id"} {
 			copyCampaignLogID(meta, src, key, nil)
 		}
@@ -150,7 +151,7 @@ func scopedCampaignLog(entry models.CampaignLog, allowed []uuid.UUID, addresses 
 	case "guardrail_paused":
 		copyCampaignLogEnum(meta, src, "rule", "placement", "complaint_rate", "bounce_rate", "reply_rate")
 	}
-	if entry.EventType == "email_failed" || entry.EventType == "scheduler_failed" || entry.EventType == "auto_paused" || entry.EventType == "progress_write_failed" {
+	if entry.EventType == "email_failed" || entry.EventType == "email_deferred" || entry.EventType == "scheduler_failed" || entry.EventType == "auto_paused" || entry.EventType == "progress_write_failed" {
 		copyCampaignLogEnum(meta, src, "code",
 			"SEND_FAILED", "WORKER_UNAVAILABLE", "SEND_DISPATCH_UNKNOWN", "SEND_OUTCOME_LOST", "PROGRESS_WRITE_FAILED",
 			"CAMPAIGN_DAILY_LIMIT_REACHED", "MAILBOX_SENDING_PLAN_DENIED", "SEND_ADMISSION_DENIED",
