@@ -70,7 +70,7 @@ func TestLiveContactTimelineAccess(t *testing.T) {
 		VALUES ($1, $2, $3, $4, 'Timeline', 'Contact', '', '', '{}', NOW(), NOW())`, contactID, author, org, contactID.String()+"@test.local")
 	exec(`INSERT INTO contact_notes (contact_id, organization_id, user_id, content) VALUES ($1, $2, $3, 'Visible to the workspace')`, contactID, org, author)
 
-	h := &Handler{ContactService: contact.NewService(repository.NewContactRepostory(handle), nil, nil)}
+	h := &Handler{ContactService: contact.NewService(repository.NewContactRepostory(handle), nil)}
 	m := &middleware.Handler{OrganizationService: organization.NewService(repository.NewOrganizationRepository(handle.Pool), nil, nil, nil, nil)}
 	request := func(t *testing.T, user uuid.UUID, selectedOrg *uuid.UUID, apiPerms *uint64, status int) *httptest.ResponseRecorder {
 		t.Helper()

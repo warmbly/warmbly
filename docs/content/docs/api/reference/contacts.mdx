@@ -539,7 +539,7 @@ Reads a draft under a mapping and writes nothing. `409` once the import has star
 }
 ```
 
-Every row lands in exactly one of `new`, `existing`, `duplicates_in_file`, `invalid`, or `conflicts` (an address the caller holds as a contact in another organization). `invalid_samples` lists up to 25 of the invalid and conflicting rows. `problem`, when present, is why starting would be refused as a whole: the plan's contact limit, or too many distinct labels.
+Every row lands in exactly one of `new`, `existing`, `duplicates_in_file`, `invalid`, or `conflicts` (an address the caller holds as a contact in another organization). `invalid_samples` lists up to 25 of the invalid and conflicting rows. `problem`, when present, is why starting would be refused as a whole: the workspace's contact limit ([`contact_limit_reached`](/api/error-codes/#contact_limit_reached)), or too many distinct labels.
 
 ### Start an import
 

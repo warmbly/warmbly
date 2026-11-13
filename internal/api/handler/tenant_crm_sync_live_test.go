@@ -98,7 +98,7 @@ func TestLiveCRMSyncIntegrationsRefuseAnotherOrganization(t *testing.T) {
 	      VALUES ($1, $2, $3, $4, 'done', 1)`, apRunB, orgB, apB, []uuid.UUID{contactB})
 
 	integrations := integration.NewService(repository.NewIntegrationRepository(pool), nil, nil)
-	contacts := contact.NewService(repository.NewContactRepostory(handle), nil, nil)
+	contacts := contact.NewService(repository.NewContactRepostory(handle), nil)
 	apolloRepo := repository.NewApolloRepository(pool)
 	h := &Handler{
 		AuditService:        audit.NewNoOpService(),

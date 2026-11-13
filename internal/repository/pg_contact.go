@@ -110,7 +110,7 @@ type ContactRepository interface {
 	SetSubscribedByEmail(ctx context.Context, orgID uuid.UUID, email string, subscribed bool) error
 	BulkDelete(ctx context.Context, userID string, orgID uuid.UUID, contactIDs []string) *errx.Error
 	Delete(ctx context.Context, userID string, orgID uuid.UUID, contactID string) *errx.Error
-	GetContactCount(ctx context.Context, userID string) (int, *errx.Error)
+	GetContactCount(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
 
 	// DistinctCustomFieldKeys returns the org's distinct contact custom-field
 	// keys, frequency-ranked (most common first) then alphabetical, capped at
@@ -182,6 +182,40 @@ func normalizeCustomFields(in map[string]string) (map[string]string, *errx.Error
 				"invalid custom field name "+strconv.Quote(k)+": "+utils.JSONKeyRules)
 		}
 		out[key] = v
+	}
+	return out, nil
+}
+
+// orgAddressHolders maps each address the organization already holds to the
+// member whose contact it is, preferring the caller's own copy.
+func orgAddressHolders(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, userID string, leads []models.AddContact) (map[string]string, *errx.Error) {
+	emails := make([]string, 0, len(leads))
+	for i := range leads {
+		emails = append(emails, leads[i].Email)
+	}
+	const query = `
+		SELECT DISTINCT ON (LOWER(email)) LOWER(email), user_id::text
+		FROM contacts
+		WHERE organization_id = $1 AND LOWER(email) = ANY($2::text[])
+		ORDER BY LOWER(email), (user_id::text = $3) DESC, created_at ASC, id ASC`
+	rows, err := tx.Query(ctx, query, orgID, emails, userID)
+	if err != nil {
+		db.CaptureError(err, query, nil, "orgAddressHolders query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+	out := make(map[string]string, len(emails))
+	for rows.Next() {
+		var addr, holder string
+		if err := rows.Scan(&addr, &holder); err != nil {
+			db.CaptureError(err, query, nil, "orgAddressHolders scan")
+			return nil, errx.InternalError()
+		}
+		out[addr] = holder
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, query, nil, "orgAddressHolders rows")
+		return nil, errx.InternalError()
 	}
 	return out, nil
 }
@@ -328,9 +362,21 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 	}
 	defer tx.Rollback(ctx)
 
+	// The upsert's conflict target is per member, so an address another member
+	// already holds in this workspace is written under that member's key and
+	// updates their contact instead of creating a second one.
+	holder, xerr := orgAddressHolders(ctx, tx, orgID, userID, normalized)
+	if xerr != nil {
+		return nil, xerr
+	}
+
 	// Upsert contacts in a single batch round-trip.
 	insertBatch := pgx.Batch{}
 	for _, lead := range normalized {
+		owner := userID
+		if h, ok := holder[lead.Email]; ok {
+			owner = h
+		}
 		var vStatus, vSub, vReason, vProvider string
 		if lead.Verification != nil {
 			vStatus, vSub, vReason, vProvider = lead.Verification.Status, lead.Verification.SubStatus, lead.Verification.Reason, lead.Verification.Provider
@@ -379,7 +425,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 			 -- xmax = 0 only on a fresh row: the source is first-touch, so an
 			 -- upsert that hit an existing contact is not a creation.
 			 RETURNING id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at, (xmax = 0)`,
-			userID, orgID, lead.FirstName, lead.LastName, lead.Email, lead.Company, lead.Phone, lead.CustomFields,
+			owner, orgID, lead.FirstName, lead.LastName, lead.Email, lead.Company, lead.Phone, lead.CustomFields,
 			lead.Subscribed, lead.Subscribed, string(lead.Source), lead.SourceDetail,
 			vStatus, vSub, vReason, vProvider,
 		)
@@ -3706,12 +3752,13 @@ func (r *contactRepository) ExportAll(ctx context.Context, orgID string, filters
 	return out, nil
 }
 
-func (r *contactRepository) GetContactCount(ctx context.Context, userID string) (int, *errx.Error) {
-	query := `SELECT COUNT(*) FROM contacts WHERE user_id = $1`
+// GetContactCount counts the organization's contacts, whoever created them.
+func (r *contactRepository) GetContactCount(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	query := `SELECT COUNT(*) FROM contacts WHERE organization_id = $1`
 	var count int
-	err := resultDB(ctx, r.DB).QueryRow(ctx, query, userID).Scan(&count)
+	err := resultDB(ctx, r.DB).QueryRow(ctx, query, orgID).Scan(&count)
 	if err != nil {
-		db.CaptureError(err, query, []any{userID}, "queryrow")
+		db.CaptureError(err, query, []any{orgID}, "queryrow")
 		return 0, errx.InternalError()
 	}
 	return count, nil

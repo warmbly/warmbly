@@ -62,6 +62,10 @@ type FeatureGateService interface {
 	// the Warmup plan included, which is what the premium pool follows.
 	HasPremiumWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 
+	// ContactLimit is the most contacts the organization may hold: an operator
+	// override, else its plan's, else the product cap. 0 means no ceiling.
+	ContactLimit(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
+
 	// GetStorageLimitBytes returns the org's total attachment storage quota in
 	// bytes (generous; larger for paid orgs).
 	GetStorageLimitBytes(ctx context.Context, orgID uuid.UUID) (int64, *errx.Error)
@@ -328,6 +332,36 @@ func (s *featureGateService) GetSubscriptionStatus(ctx context.Context, orgID uu
 	}
 
 	return status, nil
+}
+
+// ContactLimit has no ceiling on a self-host unless an operator set one, whose seeded trial plan is not a limit.
+func (s *featureGateService) ContactLimit(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	if s.overrides != nil {
+		o, err := s.overrides.GetOrganizationLimitOverrides(ctx, orgID)
+		if err != nil {
+			return 0, errx.New(errx.Internal, "failed to load limit overrides")
+		}
+		if o != nil && o.MaxContacts > 0 {
+			return o.MaxContacts, nil
+		}
+	}
+	if s.selfHost {
+		return 0, nil
+	}
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return 0, errx.New(errx.Internal, "failed to get subscription")
+	}
+	if sub != nil {
+		plan, err := s.planRepo.GetByID(ctx, sub.EffectivePlanID())
+		if err != nil {
+			return 0, errx.New(errx.Internal, "failed to get plan")
+		}
+		if plan != nil && plan.MaxContacts > 0 {
+			return int(plan.MaxContacts), nil
+		}
+	}
+	return config.HardCapContacts, nil
 }
 
 // GetStorageLimitBytes returns the attachment quota: the larger pool only on a plan that sends.

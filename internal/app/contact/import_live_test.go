@@ -97,8 +97,8 @@ func newImportFixture(t *testing.T) *importFixture {
 
 	f.repo = repository.NewContactRepostory(handle)
 	f.segments = repository.NewSegmentRepository(handle)
-	// nil sub/plan repos: the plan cap is skipped, which is what we want here.
-	f.svc = NewService(f.repo, nil, nil)
+	// No limiter: the contact limit is skipped, which is what we want here.
+	f.svc = NewService(f.repo, nil)
 	// Segment targets on an import are written through the same repository the
 	// backend wires in; no syncer, so nothing enrols campaigns here.
 	f.svc.(SegmentAware).WireSegments(f.segments, nil)
