@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/warmbly/warmbly/internal/errx"
@@ -37,19 +38,26 @@ func TestLiveCampaignLoadingLogsKeepHistoryWithoutCustomerAlerts(t *testing.T) {
 	if err != nil || len(logs.Data) != 5 {
 		t.Fatalf("logs=%+v err=%v", logs, err)
 	}
-	normalized := 0
+	normalized, delayed := 0, 0
 	for _, entry := range logs.Data {
-		if entry.Message == "Sending was delayed while the mailbox reconnected. An automatic retry was scheduled." {
+		switch {
+		case entry.Message == "Sending was delayed while the mailbox reconnected. An automatic retry was scheduled.":
 			normalized++
 			if entry.EventType != "email_deferred" || entry.Metadata["level"] != "info" {
 				t.Fatalf("loading retry is still an alert: %+v", entry)
 			}
-		} else if entry.EventType != "email_failed" || entry.Metadata["level"] != "error" {
+		case strings.HasPrefix(entry.Message, "Sending to the recipient was delayed because the mail provider did not respond"):
+			// A retried temporary provider failure is a delay, not an alert.
+			delayed++
+			if entry.EventType != "email_deferred" || entry.Metadata["level"] != "info" {
+				t.Fatalf("temporary provider retry is still an alert: %+v", entry)
+			}
+		case entry.EventType != "email_failed" || entry.Metadata["level"] != "error":
 			t.Fatalf("real or exhausted failure was hidden: %+v", entry)
 		}
 	}
-	if normalized != 1 {
-		t.Fatalf("normalized %d loading retries, want one", normalized)
+	if normalized != 1 || delayed != 1 {
+		t.Fatalf("normalized %d loading retries and %d provider retries, want one each", normalized, delayed)
 	}
 	var raw int
 	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_logs WHERE campaign_id=$1 AND event_type='email_failed' AND metadata->>'level'='error'`, f.campaign).Scan(&raw); err != nil || raw != 5 {
