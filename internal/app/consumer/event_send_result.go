@@ -521,7 +521,8 @@ func (s *JobsService) logCampaignSendFailure(ctx context.Context, campaignID uui
 		meta["mailbox_loading_retry"] = true
 		msg = fmt.Sprintf("Sending to %s was delayed while the mailbox reconnected. An automatic retry was scheduled.", who)
 	}
-	if rolledBack && !exhausted && code != models.MailboxLoadingCode {
+	// A mailbox still loading is deferred only on its own evidence, above.
+	if rolledBack && !exhausted && code != models.MailboxLoadingCode && !strings.HasPrefix(reason, models.MailboxNotLoadedPrefix) {
 		if deferred, ok := models.TransientSendRetryMessage(who, code, attempts, config.CampaignSendMaxAttempts); ok {
 			eventType, msg = "email_deferred", deferred
 			meta["level"] = "info"
