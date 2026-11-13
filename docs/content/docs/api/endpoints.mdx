@@ -772,6 +772,7 @@ Alongside them, `api_url` is this API's own public base (for a copyable example 
 - `GET /auth/providers`, `POST /auth/apple`, `POST /auth/google` (native-app social sign-in)
 - `POST /auth/oidc/begin`, `GET /auth/oidc/callback` (generic OpenID Connect sign-in)
 - `POST /auth/google/begin`, `GET /auth/google/callback`, `POST /auth/apple/begin`, `POST /auth/apple/callback` (browser Sign in with Google and Sign in with Apple)
+- The three `begin` routes accept an optional JSON body `{"acquisition": {...}}`, the same object `POST /auth/register` takes. It is applied only when the sign-in creates a new workspace, and a missing or unreadable body signs in without it
 - `POST /auth/sso/exchange` (swaps the single-use handoff code from any of those callbacks for the session; `POST /auth/oidc/exchange` is the older name for the same endpoint)
 - `POST /auth/sso/link` (completes a provider sign-in that resolved to an existing password account: takes that account's password, attaches the identity and returns the session. An issued initial password is refused here with `password_change_required`)
 - `POST /auth/login/initial-password` (answers a `/auth/login` result with `password_change_required`: takes its single-use `pending_token` and the holder's own password, replaces the issued initial password, signs out other sessions and continues the sign-in in the `/auth/login` response shape. Retrying is safe: the token is spent once, and a repeat answers `password_change_expired`)

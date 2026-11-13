@@ -110,3 +110,19 @@ func TestOrgAcquisitionEmpty(t *testing.T) {
 		t.Fatal("a signup with a utm_source should not be Empty")
 	}
 }
+
+// The partner click rides the signup but never lands in the channel row.
+func TestOrgAcquisitionPartnerClick(t *testing.T) {
+	acq := OrgAcquisition{PartnerClickID: " cl1ck_ID-9 "}.Normalize()
+	if acq.PartnerClickID != "cl1ck_ID-9" || acq.Empty() {
+		t.Fatalf("a valid click must survive and keep the signup non-empty: %+v", acq)
+	}
+	if !acq.Channel().Empty() {
+		t.Fatal("Channel must drop the click, leaving nothing to store as acquisition")
+	}
+	for _, bad := range []string{`x"><b>`, "a b", "owner@example.com", string(make([]byte, 65))} {
+		if got := (OrgAcquisition{PartnerClickID: bad}).Normalize().PartnerClickID; got != "" {
+			t.Fatalf("click %q kept as %q", bad, got)
+		}
+	}
+}

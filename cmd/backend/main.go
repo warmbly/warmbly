@@ -111,6 +111,7 @@ import (
 	orgrisk "github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
 	"github.com/warmbly/warmbly/internal/app/owndomain"
+	"github.com/warmbly/warmbly/internal/app/partners"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/pipedrive"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -1162,6 +1163,18 @@ func main() {
 		}
 		// Where a signup came from, written onto the new org once it exists.
 		authService.WireAcquisition(organizationRepository)
+
+		// Partner program on Dub: hosted-only, off unless DUB_API_KEY is set.
+		if partnerProgram := partners.New(cfg.GetSecretOptional(ctx, "DUB_API_KEY", "dub/api_key", ""), repository.NewPartnerReferralRepository(primaryDB.Pool)); partnerProgram != nil {
+			authService.WirePartners(partnerProgram)
+			if w, ok := stripeService.(interface {
+				WirePartners(stripe.PartnerAttribution)
+			}); ok {
+				w.WirePartners(partnerProgram)
+			}
+			go partnerProgram.Start(ctx, 10*time.Minute)
+			log.Printf("Partner program: Dub attribution on")
+		}
 
 		// Server-side product analytics. Nil (and therefore off) unless the
 		// operator set POSTHOG_KEY, which no self-host does: the events are

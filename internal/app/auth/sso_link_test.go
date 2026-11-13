@@ -85,7 +85,7 @@ func federatedFixture(hash string, policy *config.AuthPolicy) (*authService, *mo
 func resolve(t *testing.T, s *authService) federatedResolution {
 	t.Helper()
 	res, err := s.resolveFederatedUser(context.Background(), models.IdentityProviderGoogle,
-		"https://accounts.google.com", "subject-1", &mail.Address{Address: "owner@example.com"}, "", "")
+		"https://accounts.google.com", "subject-1", &mail.Address{Address: "owner@example.com"}, "", "", models.OrgAcquisition{})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestFederatedSignInAsksNothingWhenNothingCanBeLinked(t *testing.T) {
 
 	s, u, ids := federatedFixture("$argon2id$hash", &config.AuthPolicy{})
 	res, err := s.resolveFederatedUser(context.Background(), models.IdentityProviderGoogle,
-		"https://accounts.google.com", "", &mail.Address{Address: "owner@example.com"}, "", "")
+		"https://accounts.google.com", "", &mail.Address{Address: "owner@example.com"}, "", "", models.OrgAcquisition{})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestFederatedSignInRefusesAnIdentityAnotherAccountHolds(t *testing.T) {
 	ids.taken = true
 
 	_, err := s.resolveFederatedUser(context.Background(), models.IdentityProviderGoogle,
-		"https://accounts.google.com", "subject-1", &mail.Address{Address: "owner@example.com"}, "", "")
+		"https://accounts.google.com", "subject-1", &mail.Address{Address: "owner@example.com"}, "", "", models.OrgAcquisition{})
 	if err == nil || err.Code != errx.Forbidden {
 		t.Fatalf("got %v, want a Forbidden refusal", err)
 	}
