@@ -2,13 +2,11 @@ package contact
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
@@ -17,46 +15,60 @@ import (
 	"github.com/warmbly/warmbly/internal/utils/validate"
 )
 
-// checkContactLimit enforces the plan's contact ceiling for a batch about to
-// be created. Callers that write in chunks (the importer) must ask once for
-// the whole batch, or a rejected chunk turns one plan problem into one error
-// per row.
-//
-// This path reads the plan directly instead of going through the feature
-// gate, so it never saw the self-host short-circuit: every self-hosted org
-// was capped at the seeded Free Trial plan's 100 contacts even though
-// BILLING_PROVIDER=none unlocks every other limit.
-func (s *contactService) checkContactLimit(ctx context.Context, userID string, adding int) *errx.Error {
-	if config.SelfHosted() || s.subRepo == nil || s.planRepo == nil || adding <= 0 {
+// checkContactLimit refuses a batch of new contacts that would take the
+// organization past its ceiling. Callers that write in chunks (the importer)
+// must ask once for the whole batch, or a rejected chunk turns one plan
+// problem into one error per row.
+func (s *contactService) checkContactLimit(ctx context.Context, orgID uuid.UUID, adding int) *errx.Error {
+	if s.limits == nil || adding <= 0 {
 		return nil
 	}
-	uid, parseErr := uuid.Parse(userID)
-	if parseErr != nil {
-		return nil
+	limit, xerr := s.limits.ContactLimit(ctx, orgID)
+	if xerr != nil || limit <= 0 {
+		return xerr
 	}
-	sub, err := s.subRepo.GetByUserID(ctx, uid)
-	if err != nil || sub == nil {
-		return nil
-	}
-	plan, err := s.planRepo.GetByID(ctx, sub.EffectivePlanID())
-	if err != nil || plan == nil || plan.MaxContacts <= 0 {
-		return nil
-	}
-	currentCount, xerr := s.contactRepository.GetContactCount(ctx, userID)
+	have, xerr := s.contactRepository.GetContactCount(ctx, orgID)
 	if xerr != nil {
-		return nil
+		return xerr
 	}
-	if currentCount+adding > int(plan.MaxContacts) {
-		return errx.New(errx.Forbidden, fmt.Sprintf(
-			"adding %d contacts would put you over your plan's limit of %d (you have %d)",
-			adding, plan.MaxContacts, currentCount))
+	if have+adding > limit {
+		return errx.ContactLimitReached(have, limit, adding)
 	}
 	return nil
 }
 
+// newAddresses counts the distinct addresses in contacts the organization does not hold yet.
+func (s *contactService) newAddresses(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) (int, *errx.Error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return 0, errx.ErrUuid
+	}
+	seen := make(map[string]bool, len(contacts))
+	emails := make([]string, 0, len(contacts))
+	for i := range contacts {
+		e := strings.ToLower(strings.TrimSpace(contacts[i].Email))
+		if e != "" && !seen[e] {
+			seen[e] = true
+			emails = append(emails, e)
+		}
+	}
+	existing, _, xerr := s.contactRepository.ImportLookup(ctx, orgID, uid, emails)
+	if xerr != nil {
+		return 0, xerr
+	}
+	return len(emails) - len(existing), nil
+}
+
 func (s *contactService) Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
-	if xerr := s.checkContactLimit(ctx, userID, len(contacts)); xerr != nil {
-		return nil, xerr
+	if xerr := s.checkContactLimit(ctx, orgID, len(contacts)); xerr != nil {
+		// Re-adding an address the workspace holds updates it, so only new ones count.
+		fresh, lerr := s.newAddresses(ctx, userID, orgID, contacts)
+		if lerr != nil {
+			return nil, xerr
+		}
+		if xerr := s.checkContactLimit(ctx, orgID, fresh); xerr != nil {
+			return nil, xerr
+		}
 	}
 
 	// Checked before the write so an unknown segment is a 400 rather than a

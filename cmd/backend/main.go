@@ -1490,7 +1490,7 @@ func main() {
 		rateLimitRepository := repository.NewRateLimitRepository(primaryDB)
 		rateLimitService = ratelimit.NewService(cache, rateLimitRepository)
 		sequenceService = sequence.NewService(sequenceRepostory)
-		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository, streamingPublisher)
+		contactService = contact.NewService(contactRepostory, featureGateService, streamingPublisher)
 		segmentRepository := repository.NewSegmentRepository(primaryDB)
 		segmentService = segment.NewService(segmentRepository, contactRepostory)
 		// Imports write segment include overrides, and every contact-mutating

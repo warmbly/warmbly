@@ -536,7 +536,7 @@ func (s *contactService) runImport(ctx context.Context, plan *importPlan, rows [
 	// Ask about the plan ceiling once for the whole batch. Per chunk it would
 	// report the same plan problem 500 times, which is what the row-level
 	// error list is explicitly not for.
-	if xerr := s.checkContactLimit(ctx, plan.userID, countNew(parsed, existing, elsewhere)); xerr != nil {
+	if xerr := s.checkContactLimit(ctx, plan.orgID, countNew(parsed, existing, elsewhere)); xerr != nil {
 		return nil, xerr
 	}
 
@@ -840,7 +840,10 @@ func (s *contactService) AnalyzeImport(ctx context.Context, userID string, orgID
 	// What would refuse the whole import is said now, not after the upload.
 	if xerr := repository.ValidateImportCategoryNames(titles); xerr != nil {
 		out.Problem = xerr.Message
-	} else if xerr := s.checkContactLimit(ctx, userID, out.New); xerr != nil {
+	} else if xerr := s.checkContactLimit(ctx, orgID, out.New); xerr != nil {
+		if xerr.Code == errx.Internal {
+			return nil, xerr
+		}
 		out.Problem = xerr.Message
 	}
 	return out, nil

@@ -1346,7 +1346,7 @@ The updated organization object.
 
 `GET /organization/current/limits`
 
-Returns the current organization's plan-resolved limits and current usage counts.
+Returns the current organization's plan-resolved limits and current usage counts. `max_contacts` is the ceiling every contact write enforces against `total_contacts`: an approved limit increase, else the plan's, else the product cap.
 
 Auth: Session only (not available to API keys). Requires a selected organization.
 
@@ -1358,6 +1358,7 @@ Auth: Session only (not available to API keys). Requires a selected organization
     "max_campaigns": 50,
     "max_team_members": 10,
     "max_email_accounts": 25,
+    "max_contacts": 25000,
     "daily_campaign_limit": 500
   },
   "counts": {

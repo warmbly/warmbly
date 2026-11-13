@@ -1676,15 +1676,34 @@ func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid
 	if err != nil {
 		return nil, err
 	}
+	contacts, err := s.contactLimit(ctx, orgID, ovMaxContacts)
+	if err != nil {
+		return nil, err
+	}
 
 	return &models.OrganizationLimits{
 		MaxCampaigns:       resolve(ovMaxCampaigns, planLimits.MaxCampaigns, config.HardCapCampaignsTotal),
 		MaxActiveCampaigns: resolve(ovMaxActive, planLimits.MaxActiveCampaigns, config.HardCapCampaignsActive),
 		MaxTeamMembers:     resolve(ovMaxMembers, planLimits.MaxTeamMembers, config.HardCapTeamMembers),
 		MaxEmailAccounts:   mailboxes.Allowance,
-		MaxContacts:        resolve(ovMaxContacts, planLimits.MaxContacts, config.HardCapContacts),
+		MaxContacts:        contacts,
 		DailyCampaignLimit: daily,
 	}, nil
+}
+
+// contactLimit is the ceiling the contact writes enforce, shown as the product cap where there is none.
+func (s *organizationService) contactLimit(ctx context.Context, orgID uuid.UUID, override int) (*int, *errx.Error) {
+	n := override
+	if s.gate != nil {
+		var xerr *errx.Error
+		if n, xerr = s.gate.ContactLimit(ctx, orgID); xerr != nil {
+			return nil, xerr
+		}
+	}
+	if n <= 0 {
+		n = config.HardCapContacts
+	}
+	return &n, nil
 }
 
 // dailySendLimit is the cap the sender enforces (feature.GetDailyEmailLimit), nil when it is unlimited.

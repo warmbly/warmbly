@@ -411,7 +411,14 @@ func main() {
 	// The lead-intake actions (create or update contact, add to campaign) write
 	// through a contact service so a reply-triggered flow in this process gets
 	// the same plan check, campaign wake and contact.created as the backend.
-	contactServiceC := contact.NewService(contactRepo, subscriptionRepoConsumer, planRepoConsumer, streamingPublisher)
+	contactGate := feature.NewService(subscriptionRepoConsumer, planRepoConsumer)
+	// An approved contact-limit increase applies here as it does in the backend.
+	if g, ok := contactGate.(interface {
+		WireLimitOverrides(feature.LimitOverrideReader)
+	}); ok {
+		g.WireLimitOverrides(orgRepoConsumer)
+	}
+	contactServiceC := contact.NewService(contactRepo, contactGate, streamingPublisher)
 	if aware, ok := contactServiceC.(contact.WebhookAware); ok {
 		aware.WireWebhooks(webhookService)
 	}

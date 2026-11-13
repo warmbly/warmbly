@@ -43,7 +43,7 @@ Admission denial before dispatch releases the send reservation without spending 
 | 400 | Bad Request | Invalid request syntax or parameters, or a quota that would be passed (`storage_limit_reached`) |
 | 401 | Unauthorized | Missing or invalid authentication |
 | 402 | Payment Required | The workspace balance is too low (`insufficient_credits`), a card was not charged when adding money (`card_declined`, `authentication_required`, `payment_failed`), or no free placement tests left this month (`placement_quota_exceeded`, `placement_not_entitled`) |
-| 403 | Forbidden | Authenticated but lacks permission, or the workspace's mailbox allowance is full (`mailbox_allowance_reached`) |
+| 403 | Forbidden | Authenticated but lacks permission, the workspace's mailbox allowance is full (`mailbox_allowance_reached`), or new contacts would pass its contact limit (`contact_limit_reached`) |
 | 404 | Not Found | Resource doesn't exist |
 | 409 | Conflict | Resource already exists |
 | 422 | Unprocessable | Validation failed |
@@ -864,6 +864,7 @@ Returned when authenticated but lacking necessary permissions.
 - Email account not in allowlist
 - Organization access restricted
 - The member is restricted to selected resources (`member_access_restricted`)
+- The workspace would pass its contact limit (`contact_limit_reached`)
 
 **Example:**
 
@@ -1298,6 +1299,24 @@ A `403` whose `code` is `mailbox_allowance_reached` comes from every path that c
 - Without a paid plan, choose one: every paid plan connects mailboxes
 - Submit a limit-increase request for `max_email_accounts` via `POST /organization/:orgId/limit-requests`, or move to a plan with more daily sends. An approved request raises the allowance immediately; retry the connect then
 - Reconnecting an existing mailbox never returns this code
+
+#### `contact_limit_reached`
+
+A `403` whose `code` is `contact_limit_reached` comes from `POST /contacts` and from starting a contact import. A Google Sheets sync refused this way records the same message as its last error, and a Salesforce import fails with it. It is not a permission problem: the new contacts would take the workspace past its contact limit. The limit and the count are the workspace's, whichever member adds the contacts, and an address the workspace already holds is an update, not a new contact. The limit is the plan's (`100` on the free trial), unless an approved limit increase raised it. The import preview reports the same refusal in `problem` before anything is uploaded. A form submission over the limit is still stored, without becoming a contact. Nothing was added.
+
+```json
+{
+  "error": "Forbidden",
+  "message": "Adding 20 contacts would take this workspace past its limit of 100 (it has 90). Remove contacts, request an increase, or upgrade your plan.",
+  "code": "contact_limit_reached",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+**How to fix:**
+- Read `limits.max_contacts` and `counts.total_contacts` from `GET /organization/current/limits` to see how much room is left
+- Submit a limit-increase request for `max_contacts` via `POST /organization/:orgId/limit-requests`, or move to a plan with more contacts. An approved request raises the limit immediately
+- Import fewer new contacts, or remove contacts you no longer need, then retry
 
 #### `invalid_attachment`
 
