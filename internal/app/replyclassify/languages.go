@@ -42,6 +42,9 @@ type langRules struct {
 	positiveRequests []string
 	// postverbalNegation reads French pas after an interest phrase, including intervening adverbs.
 	postverbalNegation bool
+	// conditionals and contrasts qualify only this language's interest phrases, because the
+	// words mean something else elsewhere ("als" is German "than", "mais" is Portuguese "more").
+	conditionals, contrasts []string
 }
 
 var baseRules = langRules{
@@ -152,6 +155,7 @@ var languageRules = map[string]langRules{
 			"lassen sie uns telefonieren", "lass uns telefonieren", "können wir telefonieren",
 			"gerne mehr erfahren", "schicken sie mir mehr informationen", "was kostet das",
 		},
+		contrasts: []string{"aber", "jedoch", "allerdings"},
 	},
 	"fr": {
 		postverbalNegation: true,
@@ -178,6 +182,7 @@ var languageRules = map[string]langRules{
 			"envoyez-moi plus d'informations", "envoyez-moi une offre", "envoyez-moi un devis",
 			"quel est le tarif", "quels sont vos tarifs",
 		},
+		contrasts: []string{"mais", "cependant", "toutefois"},
 	},
 	"es": {
 		quote:      []quoteMarker{{re: headerBlock(`de`, `enviado|fecha`)}},
@@ -200,6 +205,7 @@ var languageRules = map[string]langRules{
 		},
 		// "Si me interesa, les aviso" is conditional; only the accented "sí" says yes.
 		positiveAsWritten: []string{"sí me interesa", "sí, me interesa"},
+		contrasts:         []string{"pero", "aunque"},
 	},
 	"pt": {
 		quote: []quoteMarker{
@@ -216,6 +222,16 @@ var languageRules = map[string]langRules{
 			"não obrigado", "não, obrigado", "não obrigada", "não, obrigada", "pessoa errada",
 			"não sou a pessoa certa", "já temos uma solução", "já temos fornecedor",
 		},
+		positive: []string{
+			"tenho interesse", "temos interesse", "estou interessado", "estou interessada",
+			"estamos interessados", "estamos interessadas", "muito interessado", "muito interessada",
+			"muito interessados", "me interessa muito", "nos interessa muito", "parece interessante",
+			"vamos marcar uma reunião", "vamos marcar uma chamada", "podemos conversar", "podemos falar",
+			"envie mais informações", "envie-me mais informações", "me envie mais informações",
+			"quanto custa", "qual é o preço", "qual o valor",
+		},
+		conditionals: []string{"se", "caso"},
+		contrasts:    []string{"mas", "porém", "contudo"},
 	},
 	"it": {
 		quote:      []quoteMarker{{re: headerBlock(`da`, `inviato|data`)}},
@@ -231,6 +247,16 @@ var languageRules = map[string]langRules{
 			"no grazie", "no, grazie", "non fa per noi", "persona sbagliata", "non sono la persona giusta",
 			"abbiamo già una soluzione", "abbiamo già un fornitore",
 		},
+		positive: []string{
+			"sono interessato", "sono interessata", "siamo interessati", "siamo interessate",
+			"molto interessato", "molto interessata", "molto interessati", "mi interessa molto",
+			"ci interessa molto", "mi sembra interessante", "sembra interessante", "possiamo sentirci",
+			"fissiamo una chiamata", "organizziamo una chiamata", "mi mandi maggiori informazioni",
+			"mandatemi maggiori informazioni", "inviatemi maggiori informazioni", "quanto costa",
+			"qual è il prezzo",
+		},
+		conditionals: []string{"se", "qualora"},
+		contrasts:    []string{"ma", "però", "tuttavia"},
 	},
 	"nl": {
 		quote:      []quoteMarker{{re: headerBlock(`van`, `verzonden|datum`)}},
@@ -246,6 +272,15 @@ var languageRules = map[string]langRules{
 			"geen behoefte", "verkeerde persoon", "niet de juiste persoon", "niet de juiste contactpersoon",
 			"we hebben al een oplossing", "wij hebben al een oplossing",
 		},
+		positive: []string{
+			"klinkt goed", "klinkt interessant", "ik ben geïnteresseerd", "wij zijn geïnteresseerd",
+			"we zijn geïnteresseerd", "zeer geïnteresseerd", "erg geïnteresseerd", "lijkt me interessant",
+			"graag meer informatie", "ik hoor graag meer", "laten we bellen", "laten we een afspraak maken",
+			"stuur me meer informatie", "stuur mij meer informatie", "stuur ons meer informatie",
+			"wat kost het", "wat zijn de kosten",
+		},
+		conditionals: []string{"als", "indien", "mits"},
+		contrasts:    []string{"maar", "echter"},
 	},
 	"sv": {
 		quote:      []quoteMarker{nordicAttribution, {re: headerBlock(`från`, `skickat|datum`)}},
@@ -506,6 +541,8 @@ type phrase struct {
 	asWritten          bool
 	postverbalNegation bool
 	unlessNextWord     string
+	// conditionals are the phrase's own language's, on top of sharedConditionals; contrasts are its language's.
+	conditionals, contrasts map[string]bool
 }
 
 // negators are the words that, earlier in the sentence, turn an interest phrase around.
@@ -514,8 +551,14 @@ var negators = map[string]bool{
 	"pas": true, "ne": true, "non": true, "niet": true, "geen": true, "nao": true, "nunca": true, "jamas": true,
 }
 
+// sharedConditionals make interest conditional in any chosen language.
+var sharedConditionals = map[string]bool{"si": true, "wenn": true, "falls": true, "sofern": true}
+
+// politeConditions follow a conditional word without making a request conditional ("se possível").
+var politeConditions = map[string]bool{"possivel": true, "possibile": true, "mogelijk": true}
+
 // negatedOrConditionalAt keeps a qualified phrase from counting as definite interest.
-func negatedOrConditionalAt(text string, start int) bool {
+func negatedOrConditionalAt(text string, start int, conditionals map[string]bool) bool {
 	head := text[:start]
 	if i := strings.LastIndexAny(head, ".!?;"); i >= 0 {
 		head = head[i+1:]
@@ -530,7 +573,10 @@ func negatedOrConditionalAt(text string, start int) bool {
 			return true
 		}
 		for _, part := range strings.Split(word, "'") {
-			if negators[accentFolder.Replace(part)] || part == "si" || part == "wenn" || part == "falls" || part == "sofern" {
+			if negators[accentFolder.Replace(part)] || sharedConditionals[part] {
+				return true
+			}
+			if conditionals[accentFolder.Replace(part)] && !(i+1 < len(words) && politeConditions[accentFolder.Replace(words[i+1])]) {
 				return true
 			}
 		}
@@ -549,13 +595,24 @@ func unfoldedOffset(text string, offset int) int {
 	return len(text)
 }
 
-// contrasts open a reservation; a negator after one takes the interest back.
-var contrasts = map[string]bool{
-	"aber": true, "jedoch": true, "allerdings": true, "mais": true, "cependant": true, "toutefois": true, "pero": true, "aunque": true,
+// conditionalAfter reports a condition later in the phrase's sentence ("tenho interesse se o preço for baixo").
+func conditionalAfter(text string, end int, own map[string]bool) bool {
+	tail := text[end:]
+	if i := strings.IndexAny(tail, ".!?;"); i >= 0 {
+		tail = tail[:i]
+	}
+	words := strings.FieldsFunc(tail, func(r rune) bool { return !unicode.IsLetter(r) })
+	for i, word := range words {
+		polite := i+1 < len(words) && politeConditions[accentFolder.Replace(words[i+1])]
+		if sharedConditionals[word] || (own[accentFolder.Replace(word)] && !polite) {
+			return true
+		}
+	}
+	return false
 }
 
-// refusedAfter reports a contrast and then a negator later in the reply ("me interesa mucho, pero no ahora").
-func refusedAfter(text string, end int) bool {
+// refusedAfter reports a contrast of the phrase's language and then a negator later in the reply ("me interesa mucho, pero no ahora").
+func refusedAfter(text string, end int, contrasts map[string]bool) bool {
 	contrast := false
 	for _, word := range strings.FieldsFunc(text[end:], func(r rune) bool { return !unicode.IsLetter(r) }) {
 		if contrast && negators[word] {
@@ -602,11 +659,11 @@ func (p phrase) in(text, folded string) bool {
 		before, _ := utf8.DecodeLastRuneInString(text[:start])
 		after, _ := utf8.DecodeRuneInString(text[end:])
 		if !wordRune(before) && !wordRune(after) && !(p.unlessNextWord != "" && followedByWord(text, end, p.unlessNextWord)) {
-			originalStart := start
+			originalStart, originalEnd := start, end
 			if p.negatable && !p.asWritten {
-				originalStart = unfoldedOffset(original, start)
+				originalStart, originalEnd = unfoldedOffset(original, start), unfoldedOffset(original, end)
 			}
-			if !p.negatable || !(negatedOrConditionalAt(original, originalStart) || refusedAfter(text, end) || (p.postverbalNegation && frenchNegatedAfter(text, end))) {
+			if !p.negatable || !(negatedOrConditionalAt(original, originalStart, p.conditionals) || conditionalAfter(original, originalEnd, p.conditionals) || refusedAfter(text, end, p.contrasts) || (p.postverbalNegation && frenchNegatedAfter(text, end))) {
 				return true
 			}
 		}
@@ -646,6 +703,14 @@ func rulesFor(langs []string) *ruleSet {
 	return actual.(*ruleSet)
 }
 
+func foldedSet(words []string) map[string]bool {
+	set := map[string]bool{}
+	for _, w := range words {
+		set[accentFolder.Replace(w)] = true
+	}
+	return set
+}
+
 func compileRules(parts []langRules) *ruleSet {
 	rs := &ruleSet{inclusive: map[string]bool{}, months: map[string]int{}}
 	var separators, cues []string
@@ -676,11 +741,12 @@ func compileRules(parts []langRules) *ruleSet {
 		for _, n := range p.negative {
 			rs.negative = append(rs.negative, phrase{text: accentFolder.Replace(strings.ToLower(n)), bounded: i > 0})
 		}
+		conditionals, contrasts := foldedSet(p.conditionals), foldedSet(p.contrasts)
 		for _, pos := range p.positive {
-			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0, postverbalNegation: p.postverbalNegation})
+			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0, postverbalNegation: p.postverbalNegation, conditionals: conditionals, contrasts: contrasts})
 		}
 		for _, pos := range p.positiveRequests {
-			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0})
+			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0, conditionals: conditionals, contrasts: contrasts})
 		}
 		for _, pos := range p.positiveAsWritten {
 			rs.positive = append(rs.positive, phrase{text: strings.ToLower(pos), bounded: true, negatable: true, asWritten: true})
