@@ -31,6 +31,11 @@ func Parameter() string {
 	return strings.TrimSpace(os.Getenv("FLEET_JOIN_TOKEN_PARAMETER"))
 }
 
+// KMSKey is FLEET_JOIN_TOKEN_KMS_KEY, the key the parameter is encrypted with; empty means aws/ssm.
+func KMSKey() string {
+	return strings.TrimSpace(os.Getenv("FLEET_JOIN_TOKEN_KMS_KEY"))
+}
+
 // Store holds the plaintext token; Get answers "" for a parameter that does not exist.
 type Store interface {
 	Get(ctx context.Context) (string, error)
@@ -41,12 +46,13 @@ type Store interface {
 type Issuer interface {
 	VerifyJoinToken(ctx context.Context, token string) error
 	JoinTokenExpiresAt(ctx context.Context) (*time.Time, error)
-	IssueJoinToken(ctx context.Context, ttl time.Duration) (string, time.Time, error)
+	ActivateJoinToken(ctx context.Context, token string, expiresAt time.Time) error
 }
 
 // Sync leaves a stored token that still joins for more than RenewBefore, and
-// otherwise issues a new one and stores it. Issuing revokes the previous token,
-// so a failed store is retried by the next Sync rather than undone.
+// otherwise stores a new one and then activates it. A failed store leaves the
+// previous token stored and joining; a failed activation is repaired by the
+// next Sync, which finds a stored token that does not join.
 func Sync(ctx context.Context, store Store, issuer Issuer, now time.Time) (bool, error) {
 	current, err := store.Get(ctx)
 	if err != nil {
@@ -61,24 +67,27 @@ func Sync(ctx context.Context, store Store, issuer Issuer, now time.Time) (bool,
 			return false, nil
 		}
 	}
-	token, _, err := issuer.IssueJoinToken(ctx, fleetnode.MaxJoinTokenTTL)
+	token, expiresAt, err := fleetnode.NewJoinToken(fleetnode.MaxJoinTokenTTL)
 	if err != nil {
 		return false, err
 	}
 	if err := store.Put(ctx, token); err != nil {
-		return true, fmt.Errorf("store renewed join token: %w", err)
+		return false, fmt.Errorf("store renewed join token: %w", err)
+	}
+	if err := issuer.ActivateJoinToken(ctx, token, expiresAt); err != nil {
+		return false, fmt.Errorf("activate stored join token: %w", err)
 	}
 	return true, nil
 }
 
 // Run keeps the parameter current until ctx ends. Run it on one backend at a
 // time: two replicas issuing at once would each revoke the other's token.
-func Run(ctx context.Context, issuer Issuer, parameter string) error {
+func Run(ctx context.Context, issuer Issuer, parameter, kmsKey string) error {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("fleet join token: aws config: %w", err)
 	}
-	store := &parameterStore{client: ssm.NewFromConfig(cfg), name: parameter}
+	store := &parameterStore{client: ssm.NewFromConfig(cfg), name: parameter, kmsKey: kmsKey}
 	for {
 		wait := checkEvery
 		renewed, err := Sync(ctx, store, issuer, time.Now())
@@ -100,6 +109,7 @@ func Run(ctx context.Context, issuer Issuer, parameter string) error {
 type parameterStore struct {
 	client *ssm.Client
 	name   string
+	kmsKey string
 }
 
 func (p *parameterStore) Get(ctx context.Context) (string, error) {
@@ -115,11 +125,15 @@ func (p *parameterStore) Get(ctx context.Context) (string, error) {
 }
 
 func (p *parameterStore) Put(ctx context.Context, token string) error {
-	_, err := p.client.PutParameter(ctx, &ssm.PutParameterInput{
+	in := &ssm.PutParameterInput{
 		Name:      aws.String(p.name),
 		Value:     aws.String(token),
 		Type:      ssmtypes.ParameterTypeSecureString,
 		Overwrite: aws.Bool(true),
-	})
+	}
+	if p.kmsKey != "" {
+		in.KeyId = aws.String(p.kmsKey)
+	}
+	_, err := p.client.PutParameter(ctx, in)
 	return err
 }

@@ -2311,7 +2311,7 @@ func main() {
 		// The worker Auto Scaling Group joins with the token in this parameter; unset on every other deployment.
 		if parameter := fleetjoin.Parameter(); parameter != "" && fleetNodeService != nil {
 			elector.Go("fleet_join_token", func(ctx context.Context) {
-				if err := fleetjoin.Run(ctx, fleetNodeService, parameter); err != nil {
+				if err := fleetjoin.Run(ctx, fleetNodeService, parameter, fleetjoin.KMSKey()); err != nil {
 					log.Printf("Warning: fleet join token renewal disabled: %v", err)
 				}
 			})
