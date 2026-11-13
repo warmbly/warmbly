@@ -236,9 +236,10 @@ reaches the cap, and the backend logs `worker fleet is at its size cap` once an
 hour while it stays there.
 
 The new cap must be at least the running fleet and `fleet_min_size`, and at most
-the ceiling, so lowering it never stops a running worker. If a scale-out lands
-between that check and the change, the group scales in by that worker the way
-any scale-in does: AWS first picks the Availability Zone with the most workers,
+the ceiling. The one way lowering it stops a worker is a scale-out landing in the
+moment between that check and the change: the group then removes one worker at
+once, without the quiet period the fleet's own scale-in waits for, and picks it
+the way any scale-in does: AWS first picks the Availability Zone with the most workers,
 then the newest worker in it, which can be one that holds mailboxes. It leaves
 through the drain hook and its mailboxes are placed on the rest of the fleet. A
 change asks for a fresh confirmation of the operator's identity and is recorded
