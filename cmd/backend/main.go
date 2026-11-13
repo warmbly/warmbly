@@ -58,6 +58,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cliauth"
 	"github.com/warmbly/warmbly/internal/app/clientreport"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
+	"github.com/warmbly/warmbly/internal/app/companyenrich"
 	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/connectlink"
 	"github.com/warmbly/warmbly/internal/app/contact"
@@ -425,6 +426,7 @@ func main() {
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
 	var leadFinderServiceForHandler *leadfinder.Service
+	var companyEnrichServiceForHandler *companyenrich.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1907,6 +1909,13 @@ func main() {
 
 		// Apollo list imports and enrichment, and Clay's inbound rows; both run
 		// through the contact importer.
+		companyEnrichServiceForHandler = companyenrich.NewService(companyenrich.Deps{
+			Integrations: integrationServiceForHandler,
+			Contacts:     repository.NewCompanyEnrichContactRepository(primaryDB, contactRepostory),
+			Importer:     contactService,
+		})
+		integrationServiceForHandler.SetCredentialCheck(models.IntegrationCompanyEnrich, companyEnrichServiceForHandler.CredentialCheck)
+
 		apolloServiceForHandler = apollo.NewService(apollo.Deps{
 			Repo:         repository.NewApolloRepository(primaryDB.Pool),
 			Integrations: integrationServiceForHandler,
@@ -2895,10 +2904,11 @@ func main() {
 		LeadSyncService: leadSyncServiceForHandler,
 
 		// Native Salesforce sync
-		SalesforceService: salesforceServiceForHandler,
-		ApolloService:     apolloServiceForHandler,
-		ClayService:       clayServiceForHandler,
-		LeadFinderService: leadFinderServiceForHandler,
+		SalesforceService:    salesforceServiceForHandler,
+		ApolloService:        apolloServiceForHandler,
+		CompanyEnrichService: companyEnrichServiceForHandler,
+		ClayService:          clayServiceForHandler,
+		LeadFinderService:    leadFinderServiceForHandler,
 
 		WebsocketURI: websocketURI,
 
