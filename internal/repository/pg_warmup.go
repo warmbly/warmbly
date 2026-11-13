@@ -204,7 +204,7 @@ type WarmupRepository interface {
 	ListMailboxLoadingIncidents(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error)
 	GetWarmupStatistics(ctx context.Context, accountID uuid.UUID, from, to time.Time) ([]WarmupStatistic, error)
 	GetWarmupSummaries(ctx context.Context, accountIDs []uuid.UUID, from, to time.Time) (map[uuid.UUID]WarmupSummary, error)
-	RecordDailyTarget(ctx context.Context, accountID uuid.UUID, at time.Time, targetVolume int) error
+	RecordDailyTarget(ctx context.Context, accountID uuid.UUID, localDay time.Time, targetVolume int) error
 
 	// Pool-wide placement analytics (admin overview)
 	PoolSpamPlacementRate(ctx context.Context, since time.Time) (float64, error)
@@ -1557,14 +1557,15 @@ func (r *warmupRepository) GetWarmupStatistics(ctx context.Context, accountID uu
 	return stats, rows.Err()
 }
 
-// RecordDailyTarget stores the day's planned warmup volume on the same UTC day row the send counters use.
-func (r *warmupRepository) RecordDailyTarget(ctx context.Context, accountID uuid.UUID, at time.Time, targetVolume int) error {
+// RecordDailyTarget stores a mailbox's local day's planned warmup volume on the row with that calendar date,
+// so each date carries exactly one day's plan however the local day straddles UTC midnight.
+func (r *warmupRepository) RecordDailyTarget(ctx context.Context, accountID uuid.UUID, localDay time.Time, targetVolume int) error {
 	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
-		VALUES ($1, ($2::timestamptz AT TIME ZONE 'UTC')::date, 0, 0, $3)
+		VALUES ($1, $2::date, 0, 0, $3)
 		ON CONFLICT (email_account_id, date)
 		DO UPDATE SET target_volume = EXCLUDED.target_volume
-		WHERE warmup_statistics.target_volume IS DISTINCT FROM EXCLUDED.target_volume`, accountID, at, targetVolume)
+		WHERE warmup_statistics.target_volume IS DISTINCT FROM EXCLUDED.target_volume`, accountID, localDay.Format(time.DateOnly), targetVolume)
 	return err
 }
 
