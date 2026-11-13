@@ -2503,6 +2503,7 @@ func main() {
 					GoogleKey:     cfg.GetSecretOptional(ctx, "LEAD_FINDER_GOOGLE_PLACES_API_KEY", "lead_finder/google_places_api_key", ""),
 					FoursquareKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_FOURSQUARE_API_KEY", "lead_finder/foursquare_api_key", ""),
 					OutscraperKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_OUTSCRAPER_API_KEY", "lead_finder/outscraper_api_key", ""),
+					ScavioKey:     cfg.GetSecretOptional(ctx, "LEAD_FINDER_SCAVIO_API_KEY", "lead_finder/scavio_api_key", ""),
 				},
 			})
 			go jobrun.Loop(ctx, "lead_enrichment_runs", time.Minute, true, leadFinderServiceForHandler.RunPendingEnrichment)

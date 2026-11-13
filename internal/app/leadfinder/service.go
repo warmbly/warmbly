@@ -40,6 +40,7 @@ type Config struct {
 	GoogleKey     string
 	FoursquareKey string
 	OutscraperKey string
+	ScavioKey     string
 	MapStyleLight string
 	MapStyleDark  string
 	UserAgent     string
@@ -121,6 +122,8 @@ func keyedProvider(id models.LeadProvider, key string) Provider {
 		return NewFoursquare(key)
 	case models.LeadProviderOutscraper:
 		return NewOutscraper(key)
+	case models.LeadProviderScavio:
+		return NewScavio(key)
 	}
 	return nil
 }
@@ -130,6 +133,7 @@ var integrationFor = map[models.LeadProvider]models.IntegrationProvider{
 	models.LeadProviderGooglePlaces: models.IntegrationGooglePlaces,
 	models.LeadProviderFoursquare:   models.IntegrationFoursquare,
 	models.LeadProviderOutscraper:   models.IntegrationOutscraper,
+	models.LeadProviderScavio:       models.IntegrationScavio,
 }
 
 var providerMeta = map[models.LeadProvider]ProviderInfo{
@@ -157,6 +161,12 @@ var providerMeta = map[models.LeadProvider]ProviderInfo{
 		PageSize:    outscraperPageSize, MaxPages: outscraperMaxSkip / outscraperPageSize,
 		Fields: []string{"name", "address", "category", "website", "phone", "email", "rating", "reviews", "price", "hours", "socials", "status"},
 	},
+	models.LeadProviderScavio: {
+		Name:        "Scavio",
+		Description: "Google Maps results through Scavio, with ratings, review counts, hours, phone numbers and websites.",
+		PageSize:    scavioPageSize, MaxPages: scavioMaxStart/scavioPageSize + 1,
+		Fields: []string{"name", "address", "category", "website", "phone", "rating", "reviews", "price", "hours", "status"},
+	},
 }
 
 func (s *Service) instanceKey(id models.LeadProvider) string {
@@ -167,6 +177,8 @@ func (s *Service) instanceKey(id models.LeadProvider) string {
 		return s.Config.FoursquareKey
 	case models.LeadProviderOutscraper:
 		return s.Config.OutscraperKey
+	case models.LeadProviderScavio:
+		return s.Config.ScavioKey
 	}
 	return ""
 }
