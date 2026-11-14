@@ -73,6 +73,10 @@ func TestLiveCampaignUnknownIsolationPreservesChargeAndFencesCommand(t *testing.
 	if charged, err := f.r.CountCampaignEmailsSentToday(t.Context(), f.sender); err != nil || charged != 1 {
 		t.Fatalf("isolated send lost its daily capacity charge: count=%d err=%v", charged, err)
 	}
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+	if charged, err := NewBehaviorRepository(f.pool).CountSendsBetween(t.Context(), f.sender, "campaign", day, day.Add(24*time.Hour)); err != nil || charged != 1 {
+		t.Fatalf("isolated send lost its sending-profile charge: count=%d err=%v", charged, err)
+	}
 	f.assertSQL(t, `SELECT t.status='cancelled' AND t.campaign_send_isolated_at IS NOT NULL AND t.send_result_state='unknown' AND t.send_result_applied_at IS NULL AND t.send_released_at IS NULL AND NOT ea.send_recovery_hold FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1`, f.request.TaskID)
 	f.assertSQL(t, `SELECT cl.send_outcome_pending_at IS NOT NULL AND p.dispatched_at IS NOT NULL AND p.sent_at IS NULL FROM campaign_contact_progress p JOIN campaign_leads cl ON cl.campaign_id=p.campaign_id AND cl.contact_id=p.contact_id WHERE dispatch_task_id=$1`, f.request.TaskID)
 	state, err := f.r.BeginOutbound(t.Context(), f.request.TaskID, f.sender, f.worker, f.nonce)

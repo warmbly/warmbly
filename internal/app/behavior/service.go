@@ -162,10 +162,12 @@ type Resolved struct {
 	Behavior models.SendingBehavior
 	Loc      *time.Location
 
-	accountID  uuid.UUID
-	svc        *service
-	ctx        context.Context
-	cache      map[string]models.DailyPlan
+	accountID uuid.UUID
+	svc       *service
+	ctx       context.Context
+	cache     map[string]models.DailyPlan
+	// sent memoizes send counts per range for this Resolved's lifetime (one scheduling pass).
+	sent       map[[2]int64]int
 	warmupDays int
 }
 
@@ -246,6 +248,7 @@ func (s *service) Resolve(ctx context.Context, account *models.Email) Resolved {
 		svc:       s,
 		ctx:       ctx,
 		cache:     map[string]models.DailyPlan{},
+		sent:      map[[2]int64]int{},
 	}
 
 	b, err := s.profileFor(ctx, account.ID)
@@ -300,6 +303,7 @@ func (s *service) ResolveMany(ctx context.Context, accounts []models.Email) map[
 			svc:       s,
 			ctx:       ctx,
 			cache:     map[string]models.DailyPlan{},
+			sent:      map[[2]int64]int{},
 		}
 	}
 	return out
@@ -319,13 +323,20 @@ func (s *service) countSends(ctx context.Context, accountID uuid.UUID, from, to 
 	return s.behaviorRepo.CountSendsBetween(ctx, accountID, "campaign", from, to)
 }
 
-func (s *service) sentInRange(ctx context.Context, accountID uuid.UUID, from, to time.Time) int {
-	n, err := s.countSends(ctx, accountID, from, to)
+func (s *service) sentInRange(ctx context.Context, r Resolved, from, to time.Time) int {
+	key := [2]int64{from.UnixNano(), to.UnixNano()}
+	if n, ok := r.sent[key]; ok {
+		return n
+	}
+	n, err := s.countSends(ctx, r.accountID, from, to)
 	if err != nil {
 		// Fail closed on the count: an unknown spend is treated as the budget
 		// being fully consumed, which delays a send rather than over-sending
 		// from a mailbox whose real usage we could not read.
 		return unlimited
+	}
+	if r.sent != nil {
+		r.sent[key] = n
 	}
 	return n
 }
@@ -339,7 +350,7 @@ func (s *service) RemainingToday(ctx context.Context, r Resolved, at time.Time) 
 		return 0
 	}
 	from, to := s.localDayRange(at, r.Loc)
-	remaining := plan.DailyLimit - s.sentInRange(ctx, r.accountID, from, to)
+	remaining := plan.DailyLimit - s.sentInRange(ctx, r, from, to)
 	if remaining < 0 {
 		return 0
 	}
@@ -355,7 +366,7 @@ func (s *service) RemainingThisHour(ctx context.Context, r Resolved, at time.Tim
 		return 0
 	}
 	from, to := HourWindow(at, r.Loc)
-	remaining := plan.HourlyLimit - s.sentInRange(ctx, r.accountID, from, to)
+	remaining := plan.HourlyLimit - s.sentInRange(ctx, r, from, to)
 	if remaining < 0 {
 		return 0
 	}

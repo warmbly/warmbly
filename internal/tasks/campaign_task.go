@@ -1820,6 +1820,8 @@ func (s *tasksService) recordSchedulerFailure(ctx context.Context, campaignID uu
 	if s.campaignLogRepo == nil {
 		return
 	}
+	ctx, cancel := failurePathContext(ctx)
+	defer cancel()
 	meta := map[string]interface{}{
 		"level": "error",
 		"code":  code,
@@ -1852,6 +1854,8 @@ func (s *tasksService) resolveOptOut(ctx context.Context, orgID uuid.UUID, campa
 // out. Its slot moves with it: a due pending task is fired again every second
 // by the in-process dispatcher, and a failure that repeats would run in a loop.
 func (s *tasksService) retryCampaignTickLater(ctx context.Context, task *Task) {
+	ctx, cancel := failurePathContext(ctx)
+	defer cancel()
 	// The slot moves first: a pass left pending at its old, due slot is the
 	// loop this exists to prevent.
 	name := ""
@@ -1859,11 +1863,18 @@ func (s *tasksService) retryCampaignTickLater(ctx context.Context, task *Task) {
 		name = *task.CloudTaskName
 	}
 	if err := s.taskRepo.UpdateTaskScheduledAt(ctx, task.ID, time.Now().Add(config.CampaignTickRetrySeconds*time.Second), name); err != nil {
+		// Left active, keepChainAfterFailure closes it and starts a fresh pass instead.
 		errs.CaptureException(err)
+		return
 	}
 	if err := s.taskRepo.UpdateTaskStatus(ctx, task.ID, "pending"); err != nil {
 		errs.CaptureException(err)
 	}
+}
+
+// failurePathContext outlives the pass's own deadline, which is often what failed it.
+func failurePathContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 }
 
 // keepChainAfterFailure makes sure a campaign whose pass failed still has a
