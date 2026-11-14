@@ -50,7 +50,7 @@ func resolveManyUncached(s *service, ctx context.Context, accounts []models.Emai
 			b = models.DefaultSendingBehavior(a.ID)
 		}
 		b.Timezone = a.ClockTimezone()
-		out[a.ID] = Resolved{Enabled: b.Enabled, Behavior: b, Loc: loadLocation(a.ClockTimezone()), accountID: a.ID, svc: s, ctx: ctx, cache: map[string]models.DailyPlan{}}
+		out[a.ID] = Resolved{Enabled: b.Enabled, Behavior: b, Loc: loadLocation(a.ClockTimezone()), accountID: a.ID, svc: s, ctx: ctx, cache: map[string]models.DailyPlan{}, sent: map[[2]int64]int{}}
 	}
 	return out
 }

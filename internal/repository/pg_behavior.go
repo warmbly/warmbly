@@ -229,15 +229,26 @@ func (r *behaviorRepository) PurgePlansBefore(ctx context.Context, before time.T
 // campaign_contact_progress.dispatched_at, which is written during the send
 // this query already counts once the task completes.
 func (r *behaviorRepository) CountSendsBetween(ctx context.Context, accountID uuid.UUID, taskType string, from, to time.Time) (int, error) {
+	// taskConsumesSendBudget split into its two arms so each reads its own partial index; the OR form scans every task.
 	query := `
-		SELECT COUNT(*)
-		FROM tasks t
-		WHERE t.email_account_id = $1
-		  AND (t.task_type = $2::task_type OR ($2 = 'campaign' AND t.task_type = 'placement'))
-		  AND ` + taskConsumesSendBudget + `
-		  AND t.completed_at >= $3
-		  AND t.completed_at < $4
-		  AND ` + taskDispatchedEmail
+		SELECT
+		  (SELECT COUNT(*) FROM tasks t
+		   WHERE t.email_account_id = $1
+		     AND t.status = 'completed'
+		     AND (t.task_type = $2::task_type OR ($2 = 'campaign' AND t.task_type = 'placement'))
+		     AND t.completed_at >= $3
+		     AND t.completed_at < $4
+		     AND ` + taskDispatchedEmail + `)
+		+ (SELECT COUNT(*) FROM tasks t
+		   WHERE $2 = 'campaign'
+		     AND t.email_account_id = $1
+		     AND t.task_type = 'campaign'
+		     AND t.status <> 'completed'
+		     AND t.campaign_send_isolated_at IS NOT NULL
+		     AND t.send_released_at IS NULL
+		     AND t.completed_at >= $3
+		     AND t.completed_at < $4
+		     AND ` + taskDispatchedEmail + `)`
 
 	var count int
 	err := r.db.QueryRow(ctx, query, accountID, taskType, from, to).Scan(&count)
