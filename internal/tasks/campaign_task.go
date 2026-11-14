@@ -1863,7 +1863,9 @@ func (s *tasksService) retryCampaignTickLater(ctx context.Context, task *Task) {
 		name = *task.CloudTaskName
 	}
 	if err := s.taskRepo.UpdateTaskScheduledAt(ctx, task.ID, time.Now().Add(config.CampaignTickRetrySeconds*time.Second), name); err != nil {
+		// Left active, keepChainAfterFailure closes it and starts a fresh pass instead.
 		errs.CaptureException(err)
+		return
 	}
 	if err := s.taskRepo.UpdateTaskStatus(ctx, task.ID, "pending"); err != nil {
 		errs.CaptureException(err)
