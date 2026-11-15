@@ -31,6 +31,7 @@ struct MailboxDetailView: View {
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeDetail) private var closeDetail
 
     @State private var store: MailboxDetailStore
     @State private var tab: MailboxDetailTab = .overview
@@ -87,7 +88,7 @@ struct MailboxDetailView: View {
         ) {
             Button("Disconnect", role: .destructive) {
                 Task {
-                    if await store.deleteAccount(env.api) { dismiss() }
+                    if await store.deleteAccount(env.api) { leave() }
                 }
             }
         } message: {
@@ -113,6 +114,11 @@ struct MailboxDetailView: View {
         } message: {
             Text(store.actionError ?? "")
         }
+    }
+
+    /// Back to the list: pops the stack, or empties the detail column beside it.
+    private func leave() {
+        if let closeDetail { closeDetail() } else { dismiss() }
     }
 
     // MARK: Hero

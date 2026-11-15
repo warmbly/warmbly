@@ -43,6 +43,8 @@ enum WTheme {
     // iOS grouped settings: a grey page with white cards (dark: black page, grey cards).
     static let groupedPage = Color.dynamic(light: 0xF2F2F7, dark: 0x131315)
     static let groupedCard = Color.dynamic(light: 0xFFFFFF, dark: 0x202024)
+    /// A card on the plain canvas: a quiet step off white, edged with a hairline.
+    static let canvasCard = Color.dynamic(light: 0xF8F8F9, dark: 0x1B1B1E)
 
     /// The rim of a sheet raised over the sky photo; only dark mode needs one.
     static let sheetEdge = Color(UIColor { $0.userInterfaceStyle == .dark

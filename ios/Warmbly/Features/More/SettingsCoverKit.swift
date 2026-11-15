@@ -39,12 +39,25 @@ struct CoverHeader<Trailing: View>: View {
                 Spacer(minLength: 6)
                 PresenceAvatars(maxShown: 3)
                 trailing()
-                GlassCircleButton(symbol: "xmark", label: "Close", action: onClose)
+                CoverCloseButton(label: "Close", action: onClose)
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 6)
         .padding(.bottom, 8)
+    }
+}
+
+/// A cover's close button, absent where the page is an iPad sidebar destination.
+struct CoverCloseButton: View {
+    let label: String
+    let action: () -> Void
+    @Environment(\.isSidebarDestination) private var isSidebarDestination
+
+    var body: some View {
+        if !isSidebarDestination {
+            GlassCircleButton(symbol: "xmark", label: label, action: action)
+        }
     }
 }
 
@@ -94,7 +107,7 @@ struct PillSwitcher<Value: Hashable>: View {
                     .background {
                         if selected {
                             Capsule()
-                                .fill(WTheme.groupedCard)
+                                .fill(GroupedSurface.card)
                                 .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
                                 .matchedGeometryEffect(id: "pill", in: space)
                         }
@@ -119,7 +132,7 @@ extension View {
         self
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
@@ -432,7 +445,7 @@ struct ChipFilterRow<Value: Hashable>: View {
                             if selected {
                                 Capsule().fill(WTheme.ink).matchedGeometryEffect(id: "chip", in: space)
                             } else {
-                                Capsule().fill(WTheme.groupedCard)
+                                Capsule().fill(GroupedSurface.card)
                             }
                         }
                     }

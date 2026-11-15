@@ -6,10 +6,11 @@ import SwiftUI
 /// edge-swipe), a search pill with hamburger + presence + circular close, a
 /// tracked-uppercase scope caption, and deals grouped by stage under eyebrow
 /// captions in a dense hairline list. Stage-move + edit stay gated behind
-/// manageContacts. Reloads on the .crm realtime pulse.
+/// manageContacts. Reloads on the .crm realtime pulse. A pane at least
+/// SplitMetrics.detailMinContentWidth wide shows CRMDealsBoard instead.
 
 /// Drawer scopes mapping onto the store's statusFilter.
-private enum CRMDealScope: String, CaseIterable, Identifiable {
+enum CRMDealScope: String, CaseIterable, Identifiable {
     case all, open, won, lost
 
     var id: String { rawValue }
@@ -50,11 +51,14 @@ struct CRMDealsView: View {
     @State private var sidebarOpen = false
     @State private var shown = false
     @State private var celebrate = 0
+    @State private var paneWidth: CGFloat = 0
     @FocusState private var searchFocused: Bool
 
     private var canWrite: Bool { env.session.can(.manageContacts) }
     private var isSearching: Bool { !store.query.trimmingCharacters(in: .whitespaces).isEmpty }
     private var scope: CRMDealScope { CRMDealScope(status: store.statusFilter) }
+    /// Measured on the page itself, so a hidden iPad sidebar widens it into a board too.
+    private var isBoard: Bool { paneWidth >= SplitMetrics.detailMinContentWidth }
 
     var body: some View {
         NavigationStack {
@@ -131,11 +135,12 @@ struct CRMDealsView: View {
                 menuLabel: "Open deals menu",
                 onMenu: openSidebar
             ) {
-                GlassCircleButton(symbol: "xmark", label: "Close deals") { dismiss() }
+                CoverCloseButton(label: "Close deals") { dismiss() }
             }
             list
         }
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
         .overlay { ConfettiBurst(trigger: celebrate) }
         .sensoryFeedback(.success, trigger: celebrate)
     }
@@ -150,14 +155,7 @@ struct CRMDealsView: View {
         let openCount = summary?.openCount ?? 0
         let won = summary?.wonCount ?? 0
         let lost = summary?.lostCount ?? 0
-        let stages = store.orderedStages
-        // Open deals only; terminal stages hold closed deals and read as $0 here.
-        let values: [(CRMStage, Double)] = stages.compactMap { stage in
-            let open = store.deals(inStage: stage.id)
-            guard !open.isEmpty else { return nil }
-            return (stage, open.compactMap(\.value).reduce(0, +))
-        }
-        let total = max(1, values.reduce(0) { $0 + $1.1 })
+        let values = store.openStageValues
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -193,10 +191,7 @@ struct CRMDealsView: View {
                 }
             }
             if !values.isEmpty {
-                GeometryReader { proxy in
-                    stageBar(values, total: total, width: proxy.size.width)
-                }
-                .frame(height: 10)
+                CRMDealsStageBar(values: values, shown: shown)
                 VStack(spacing: 9) {
                     ForEach(Array(values.enumerated()), id: \.offset) { _, item in
                         let count = store.deals(inStage: item.0.id).count
@@ -223,23 +218,25 @@ struct CRMDealsView: View {
         .coverCard()
     }
 
-    /// One segment per stage, sized by its share of the open value.
-    private func stageBar(_ values: [(CRMStage, Double)], total: Double, width: CGFloat) -> some View {
-        let usable: CGFloat = width - CGFloat(values.count) * 3
-        return HStack(spacing: 3) {
-            ForEach(Array(values.enumerated()), id: \.offset) { index, item in
-                if item.1 > 0 {
-                    let share = CGFloat(item.1 / total)
-                    let barWidth: CGFloat = shown ? max(8, usable * share) : 0
-                    let delay: Double = 0.2 + Double(index) * 0.08
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(CRMHex.color(item.0.color) ?? WTheme.paused)
-                        .frame(width: barWidth)
-                        .animation(.spring(response: 0.85, dampingFraction: 0.8).delay(delay), value: shown)
-                }
-            }
-            Spacer(minLength: 0)
+    // MARK: Board
+
+    private var board: some View {
+        CRMDealsBoard(
+            store: store,
+            scope: scope,
+            isSearching: isSearching,
+            canWrite: canWrite,
+            shown: shown,
+            onSelectScope: { selectStatus($0.status, close: false) },
+            onEdit: { editing = $0 },
+            onSetStatus: { deal, status in Task { await setStatus(deal, status: status) } },
+            onMoveStage: { deal, stageID in Task { await moveStage(deal, to: stageID) } },
+            onDrop: { id, target in Task { await drop(id, on: target) } }
+        ) {
+            emptyState
         }
+        .refreshable { await store.load(env.api) }
+        .onAppear { shown = true }
     }
 
     // MARK: List
@@ -252,6 +249,8 @@ struct CRMDealsView: View {
             ErrorStateView(title: "Couldn't load deals", message: error) {
                 await store.load(env.api)
             }
+        } else if isBoard {
+            board
         } else {
             List {
                 Section {
@@ -375,7 +374,7 @@ struct CRMDealsView: View {
                             .foregroundStyle(.white)
                             .frame(width: 17, height: 17)
                             .background(status == "won" ? WTheme.positive : WTheme.paused, in: Circle())
-                            .overlay(Circle().stroke(WTheme.groupedCard, lineWidth: 2))
+                            .overlay(Circle().stroke(GroupedSurface.card, lineWidth: 2))
                             .offset(x: 3, y: 3)
                             .transition(.scale.combined(with: .opacity))
                     }
@@ -413,7 +412,7 @@ struct CRMDealsView: View {
             if canWrite { editing = deal }
         }
         .animation(.snappy, value: status)
-        .listRowBackground(WTheme.groupedCard)
+        .listRowBackground(Rectangle().fill(GroupedSurface.card))
         .alignmentGuide(.listRowSeparatorLeading) { _ in 52 }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if canWrite, status == "open" {
@@ -497,6 +496,26 @@ struct CRMDealsView: View {
             if status == "won" { celebrate += 1 }
             await store.load(env.api)
         } catch {}
+    }
+
+    /// A card dropped on a stage lane moves there and reopens if closed; on Won or Lost it closes.
+    private func drop(_ dealID: String, on target: CRMDealsBoardTarget) async {
+        guard canWrite, let deal = store.deals.first(where: { $0.id == dealID }) else { return }
+        let status = deal.status ?? "open"
+        switch target {
+        case let .stage(stageID):
+            guard status != "open" || deal.stageID != stageID else { return }
+            var body = CRMDealUpdateBody()
+            if deal.stageID != stageID { body.stageID = stageID }
+            if status != "open" { body.status = "open" }
+            do {
+                try await store.update(env.api, deal: deal, body: body)
+                if status != "open" { await store.load(env.api) }
+            } catch {}
+        case let .status(newStatus):
+            guard status != newStatus else { return }
+            await setStatus(deal, status: newStatus)
+        }
     }
 }
 
