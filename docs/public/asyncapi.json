@@ -28,6 +28,7 @@
       "messages": {
         "join": { "$ref": "#/components/messages/Join" },
         "hello": { "$ref": "#/components/messages/Hello" },
+        "joinError": { "$ref": "#/components/messages/JoinError" },
         "event": { "$ref": "#/components/messages/Event" },
         "resumed": { "$ref": "#/components/messages/Resumed" },
         "resumeFailed": { "$ref": "#/components/messages/ResumeFailed" },
@@ -46,7 +47,7 @@
       "messages": [{ "$ref": "#/channels/org/messages/join" }],
       "reply": {
         "channel": { "$ref": "#/channels/org" },
-        "messages": [{ "$ref": "#/channels/org/messages/hello" }]
+        "messages": [{ "$ref": "#/channels/org/messages/hello" }, { "$ref": "#/channels/org/messages/joinError" }]
       }
     },
     "receiveOrgStream": {
@@ -108,6 +109,12 @@
         "title": "Resume complete",
         "summary": "Sent after a successful resume replay; the events preceded it.",
         "payload": { "$ref": "#/components/schemas/Resumed" }
+      },
+      "JoinError": {
+        "name": "phx_reply",
+        "title": "Join refused",
+        "summary": "The phx_join reply with status error: a numeric code and a reason to branch on. Do not retry a topic refused with 4010.",
+        "payload": { "$ref": "#/components/schemas/JoinError" }
       },
       "ResumeFailed": {
         "name": "resume_failed",
@@ -177,7 +184,7 @@
         "required": ["event_type", "seq"],
         "description": "Invalidation-oriented: the body carries ids, not full resource state. Refetch over REST for current contents. Permission- and intent-filtered identically for live and replayed events.",
         "properties": {
-          "event_type": { "type": "string", "description": "e.g. AUDIT_CREATED, CAMPAIGN_UPDATED, EMAIL_SENT, EMAIL_RECEIVED. Also the frame event name." },
+          "event_type": { "type": "string", "description": "e.g. AUDIT_CREATED, CAMPAIGN_UPDATED, CAMPAIGN_PAUSED, EMAIL_SENT, EMAIL_BOUNCED, EMAIL_RECEIVED. Also the frame event name." },
           "seq": { "type": "integer", "description": "Monotonic per-organization sequence. Track the highest seen; dedupe replays by it." },
           "org_id": { "type": "string", "format": "uuid" },
           "user_id": { "type": "string", "format": "uuid" },
@@ -193,6 +200,16 @@
           "from": { "type": "integer", "description": "The last_seq the client resumed from." },
           "current_seq": { "type": "integer", "description": "The stream sequence after replay; the client is now caught up to here." },
           "replayed": { "type": "integer", "description": "Number of events delivered during replay (after permission + intent filtering)." }
+        }
+      },
+      "JoinError": {
+        "type": "object",
+        "required": ["code", "reason"],
+        "properties": {
+          "code": { "type": "integer", "enum": [4004, 4007, 4010], "description": "4010: the caller may not join this topic (not_a_member, or portal_session_restricted when a connection minted by a session signed in on an agency portal names a workspace that is not one of that agency's clients). 4007: join rate limit, retry after retry_after_ms. 4004: the membership lookup failed; retry with backoff." },
+          "reason": { "type": "string", "examples": ["not_a_member", "portal_session_restricted", "rate_limited"], "description": "A stable slug for 4010 and 4007; a short message otherwise." },
+          "category": { "type": "string", "const": "ws_join", "description": "Present with rate_limited." },
+          "retry_after_ms": { "type": "integer", "description": "Present with rate_limited." }
         }
       },
       "ResumeFailed": {
