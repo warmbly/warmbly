@@ -253,6 +253,17 @@ Record proof only for a UI change a reviewer should actually see; most changes n
 - keep shot names stable across commits, because follow-up comments diff stills by name
 - the machine is shared: record from the main agent, never from fanned-out subagents (a machine-wide lock runs one recording at a time, so they would only queue while each holds a context), and `pnpm stack down` once the proof is published
 
+### Blog covers share one format
+
+Every post under `site/src/content/blog/` sets `cover: '/blog/<slug>.webp'`, and every cover follows the same recipe so the blog reads as one series. The masters live in the Branding Figma file, section "Blog covers · v3 glass graphics (1600 × 1000)"; start a new cover by duplicating one of those frames, not from scratch.
+
+- **Size.** 1600 × 1000 (16:10, the blog grid's aspect), exported as WebP to `site/public/blog/<slug>.webp`. Keep labels inside the central 2:1 band so the social crop does not cut them
+- **Background.** A soft generated photograph, new for each post: sheer fabric, frosted or fluted glass, mist, long-exposure water, in pale blue, lavender, aqua or peach, with no objects, people, text or logos. Never reuse `src/assets/textures/` (those belong to the landing page) or another post's background
+- **One graphic.** A single large shape that states the post's idea (a ramp of bars, a pool with one member pulled out, two domains that never overlap, rows of evenly spaced sends), drawn directly on the photo in frosted glass: white fill at roughly 35 to 80% opacity, a 2px white outline, background blur and a soft shadow. At most one accent colour, on the focal element. The photo must stay visible around and through it; fade it out at the edges rather than filling the frame
+- **Labels.** Two to four glass pill chips (white at about 78%, Inter Semi Bold 24 in slate-900, an optional Regular part in slate-600, an optional status dot) carrying the post's real numbers. Those numbers must agree with the post and with the product policy in this file
+- **Never.** No app windows or dashboard screenshots, no opaque white cards, no 3D icons, envelopes, shields or stock clouds, no post title on the cover (the page already shows it)
+- **The fallback is not a cover.** `BlogCover.astro` falls back to a landing-page texture when `cover` is missing; a published post does not rely on it
+
 ## Security And Compliance Invariants
 
 Warmbly's security invariants are written against **ADA CASA v2.1.1 at Assurance Level 1**, which maps to OWASP ASVS 4.0.3. The Google OAuth client is in production but unverified and has not been assessed: it is held to Google's 100-new-user cap, except on Workspace domains whose admin marks it Trusted, which is how Workspace and reseller mailboxes connect. The evidence pack is a claim about the code on `main`: a change that breaks one of the invariants below does not just introduce a bug, it makes the pack untrue and puts any future verification at risk. Treat them as constraints on every change, not as a checklist run before an audit.
