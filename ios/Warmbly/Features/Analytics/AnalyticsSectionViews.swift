@@ -340,7 +340,7 @@ struct RateGauge: View {
                     }
                     .frame(height: 6)
                     Circle()
-                        .fill(WTheme.groupedCard)
+                        .fill(GroupedSurface.card)
                         .frame(width: 16, height: 16)
                         .overlay(Circle().stroke(tone.color, lineWidth: 4))
                         .shadow(color: tone.color.opacity(0.35), radius: 4, y: 1)
@@ -793,8 +793,8 @@ struct AnalyticsAccountsPage: View {
         }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WTheme.groupedCard)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 

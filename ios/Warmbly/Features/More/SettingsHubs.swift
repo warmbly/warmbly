@@ -38,7 +38,7 @@ extension SettingsHubStore {
     }
 }
 
-private struct HubAccess {
+struct HubAccess {
     let emails: Bool
     let analytics: Bool
     let crm: Bool
@@ -62,6 +62,7 @@ private struct HubAccess {
 struct SettingsTilesHub: View {
     @Environment(AppEnvironment.self) private var env
     let ctx: SettingsHubContext
+    @Environment(\.shellLayout) private var shell
     @AppStorage(AppearancePreference.storageKey) private var appearance = AppearancePreference.standard
     @State private var appeared = false
 
@@ -82,7 +83,8 @@ struct SettingsTilesHub: View {
                     .padding(.horizontal, 4)
                     profileCard(access)
                 }
-                workspace(access)
+                // Beside the iPad sidebar every page is a row there, so the hub is only settings.
+                if shell.bar != .sidebar { workspace(access) }
                 preferences(access)
                 SettingsSection("Appearance") {
                     AppearanceThumbnailPicker(selection: $appearance)
@@ -103,7 +105,7 @@ struct SettingsTilesHub: View {
         }
         .defaultScrollAnchor(SettingsDebug.anchor)
         .readableMargins()
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
         .onAppear { appeared = true }
     }
 
@@ -111,29 +113,7 @@ struct SettingsTilesHub: View {
     private var notificationsButton: some View {
         let unread = store.unreadNotifications
         return NavigationLink(value: SettingsDestination.notifications) {
-            Image(systemName: "bell")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(WTheme.ink)
-                .symbolEffect(.bounce, value: unread)
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: Circle())
-                .overlay(alignment: .topTrailing) {
-                    if unread > 0 {
-                        Text(unread > 99 ? "99+" : "\(unread)")
-                            .font(.system(size: 11.5, weight: .bold))
-                            .monospacedDigit()
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .frame(minWidth: 20, minHeight: 20)
-                            .background(WTheme.negative, in: Capsule())
-                            .overlay(Capsule().strokeBorder(WTheme.groupedPage, lineWidth: 2))
-                            .offset(x: 5, y: -3)
-                            .contentTransition(.numericText())
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: unread)
+            SettingsBellFace(unread: unread)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(unread > 0 ? "Notifications, \(unread) unread" : "Notifications")
@@ -207,8 +187,8 @@ struct SettingsTilesHub: View {
             }
             .fixedSize(horizontal: false, vertical: true)
         }
-        .background(WTheme.groupedCard)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .animation(.snappy, value: store.hasLoaded)
     }
 
@@ -374,7 +354,7 @@ struct SettingsTilesHub: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
-        .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .animation(.snappy, value: tile.metric)
     }
 
@@ -406,5 +386,36 @@ struct SettingsTilesHub: View {
             }
         }
         .reveal(appeared, 7)
+    }
+}
+
+/// The hub's glass bell, badged with the unread count.
+struct SettingsBellFace: View {
+    let unread: Int
+
+    var body: some View {
+        Image(systemName: "bell")
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(WTheme.ink)
+            .symbolEffect(.bounce, value: unread)
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+            .glassEffect(.regular.interactive(), in: Circle())
+            .overlay(alignment: .topTrailing) {
+                if unread > 0 {
+                    Text(unread > 99 ? "99+" : "\(unread)")
+                        .font(.system(size: 11.5, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(WTheme.negative, in: Capsule())
+                        .overlay(Capsule().strokeBorder(GroupedSurface.page, lineWidth: 2))
+                        .offset(x: 5, y: -3)
+                        .contentTransition(.numericText())
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: unread)
     }
 }

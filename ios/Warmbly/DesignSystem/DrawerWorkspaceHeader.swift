@@ -41,6 +41,7 @@ struct DrawerWorkspaceHeader: View {
                     .tracking(-0.2)
                     .foregroundStyle(WTheme.ink)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(WTheme.inkTertiary)

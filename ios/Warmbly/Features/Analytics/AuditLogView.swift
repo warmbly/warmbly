@@ -293,17 +293,114 @@ enum AuditScope: String, CaseIterable, Hashable {
     }
 }
 
+/// An entry as a detail item, the same entry wherever its id matches.
+private struct OpenAuditEntry: Hashable {
+    let entry: AuditLogEntry
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.entry.id == rhs.entry.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(entry.id) }
+}
+
 /// The org activity trail: every audited mutation as a live timeline, with
-/// new entries sliding in at the top as teammates work.
+/// new entries sliding in at the top as teammates work. On a wide window the
+/// open entry sits beside the feed.
 struct AuditLogView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.shellLayout) private var shell
     @State private var store = AuditLogStore()
     @State private var shown = false
-    #if DEBUG
-    @State private var debugOpen = false
-    #endif
+    /// An entry pushed by state rather than a row's link: a hand-off from the wide layout, or a debug run.
+    @State private var pushedEntry: OpenAuditEntry?
+    /// What the detail column shows when the feed and detail sit side by side.
+    @State private var selectedEntry: OpenAuditEntry?
+    @State private var layout = SplitMetrics.stacked
 
     var body: some View {
+        GeometryReader { geo in
+            let split = SplitMetrics(contentWidth: geo.size.width, shell: shell)
+            HStack(spacing: 0) {
+                listPane(wide: split.showsDetail)
+                    .frame(width: split.showsDetail ? split.listWidth : nil)
+                if split.showsDetail {
+                    VerticalHairline()
+                    DetailColumn(
+                        item: selectedEntry,
+                        placeholderTitle: "No event open",
+                        placeholderMessage: "Pick an event to see who changed what, when and from where.",
+                        placeholderSymbol: "clock.arrow.circlepath",
+                        onClose: { entry in if selectedEntry == entry { selectedEntry = nil } }
+                    ) { open in
+                        AuditEntryDetailView(entry: open.entry)
+                    }
+                }
+            }
+            .splitHandoff(showsDetail: split.showsDetail, path: pushed, selection: $selectedEntry)
+            .onAppear { layout = split }
+            .onChange(of: split) { _, value in layout = value }
+        }
+        .background(GroupedSurface.page)
+        .navigationDestination(item: $pushedEntry) { open in
+            AuditEntryDetailView(entry: open.entry)
+        }
+        .task { await store.load(env.api) }
+        .onChange(of: env.realtime.pulse(for: .audit)) {
+            Task { await store.refreshTop(env.api) }
+        }
+        .onChange(of: store.actionFilter) {
+            Task { await store.load(env.api) }
+        }
+        .onChange(of: store.entityFilter) {
+            Task { await store.load(env.api) }
+        }
+        .sensoryFeedback(.impact(weight: .light), trigger: store.fresh.count) { old, new in new > old }
+        #if DEBUG
+        .onChange(of: store.hasLoaded) {
+            if ProcessInfo.processInfo.environment["WARMBLY_DEBUG_AUDIT_ENTRY"] != nil, let first = store.entries.first { open(first) }
+        }
+        #endif
+    }
+
+    /// The feed column. Wide, the navigation bar spans both columns, so the
+    /// feed draws its own header instead.
+    private func listPane(wide: Bool) -> some View {
+        VStack(spacing: 0) {
+            if wide {
+                SplitListHeader(title: "Activity") {
+                    filterMenu(glass: true)
+                }
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Activity")
+        .surfaceTitleDisplayMode()
+        .toolbarBackground(GroupedSurface.page, for: .navigationBar)
+        .toolbarVisibility(wide ? .hidden : .automatic, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { filterMenu(glass: false) }
+        }
+    }
+
+    /// The state-pushed entry as a stack, for the hand-off between layouts.
+    private var pushed: Binding<[OpenAuditEntry]> {
+        Binding(get: { pushedEntry.map { [$0] } ?? [] }, set: { pushedEntry = $0.first })
+    }
+
+    /// Pushes on a narrow window, fills the detail column on a wide one.
+    private func open(_ entry: AuditLogEntry) {
+        if layout.showsDetail {
+            selectedEntry = OpenAuditEntry(entry: entry)
+        } else {
+            pushedEntry = OpenAuditEntry(entry: entry)
+        }
+    }
+
+    private func isOpen(_ entry: AuditLogEntry) -> Bool {
+        layout.showsDetail && selectedEntry?.entry.id == entry.id
+    }
+
+    @ViewBuilder
+    private var content: some View {
         Group {
             if !env.session.can(.viewAnalytics) {
                 CoverEmptyState(
@@ -323,32 +420,6 @@ struct AuditLogView: View {
                 feed
             }
         }
-        .background(WTheme.groupedPage)
-        .navigationTitle("Activity")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(WTheme.groupedPage, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { filterMenu }
-        }
-        .task { await store.load(env.api) }
-        .onChange(of: env.realtime.pulse(for: .audit)) {
-            Task { await store.refreshTop(env.api) }
-        }
-        .onChange(of: store.actionFilter) {
-            Task { await store.load(env.api) }
-        }
-        .onChange(of: store.entityFilter) {
-            Task { await store.load(env.api) }
-        }
-        .sensoryFeedback(.impact(weight: .light), trigger: store.fresh.count) { old, new in new > old }
-        #if DEBUG
-        .navigationDestination(isPresented: $debugOpen) {
-            if let first = store.entries.first { AuditEntryDetailView(entry: first) }
-        }
-        .onChange(of: store.hasLoaded) {
-            debugOpen = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_AUDIT_ENTRY"] != nil && !store.entries.isEmpty
-        }
-        #endif
     }
 
     // MARK: Hero
@@ -402,7 +473,7 @@ struct AuditLogView: View {
                     HStack(spacing: -8) {
                         ForEach(Array(actors.enumerated()), id: \.offset) { index, actor in
                             WAvatar(name: actor.displayName ?? "?", seed: actor.id ?? actor.email ?? "", size: 28)
-                                .overlay(Circle().stroke(WTheme.groupedCard, lineWidth: 2))
+                                .overlay(Circle().stroke(GroupedSurface.card, lineWidth: 2))
                                 .zIndex(Double(actors.count - index))
                                 .scaleEffect(shown ? 1 : 0.4)
                                 .opacity(shown ? 1 : 0)
@@ -464,14 +535,27 @@ struct AuditLogView: View {
             ForEach(store.sections) { section in
                 Section {
                     ForEach(section.entries) { entry in
-                        NavigationLink {
-                            AuditEntryDetailView(entry: entry)
-                        } label: {
-                            AuditRowView(entry: entry)
+                        Group {
+                            if layout.showsDetail {
+                                Button {
+                                    open(entry)
+                                } label: {
+                                    AuditRowView(entry: entry)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(isOpen(entry) ? .isSelected : [])
+                            } else {
+                                NavigationLink {
+                                    AuditEntryDetailView(entry: entry)
+                                } label: {
+                                    AuditRowView(entry: entry)
+                                }
+                            }
                         }
                         .listRowBackground(
                             ZStack {
-                                WTheme.groupedCard
+                                Rectangle().fill(isOpen(entry) ? AnyShapeStyle(WTheme.accentSoft) : AnyShapeStyle(GroupedSurface.card))
                                 if store.fresh.contains(entry.id) {
                                     WTheme.accent.opacity(0.09).transition(.opacity)
                                 }
@@ -512,7 +596,6 @@ struct AuditLogView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .readableMargins()
         .listSectionSpacing(18)
         .contentMargins(.horizontal, 16, for: .scrollContent)
         .contentMargins(.top, 4, for: .scrollContent)
@@ -570,7 +653,8 @@ struct AuditLogView: View {
         }
     }
 
-    private var filterMenu: some View {
+    /// Glass, it sits in the list column's own header; otherwise in the navigation bar.
+    private func filterMenu(glass: Bool) -> some View {
         @Bindable var store = store
         return Menu {
             Picker("Action", selection: $store.actionFilter) {
@@ -591,9 +675,18 @@ struct AuditLogView: View {
                 }
             }
         } label: {
-            Image(systemName: store.hasFilters
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle")
+            if glass {
+                Image(systemName: store.hasFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(store.hasFilters ? WTheme.accent : WTheme.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+                    .glassEffect(.regular.interactive(), in: Circle())
+            } else {
+                Image(systemName: store.hasFilters
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle")
+            }
         }
         .accessibilityLabel("Filter activity")
     }
@@ -684,7 +777,7 @@ struct AuditActorBadge: View {
                     .foregroundStyle(.white)
                     .frame(width: size * 0.46, height: size * 0.46)
                     .background(tone.color, in: Circle())
-                    .overlay(Circle().stroke(WTheme.groupedCard, lineWidth: 2))
+                    .overlay(Circle().stroke(GroupedSurface.card, lineWidth: 2))
                     .offset(x: 4, y: 3)
             }
     }
@@ -732,7 +825,7 @@ struct AuditEntryDetailView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 20)
             .padding(.horizontal, 16)
-            .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
 
             SettingsSection("Details", dividerLeading: 16) {
                 AuditDetailRow(label: "Type", value: AuditFmt.humanize(entry.entityType))

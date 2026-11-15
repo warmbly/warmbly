@@ -117,7 +117,7 @@ struct ProfileSettingsView: View {
         if let user = env.session.user {
             VStack(spacing: 10) {
                 WAvatar(name: user.displayName, imageURL: user.avatarURL, seed: user.id, size: 92)
-                    .overlay(Circle().strokeBorder(WTheme.groupedCard, lineWidth: 4))
+                    .overlay(Circle().strokeBorder(GroupedSurface.card, lineWidth: 4))
                     .shadow(color: .black.opacity(0.08), radius: 14, y: 6)
                 Text(user.displayName)
                     .displayFont(26, weight: .semibold)

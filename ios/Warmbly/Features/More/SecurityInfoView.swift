@@ -39,7 +39,7 @@ struct SecurityInfoView: View {
     var body: some View {
         content
             .navigationTitle("Security")
-            .navigationBarTitleDisplayMode(.inline)
+            .surfaceTitleDisplayMode()
             .task { await store.load(env.api) }
             .onChange(of: env.realtime.pulse(for: .me)) {
                 Task { await store.load(env.api) }

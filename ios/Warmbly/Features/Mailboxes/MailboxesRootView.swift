@@ -5,6 +5,7 @@ import SwiftUI
 /// scopes with live counts + sliding fill + edge swipe), a search pill, a
 /// ruled fleet stat strip that drives the same scope, multi-select with
 /// bulk warmup and remove, cursor pagination, and realtime pulse reloads.
+/// On a wide window the open mailbox sits beside the list, like Campaigns.
 /// Owns its NavigationStack; dismissal goes through `onClose` (the
 /// environment DismissAction is unreliable in this app's cover contexts).
 struct MailboxesRootView: View {
@@ -21,7 +22,10 @@ struct MailboxesRootView: View {
     @State private var searchText = ""
     @State private var scope: MailboxScope = .all
     @State private var sidebarOpen = false
-    @State private var sidebarDrag: CGFloat = 0
+    @State private var path: [EmailAccount] = []
+    /// What the detail column shows when the list and detail sit side by side.
+    @State private var openAccount: EmailAccount?
+    @State private var layout = SplitMetrics.stacked
     @State private var showConnect = false
     @State private var pendingRemove: EmailAccount?
     @State private var confirmBulkRemove = false
@@ -60,30 +64,35 @@ struct MailboxesRootView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            browser
-        }
-    }
-
-    private var browser: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                mainPane
-                    .scaleEffect(sidebarOpen ? 0.97 : 1, anchor: .trailing)
-                if sidebarOpen {
-                    Color.black.opacity(0.24)
-                        .ignoresSafeArea()
-                        .transition(.opacity)
-                        .onTapGesture { closeSidebar() }
+        ListDetailShell(
+            path: $path,
+            openItem: $openAccount,
+            sidebarOpen: $sidebarOpen,
+            layout: $layout,
+            sidebarWidth: Self.sidebarWidth,
+            // A square edge, as this drawer has always had.
+            drawerRadius: 0,
+            placeholder: DetailPlaceholder(
+                title: "No mailbox open",
+                message: "Pick a mailbox to see its health, warmup and setup here.",
+                symbol: "envelope"
+            )
+        ) {
+            mainPane
+                // Own chrome, like the other drawer browsers: the drawer hero runs to
+                // the top and the search pill row carries the close button.
+                .toolbarVisibility(.hidden, for: .navigationBar)
+                .navigationDestination(for: EmailAccount.self) { account in
+                    MailboxDetailView(account: account)
                 }
-                drawer(topInset: geo.safeAreaInsets.top)
-            }
-        }
-        // Own chrome, like the other drawer browsers: the drawer hero runs to
-        // the top and the search pill row carries the close button.
-        .toolbarVisibility(.hidden, for: .navigationBar)
-        .navigationDestination(for: EmailAccount.self) { account in
+        } drawer: { topInset, revealed in
+            drawer(topInset: topInset, revealed: revealed)
+        } detail: { account in
             MailboxDetailView(account: account)
+        }
+        // Centered under both columns: the list column is too narrow for every action.
+        .overlay(alignment: .bottom) {
+            if layout.showsDetail { selectionBar }
         }
         .task(id: searchText) { await runSearch() }
         .onChange(of: reloadPulse) {
@@ -126,7 +135,10 @@ struct MailboxesRootView: View {
             presenting: pendingRemove
         ) { account in
             Button("Remove account", role: .destructive) {
-                Task { await store.deleteAccount(env.api, id: account.id) }
+                Task {
+                    await store.deleteAccount(env.api, id: account.id)
+                    closeIfRemoved([account.id])
+                }
             }
         } message: { account in
             Text("Sending stops immediately and \(account.email) leaves all warmup pools.")
@@ -137,7 +149,11 @@ struct MailboxesRootView: View {
             titleVisibility: .visible
         ) {
             Button("Remove \(store.selectedCount)", role: .destructive) {
-                Task { await store.bulkRemove(env.api) }
+                let ids = store.selectedIDs
+                Task {
+                    await store.bulkRemove(env.api)
+                    closeIfRemoved(ids)
+                }
             }
         } message: {
             Text("This disconnects them from Warmbly.")
@@ -162,21 +178,9 @@ struct MailboxesRootView: View {
             if store.isSelecting { selectionHeader } else { searchBar }
             listArea
         }
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
         .overlay(alignment: .bottom) {
-            if store.isSelecting {
-                MailboxSelectionBar(
-                    count: store.selectedCount,
-                    onStart: { Task { await store.bulkWarmup(env.api, action: "start") } },
-                    onPause: { Task { await store.bulkWarmup(env.api, action: "pause") } },
-                    onAddTags: { bulkTagMode = .add },
-                    onRemoveTags: { bulkTagMode = .remove },
-                    onRemove: { confirmBulkRemove = true },
-                    onClear: { store.exitSelection() }
-                )
-                .padding(.bottom, 10)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            if !layout.showsDetail { selectionBar }
         }
         .simultaneousGesture(
             DragGesture(minimumDistance: 25)
@@ -187,6 +191,24 @@ struct MailboxesRootView: View {
                     }
                 }
         )
+    }
+
+    @ViewBuilder
+    private var selectionBar: some View {
+        if store.isSelecting {
+            MailboxSelectionBar(
+                count: store.selectedCount,
+                onStart: { Task { await store.bulkWarmup(env.api, action: "start") } },
+                onPause: { Task { await store.bulkWarmup(env.api, action: "pause") } },
+                onAddTags: { bulkTagMode = .add },
+                onRemoveTags: { bulkTagMode = .remove },
+                onRemove: { confirmBulkRemove = true },
+                onClear: { store.exitSelection() }
+            )
+            .frame(maxWidth: layout.showsDetail ? 480 : nil)
+            .padding(.bottom, 10)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     // MARK: Header
@@ -204,7 +226,7 @@ struct MailboxesRootView: View {
             if canManage {
                 HeaderPrimaryButton(symbol: "plus", label: "Connect a mailbox") { showConnect = true }
             }
-            GlassCircleButton(symbol: "xmark", label: "Close mailboxes") { onClose() }
+            CoverCloseButton(label: "Close mailboxes") { onClose() }
         }
     }
 
@@ -274,7 +296,7 @@ struct MailboxesRootView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
-            .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .surfaceCard(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(color, lineWidth: selected && target != .all ? 2 : 0)
@@ -369,12 +391,11 @@ struct MailboxesRootView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .readableMargins()
             .listSectionSpacing(14)
             .contentMargins(.horizontal, 16, for: .scrollContent)
             .contentMargins(.top, 0, for: .scrollContent)
             .scrollContentBackground(.hidden)
-            .background(WTheme.groupedPage)
+            .background(GroupedSurface.page)
             .scrollDismissesKeyboard(.immediately)
             .defaultScrollAnchor(SettingsDebug.anchor)
             .onAppear { tilesShown = true }
@@ -397,12 +418,20 @@ struct MailboxesRootView: View {
                     )
                 }
                 .buttonStyle(.plain)
+            } else if layout.showsDetail {
+                Button {
+                    openAccount = account
+                } label: {
+                    MailboxRowView(account: account, status: store.statuses[account.id])
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isOpen(account) ? .isSelected : [])
             } else {
                 MailboxRowView(account: account, status: store.statuses[account.id])
                     .background(NavigationLink(value: account) { EmptyView() }.opacity(0))
             }
         }
-        .listRowBackground(store.isSelected(account.id) ? WTheme.fill : WTheme.groupedCard)
+        .listRowBackground(Rectangle().fill(rowBackground(account)))
         .listRowSeparatorTint(WTheme.hairline)
         .alignmentGuide(.listRowSeparatorLeading) { _ in 66 }
         .listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14))
@@ -416,6 +445,21 @@ struct MailboxesRootView: View {
                 swipeButtons(for: account)
             }
         }
+    }
+
+    private func rowBackground(_ account: EmailAccount) -> AnyShapeStyle {
+        if store.isSelected(account.id) { return AnyShapeStyle(WTheme.fill) }
+        return isOpen(account) ? AnyShapeStyle(WTheme.accentSoft) : AnyShapeStyle(GroupedSurface.card)
+    }
+
+    private func isOpen(_ account: EmailAccount) -> Bool {
+        layout.showsDetail && openAccount?.id == account.id
+    }
+
+    /// Empties the detail column when the mailbox it shows was just removed.
+    private func closeIfRemoved(_ ids: Set<String>) {
+        guard let open = openAccount, ids.contains(open.id), !store.accounts.contains(where: { $0.id == open.id }) else { return }
+        openAccount = nil
     }
 
     /// End-of-list marker: the exact total for the current scope or search.
@@ -539,12 +583,12 @@ struct MailboxesRootView: View {
 
     // MARK: Drawer
 
-    private func drawer(topInset: CGFloat) -> some View {
+    private func drawer(topInset: CGFloat, revealed: Bool) -> some View {
         MailboxesSidebar(
             store: store,
             selection: scope,
             topInset: topInset,
-            revealed: sidebarOpen
+            revealed: revealed
         ) { newScope in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { scope = newScope }
             // Let the highlight capsule slide to the tapped row before closing.
@@ -553,34 +597,10 @@ struct MailboxesRootView: View {
                 closeSidebar()
             }
         }
-        .frame(width: Self.sidebarWidth)
-        .frame(maxHeight: .infinity)
-        .background(WTheme.canvas)
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(WTheme.hairlineStrong).frame(width: 1)
-        }
-        .ignoresSafeArea()
-        .offset(x: drawerOffset)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    sidebarDrag = min(0, value.translation.width)
-                }
-                .onEnded { value in
-                    if value.translation.width < -80 || value.predictedEndTranslation.width < -160 {
-                        closeSidebar()
-                    } else {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { sidebarDrag = 0 }
-                    }
-                }
-        )
-    }
-
-    private var drawerOffset: CGFloat {
-        (sidebarOpen ? 0 : -Self.sidebarWidth - 40) + sidebarDrag
     }
 
     private func openSidebar() {
+        guard !layout.pinsSidebar else { return }
         searchFocused = false
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { sidebarOpen = true }
     }
@@ -588,7 +608,6 @@ struct MailboxesRootView: View {
     private func closeSidebar() {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             sidebarOpen = false
-            sidebarDrag = 0
         }
     }
 
