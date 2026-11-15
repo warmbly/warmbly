@@ -67,12 +67,17 @@ struct VerticalBarEdgeReader: UIViewRepresentable {
     }
 
     static func edge(in traits: UITraitCollection) -> HorizontalEdge? {
+        // The trait ships in the iOS 27.1 SDK; older toolchains build without the strip.
+        #if compiler(>=6.4.1)
         guard #available(iOS 27.1, *) else { return nil }
         switch traits.verticalBarEdge {
         case .leading: return .leading
         case .trailing: return .trailing
         default: return nil
         }
+        #else
+        return nil
+        #endif
     }
 
     func makeUIView(context: Context) -> ReaderView {
@@ -91,11 +96,13 @@ struct VerticalBarEdgeReader: UIViewRepresentable {
 
         override init(frame: CGRect) {
             super.init(frame: frame)
+            #if compiler(>=6.4.1)
             if #available(iOS 27.1, *) {
                 registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (view: ReaderView, _) in
                     view.report()
                 }
             }
+            #endif
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
