@@ -56352,7 +56352,10 @@
           "paused",
           "paused_no_accounts",
           "completed",
-          "stopped"
+          "stopped",
+          "paused_trial_expired",
+          "paused_guardrail",
+          "paused_undeliverable"
         ]
       },
       "ScheduleWindows": {
@@ -60194,11 +60197,15 @@
         ],
         "properties": {
           "contact": {
-            "allOf": [
+            "oneOf": [
               {
                 "$ref": "#/components/schemas/Contact"
+              },
+              {
+                "type": "null"
               }
-            ]
+            ],
+            "description": "The matching contact, or null when none matches."
           },
           "match": {
             "type": "string",
