@@ -48261,6 +48261,26 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "A PNG or JPEG logo, at most 2 MB."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Success.",
@@ -59699,22 +59719,36 @@
             "description": "Zero-based source column index."
           },
           "target": {
-            "type": "string",
-            "enum": [
-              "ignore",
-              "email",
-              "first_name",
-              "last_name",
-              "company",
-              "phone",
-              "subscribed",
-              "categories"
-            ],
-            "description": "Target field, or a custom:<key> string for a custom field."
+            "description": "Target field. For a custom field send custom with the key in custom_key; the spelling custom:<key> is also accepted.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ignore",
+                  "email",
+                  "first_name",
+                  "last_name",
+                  "company",
+                  "phone",
+                  "subscribed",
+                  "categories",
+                  "verification_status",
+                  "custom"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^custom:.+$"
+              }
+            ]
           },
           "custom_key": {
             "type": "string",
-            "description": "Custom-field key when target is custom:<key>."
+            "description": "The custom field key when target is custom."
+          },
+          "verification_provider": {
+            "type": "string",
+            "description": "With target verification_status: the verification service whose vocabulary the column uses (for example zerobounce). Optional."
           }
         }
       },
