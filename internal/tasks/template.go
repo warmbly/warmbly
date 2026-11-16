@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"fmt"
-	"math/rand"
 	"regexp"
 	"strings"
 	"text/template"
@@ -15,7 +14,6 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/pkg/tmplfuncs"
 	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
-	"github.com/warmbly/warmbly/internal/pkg/warmpersona"
 )
 
 // Conversation represents a warmup conversation for AI generation
@@ -296,24 +294,6 @@ func AddOpenTrackingPixel(htmlBody string, taskID uuid.UUID, trackingDomain stri
 	}
 	pixel := fmt.Sprintf(`<img src="%s" width="1" height="1" style="display:none;" alt="" />`, pixelURL)
 	return mailhtml.InsertBeforeBodyEnd(htmlBody, pixel)
-}
-
-// personaPick chooses from a mailbox's preferred subset of phrasing options so
-// each mailbox keeps a consistent "voice" while still varying message to
-// message. Falls back gracefully for tiny option sets.
-func personaPick(p warmpersona.Persona, axis string, opts []string) string {
-	if len(opts) == 0 {
-		return ""
-	}
-	k := 3
-	if k > len(opts) {
-		k = len(opts)
-	}
-	subset := p.Subset(axis, len(opts), k)
-	if len(subset) == 0 {
-		return opts[rand.Intn(len(opts))]
-	}
-	return opts[subset[rand.Intn(len(subset))]]
 }
 
 // GenerateConversationReplyEmail renders one ordered reply turn. Turn 1 maps

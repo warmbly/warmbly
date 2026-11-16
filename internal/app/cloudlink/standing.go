@@ -187,19 +187,3 @@ func (s *service) fetchStanding(ctx context.Context, l *models.CloudLink) (map[u
 	}
 	return out, nil
 }
-
-// sameStanding skips the write when the cloud reports what is already recorded.
-func sameStanding(cur, next *models.WarmupHealthInfo) bool {
-	if cur == nil || next == nil {
-		return false
-	}
-	return cur.State == next.State && cur.Reason == next.Reason && cur.PoolType == next.PoolType &&
-		cur.Score == next.Score && sameTime(cur.BlockedUntil, next.BlockedUntil)
-}
-
-func sameTime(a, b *time.Time) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return a.Equal(*b)
-}

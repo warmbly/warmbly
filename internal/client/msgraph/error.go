@@ -74,10 +74,3 @@ func HandleError(resp *http.Response) *errx.MailError {
 	}
 	return errx.WithSendFailure(base, failure)
 }
-
-func retryAfter(value string, now time.Time) time.Duration {
-	if at := errx.RetryAfterAt(value, now); at != nil {
-		return at.Sub(now)
-	}
-	return 0
-}

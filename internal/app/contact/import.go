@@ -1293,17 +1293,6 @@ func parseBoolish(v string) (bool, string) {
 	return false, "could not parse subscribed value: " + v
 }
 
-// optString returns a pointer to `incoming` when it has content, else nil.
-// Used in the update path to avoid blanking a populated field with an
-// empty CSV cell — the importer's job is to enrich, not erase.
-func optString(incoming string) *string {
-	if strings.TrimSpace(incoming) == "" {
-		return nil
-	}
-	v := incoming
-	return &v
-}
-
 // parseIDList canonicalises a list of UUID strings from the request: blanks
 // dropped, duplicates removed, malformed rejected. It is the import-package
 // twin of pg_contact's parseUUIDList, kept private and small so we don't

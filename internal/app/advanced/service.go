@@ -435,13 +435,6 @@ func (s *service) mergedVariant(ctx context.Context, campaignID, variantID uuid.
 	return v, nil
 }
 
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func (s *service) DeleteABVariant(ctx context.Context, campaignID, variantID uuid.UUID) *errx.Error {
 	if err := s.repo.DeleteABVariant(ctx, campaignID, variantID); err != nil {
 		return toErrx(err)
@@ -1212,22 +1205,6 @@ func uuidString(id *uuid.UUID) string {
 		return ""
 	}
 	return id.String()
-}
-
-func containsAnyKeyword(text string, keywords []string) bool {
-	if text == "" {
-		return false
-	}
-	lower := strings.ToLower(text)
-	for _, k := range keywords {
-		if k == "" {
-			continue
-		}
-		if strings.Contains(lower, strings.ToLower(k)) {
-			return true
-		}
-	}
-	return false
 }
 
 func classifyReply(text string, cfg models.ReplyIntentSettings) (models.ReplyIntentType, float64) {

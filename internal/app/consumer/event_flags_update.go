@@ -246,14 +246,3 @@ func (s *JobsService) noteOwnerActivity(ctx context.Context, accountID uuid.UUID
 		log.Warn().Err(err).Str("email_id", accountID.String()).Msg("owner activity not recorded")
 	}
 }
-
-// containsTrashFlag reports the transition Gmail emits for Delete: the TRASH
-// label, passed through untranslated by the worker.
-func containsTrashFlag(flags []string) bool {
-	for _, f := range flags {
-		if f == "TRASH" || f == "\\Trash" {
-			return true
-		}
-	}
-	return false
-}

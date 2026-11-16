@@ -79,11 +79,6 @@ func blocks(in ...Block) []Block {
 	return out
 }
 
-// linkPrompt asks an unlinked Slack member to connect their Warmbly account.
-func linkPrompt(linkURL, lead string) Message {
-	return linkPromptFor(linkURL, lead, false)
-}
-
 // linkPromptFor is linkPrompt; held says a question waits for the link.
 func linkPromptFor(linkURL, lead string, held bool) Message {
 	if lead == "" {

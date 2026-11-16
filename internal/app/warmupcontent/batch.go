@@ -481,14 +481,3 @@ func (s *service) CancelBatch(ctx context.Context, jobID uuid.UUID) error {
 func batchConversationID(jobID uuid.UUID, customID string) uuid.UUID {
 	return uuid.NewSHA1(jobID, []byte(customID))
 }
-
-// firstResultError returns the first non-empty per-line error in a batch's
-// results, used to name the reason a fully failed batch produced nothing.
-func firstResultError(results []generation.BatchResult) string {
-	for i := range results {
-		if results[i].Err != "" {
-			return results[i].Err
-		}
-	}
-	return ""
-}

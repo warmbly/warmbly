@@ -278,13 +278,6 @@ func (o *org) recordURL(typeID, id string) string {
 	return fmt.Sprintf("https://%s/contacts/%s/record/%s/%s", o.UIDomain, o.Portal, typeID, id)
 }
 
-func (o *org) appURL() string {
-	if o.Portal == "" {
-		return ""
-	}
-	return fmt.Sprintf("https://%s/contacts/%s", o.UIDomain, o.Portal)
-}
-
 func (o *org) tasksURL() string {
 	if o.Portal == "" {
 		return ""

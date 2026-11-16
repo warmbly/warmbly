@@ -325,24 +325,6 @@ func (w *WorkerService) fetchAttachments(ctx context.Context, refs []emsg.Attach
 	return out, nil
 }
 
-// sendEmailSuccess sends a success result back to the jobs service. threadID is
-// the provider conversation handle (Gmail only, empty elsewhere) the control
-// plane needs to append the next step of a sequence to the same thread.
-func (w *WorkerService) sendEmailSuccess(taskID uuid.UUID, messageID, providerMsgID, threadID string) {
-	result := models.SendEmailResult{
-		TaskID:        taskID,
-		Success:       true,
-		MessageID:     messageID,
-		ProviderMsgID: providerMsgID,
-		ThreadID:      threadID,
-		SentAt:        time.Now(),
-	}
-
-	if err := w.Produce(models.JobEventTypeEmailSent, taskID.String(), result); err != nil {
-		log.Error().Err(err).Str("task_id", taskID.String()).Msg("Failed to produce email sent event")
-	}
-}
-
 // Report unattempted sends before either broker's retry budget expires.
 const sendNotLoadedRedeliveries = 5
 

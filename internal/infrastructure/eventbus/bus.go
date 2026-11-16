@@ -98,33 +98,6 @@ func SubscribeKeyed(ctx context.Context, bus EventBus, topics []string, group st
 	return bus.Subscribe(ctx, topics, group, handler)
 }
 
-func retrySubscription(ctx context.Context, subscribe func(context.Context) error) error {
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		err := subscribe(ctx)
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if errors.Is(err, ErrBusClosed) {
-			return err
-		}
-		if errors.Is(err, ErrSubscriptionRebalanced) {
-			log.Debug().Msg("eventbus subscription rebalanced; reopening for replay")
-		} else {
-			log.Warn().Err(err).Msg("eventbus subscription interrupted; reopening for replay")
-		}
-		timer := time.NewTimer(time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
-}
-
 // Message is the broker-neutral envelope passed to a Handler. Payload bytes
 // are owned by the bus and must not be retained past the handler call.
 //
