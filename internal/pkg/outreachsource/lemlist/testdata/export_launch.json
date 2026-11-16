@@ -1,0 +1,10 @@
+[
+  {"emailStatus":"deliverable","email":"John@Example.com","firstName":"John","lastName":"Doe","picture":"","phone":"","linkedinUrl":"https://www.linkedin.com/in/johndoe","timezone":"Europe/Paris","companyName":"Acme Inc","companyDomain":"acme.com","icebreaker":"Saw your post on outbound","Company Size":"51-200","jobTitle":"CEO","lastState":"emailsReplied","status":"done","_id":"lea_1","hubspotId":"12345678901"},
+  {"emailStatus":"risky","email":"jane@example.com","firstName":"Jane","lastName":"Smith","companyName":"Example Corp","icebreaker":"Congrats on the new role","lastState":"emailsInterested","status":"interested","_id":"lea_2"},
+  {"emailStatus":"undeliverable","email":"bounce@example.net","firstName":"Bo","lastState":"emailsBounced","status":"done","_id":"lea_3"},
+  {"email":"sent@example.fr","firstName":"Thomas","lastState":"emailsSent","status":"inProgress","_id":"lea_4","score":42},
+  {"email":"done@example.io","lastState":"emailsOpened","status":"done","_id":"lea_5"},
+  {"email":"new@example.co","lastState":"scanned","status":"review","_id":"lea_6"},
+  {"email":"bye@example.org","lastState":"emailsUnsubscribed","status":"unsubscribed","_id":"lea_7"},
+  {"email":"","lastState":"linkedinReplied","status":"done","_id":"lea_8"}
+]

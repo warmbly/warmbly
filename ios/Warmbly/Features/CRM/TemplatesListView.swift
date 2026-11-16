@@ -3,11 +3,17 @@ import WebKit
 
 /// Reply templates pushed from settings: a hero with the count, native search,
 /// and grouped cards showing each template's subject, snippet and the merge
-/// fields it uses. Duplicate is gated behind manageCampaigns.
+/// fields it uses. On a wide window the open template sits beside the list.
+/// Duplicate is gated behind manageCampaigns.
 struct TemplatesListView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.shellLayout) private var shell
     @State private var store = TemplatesStore()
+    /// The template pushed onto the stack on a narrow window.
     @State private var openTemplate: EmailTemplate?
+    /// What the detail column shows when the list and detail sit side by side.
+    @State private var selectedTemplate: EmailTemplate?
+    @State private var layout = SplitMetrics.stacked
     @State private var shown = false
     @State private var duplicated = 0
 
@@ -15,32 +21,84 @@ struct TemplatesListView: View {
     private var isSearching: Bool { !store.query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
-        @Bindable var store = store
-        list
-            .background(WTheme.groupedPage)
-            .navigationTitle("Templates")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(WTheme.groupedPage, for: .navigationBar)
-            .searchable(text: $store.query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search templates")
-            .navigationDestination(item: $openTemplate) { template in
-                TemplateDetailView(store: store, template: template)
-            }
-            .sensoryFeedback(.success, trigger: duplicated)
-            .task(id: store.query) {
-                if store.hasLoaded {
-                    try? await Task.sleep(for: .milliseconds(350))
+        GeometryReader { geo in
+            let split = SplitMetrics(contentWidth: geo.size.width, shell: shell)
+            HStack(spacing: 0) {
+                listPane(wide: split.showsDetail)
+                    .frame(width: split.showsDetail ? split.listWidth : nil)
+                if split.showsDetail {
+                    VerticalHairline()
+                    DetailColumn(
+                        item: selectedTemplate,
+                        placeholderTitle: "No template open",
+                        placeholderMessage: "Pick a template to preview its subject, body and merge fields here.",
+                        placeholderSymbol: "text.bubble",
+                        onClose: { template in if selectedTemplate == template { selectedTemplate = nil } }
+                    ) { template in
+                        TemplateDetailView(store: store, template: template)
+                    }
                 }
-                guard !Task.isCancelled else { return }
-                await store.load(env.api)
             }
-            .onChange(of: env.realtime.pulse(for: .templates)) {
-                Task { await store.load(env.api) }
+            .splitHandoff(showsDetail: split.showsDetail, path: pushed, selection: $selectedTemplate)
+            .onAppear { layout = split }
+            .onChange(of: split) { _, value in layout = value }
+        }
+        .background(GroupedSurface.page)
+        .navigationDestination(item: $openTemplate) { template in
+            TemplateDetailView(store: store, template: template)
+        }
+        .sensoryFeedback(.success, trigger: duplicated)
+        .task(id: store.query) {
+            if store.hasLoaded {
+                try? await Task.sleep(for: .milliseconds(350))
             }
-            #if DEBUG
-            .onChange(of: store.hasLoaded) {
-                if ProcessInfo.processInfo.environment["WARMBLY_DEBUG_TEMPLATE"] != nil { openTemplate = store.templates.first }
+            guard !Task.isCancelled else { return }
+            await store.load(env.api)
+        }
+        .onChange(of: env.realtime.pulse(for: .templates)) {
+            Task { await store.load(env.api) }
+        }
+        #if DEBUG
+        .onChange(of: store.hasLoaded) {
+            if ProcessInfo.processInfo.environment["WARMBLY_DEBUG_TEMPLATE"] != nil, let first = store.templates.first { open(first) }
+        }
+        #endif
+    }
+
+    /// The list column. Wide, the navigation bar spans both columns, so the
+    /// list draws its own header instead.
+    private func listPane(wide: Bool) -> some View {
+        @Bindable var store = store
+        return VStack(spacing: 0) {
+            if wide {
+                SplitListHeader(title: "Templates", query: $store.query, searchPrompt: "Search templates")
             }
-            #endif
+            list
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Templates")
+        .surfaceTitleDisplayMode()
+        .toolbarBackground(GroupedSurface.page, for: .navigationBar)
+        .toolbarVisibility(wide ? .hidden : .automatic, for: .navigationBar)
+        .searchable(text: $store.query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search templates")
+    }
+
+    /// The pushed template as a stack, for the hand-off between layouts.
+    private var pushed: Binding<[EmailTemplate]> {
+        Binding(get: { openTemplate.map { [$0] } ?? [] }, set: { openTemplate = $0.first })
+    }
+
+    /// Pushes on a narrow window, fills the detail column on a wide one.
+    private func open(_ template: EmailTemplate) {
+        if layout.showsDetail {
+            selectedTemplate = template
+        } else {
+            openTemplate = template
+        }
+    }
+
+    private func isOpen(_ template: EmailTemplate) -> Bool {
+        layout.showsDetail && selectedTemplate?.id == template.id
     }
 
     // MARK: Hero
@@ -111,7 +169,6 @@ struct TemplatesListView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .readableMargins()
             .listSectionSpacing(18)
             .contentMargins(.horizontal, 16, for: .scrollContent)
             .contentMargins(.top, 4, for: .scrollContent)
@@ -142,7 +199,7 @@ struct TemplatesListView: View {
     private func row(_ template: EmailTemplate, index: Int) -> some View {
         let tone = TemplateTone.of(template.name)
         return Button {
-            openTemplate = template
+            open(template)
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Text(String(template.name.prefix(1)).uppercased())
@@ -180,7 +237,8 @@ struct TemplatesListView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(MoreRowPressStyle())
-        .listRowBackground(WTheme.groupedCard)
+        .accessibilityAddTraits(isOpen(template) ? .isSelected : [])
+        .listRowBackground(Rectangle().fill(isOpen(template) ? AnyShapeStyle(WTheme.accentSoft) : AnyShapeStyle(GroupedSurface.card)))
         .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
         .alignmentGuide(.listRowSeparatorLeading) { _ in 66 }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -342,10 +400,10 @@ struct TemplateDetailView: View {
         .padding(.top, 8)
         // Clears the floating tab bar.
         .padding(.bottom, 78)
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
         .navigationTitle(template.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(WTheme.groupedPage, for: .navigationBar)
+        .surfaceTitleDisplayMode()
+        .toolbarBackground(GroupedSurface.page, for: .navigationBar)
         .presenceResource("template:\(template.id)")
         .sensoryFeedback(.success, trigger: duplicated)
         .sensoryFeedback(.selection, trigger: copied)
@@ -415,7 +473,7 @@ struct TemplateDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .transition(.opacity)
         .animation(.easeOut(duration: 0.25), value: rendered == nil)
@@ -437,7 +495,7 @@ struct TemplateDetailView: View {
                     .foregroundStyle(copied ? WTheme.positive : WTheme.ink)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
-                    .background(WTheme.groupedCard, in: Capsule())
+                    .surfaceCard(in: Capsule())
             }
             .buttonStyle(TapScaleStyle())
             if canWrite {

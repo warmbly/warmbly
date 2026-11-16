@@ -1,0 +1,11 @@
+{
+  "items": [
+    {"id": "s1", "status": 3, "email": "done@x.com", "email_reply_count": 0, "company_domain": "x.com", "timestamp_last_contact": "2025-08-27T10:00:00.000Z"},
+    {"id": "s2", "status": -2, "email": "unsub@x.com", "email_reply_count": 2, "company_domain": "x.com", "lt_interest_status": 1},
+    {"id": "s3", "status": 1, "email": "mtg@x.com", "email_reply_count": 1, "company_domain": "x.com", "lt_interest_status": 2},
+    {"id": "s4", "status": 1, "email": "no@x.com", "email_reply_count": 1, "company_domain": "x.com", "lt_interest_status": -2},
+    {"id": "s5", "status": 2, "email": "paused@x.com", "email_reply_count": 0, "company_domain": "x.com"},
+    {"id": "s6", "status": -3, "email": "skip@x.com", "email_reply_count": 0, "company_domain": "x.com"},
+    {"id": "s7", "status": 1, "email": "new@x.com", "email_reply_count": 0, "company_domain": "x.com", "lt_interest_status": 0}
+  ]
+}

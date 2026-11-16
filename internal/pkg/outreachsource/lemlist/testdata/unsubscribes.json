@@ -1,0 +1,8 @@
+[
+  {"_id":"uns_1","value":"John.Doe@Example.com","source":"user","createdAt":"2023-06-12T10:45:21.367Z"},
+  {"_id":"uns_2","value":"competitor.com","source":"api","createdAt":"2023-06-12T10:45:21.367Z"},
+  {"_id":"uns_3","value":"@rival.io","source":"user","createdAt":"2023-06-12T10:45:21.367Z"},
+  {"_id":"uns_4","value":"https://www.linkedin.com/in/someone","source":"user","createdAt":"2023-06-12T10:45:21.367Z"},
+  {"_id":"uns_5","value":"+15550100199","source":"user","createdAt":"2023-06-12T10:45:21.367Z"},
+  {"_id":"uns_6","value":"bounced@example.com","source":"bounced","createdAt":"2023-06-12T10:45:21.367Z"}
+]

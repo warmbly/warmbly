@@ -6,6 +6,7 @@ import Client from "@/lib/api/client/Client";
 import { deleteGrant } from "@/lib/api/client/app/emails/imports/mailboxGrants";
 import getToken from "@/lib/helper/getToken";
 import type ReauthMethods from "@/lib/api/models/auth/ReauthMethods";
+import { askForReauth } from "@/lib/reauthPrompt";
 import ReauthModal from "./ReauthModal";
 
 const navigate = vi.fn();
@@ -59,6 +60,29 @@ function overlayLayer(dialog: HTMLElement) {
 }
 
 describe("ReauthModal", () => {
+    it("asks for a request that needed confirming before the prompt had loaded", async () => {
+        methods.mockResolvedValue({ ...none, password: true });
+        reauth.mockResolvedValue(undefined);
+        const resolve = vi.fn();
+        const ack = vi.fn();
+        // Nothing is listening yet: the request is held, not lost.
+        askForReauth({ resolve, reject: vi.fn(), ack });
+        expect(ack).not.toHaveBeenCalled();
+
+        render(<ReauthModal />);
+        expect(ack).toHaveBeenCalledTimes(1);
+        fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "password123" } });
+        fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+        await waitFor(() => expect(resolve).toHaveBeenCalledTimes(1));
+    });
+
+    it("drops a held request that was withdrawn", () => {
+        const withdraw = askForReauth({ resolve: vi.fn(), reject: vi.fn() });
+        withdraw();
+        render(<ReauthModal />);
+        expect(screen.queryByText("Confirm it is you")).toBeNull();
+    });
+
     it.each([
         ["two_fa_code_used", "Wait for a new authenticator code, then try again."],
         ["internal_error", "We couldn't verify your confirmation right now. Try again shortly."],

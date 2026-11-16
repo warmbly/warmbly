@@ -66,7 +66,29 @@ table's default route.
 
 ## Prepare the join token
 
-Issue a join token on the Warmbly instance and store it as a SecureString:
+Set [`FLEET_JOIN_TOKEN_PARAMETER`](/development/configuration/#workers) on the
+backend to the parameter name, `/<name>/fleet/join-token` unless
+`fleet_join_token_parameter` changes it, and give the backend's role
+`ssm:GetParameter` and `ssm:PutParameter` on it. When the parameter uses a
+customer managed key (`fleet_join_token_kms_key_arn`), also set
+[`FLEET_JOIN_TOKEN_KMS_KEY`](/development/configuration/#workers) to that key and
+give the backend's role `kms:Encrypt`, `kms:GenerateDataKey` and `kms:Decrypt`
+on it. The backend checks the parameter when it starts and then every hour, or
+five minutes after a failed check. When the parameter is missing, holds a token
+that no longer joins, or holds one that expires within 10 days, it stores a new
+30-day join token there as a SecureString; a stored token with longer left is
+kept. Workers already joined are unaffected by a new token. Each check verifies
+the stored token against the instance, the same check a joining worker passes.
+Before the first launch, confirm the backend logged `fleet join token renewed`
+or `fleet join token is current`, which it logs after its first successful
+check. `fleet join token renewal disabled` (at start) or `fleet join token not
+renewed` (on a check) means no usable token was confirmed.
+
+Issuing a token revokes the previous one. Once the backend keeps the parameter,
+read the token from it to join a machine by hand rather than running
+`warmblyctl fleet join-token`, which would make the backend issue another.
+
+Without `FLEET_JOIN_TOKEN_PARAMETER`, issue a token and store it yourself:
 
 ```sh
 warmblyctl fleet join-token --ttl 720h
@@ -74,18 +96,16 @@ aws ssm put-parameter --region us-east-1 --type SecureString --overwrite \
   --name /warmbly-production/fleet/join-token --value '<token>'
 ```
 
-The parameter name defaults to `/<name>/fleet/join-token` and can be changed
-with `fleet_join_token_parameter`. A join token works for at most 30 days, and
-issuing a new one revokes the previous one. Joined workers are unaffected, but a
-worker launched with an expired token cannot join. Issue and store a new token
-before the old one expires, for example every three weeks, or scale-out stops
-producing working workers.
+A join token works for at most 30 days, so store a new one before the old one
+expires, for example every three weeks, or scale-out stops producing working
+workers.
 
 ## Enable the fleet
 
 1. Apply the foundation root. It associates an Amazon-provided IPv6 block with
    the VPC; existing subnets stay IPv4-only.
-2. Store the join token as above.
+2. Set `FLEET_JOIN_TOKEN_PARAMETER` on the backend, or store a join token by
+   hand, as above.
 3. Set at least these in the workers var file, then plan and apply the workers
    root:
 
@@ -105,8 +125,12 @@ unset only when workers reach the event bus some other way.
    Without it nothing publishes `WorkerMemoryPercent`, so the fleet scales out
    on CPU only and never scales in.
 
+5. Optionally set `FLEET_AUTOSCALING_GROUP` on the backend to the group's name
+   (`<name>-fleet`), so the cap can be changed from the admin panel (see
+   [change the fleet cap](#change-the-fleet-cap)).
+
 The `fleet` output names the group, its subnets and security group, the join
-token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
+token parameter, the cap's ceiling, the metric contract and `nat_ipv4_addresses`. Workers appear in
 `warmblyctl fleet list` within a few minutes of launching.
 
 ### Variables
@@ -121,7 +145,8 @@ token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
 | `fleet_cpu_credits` | `standard` | CPU credit mode for burstable types |
 | `fleet_root_volume_gb` | `20` | Encrypted gp3 root volume size |
 | `fleet_min_size` | `2` | Smallest fleet |
-| `fleet_max_size` | `10` | Largest fleet |
+| `fleet_max_size` | `10` | Starting cap on the fleet's size. The [admin panel](#change-the-fleet-cap) owns the cap afterwards, so a later change here is ignored |
+| `fleet_max_ceiling` | `null` | Highest cap the admin panel may set, written to the group's `warmbly:max-ceiling` tag. `null` uses the larger of `fleet_max_size` and 100 |
 | `fleet_desired_capacity` | `null` | Starting size; scaling owns it afterwards. `null` starts at the minimum |
 | `fleet_worker_capacity` | `auto` | `WARMBLY_WORKER_CAPACITY` on every fleet worker: `auto`, or a whole number of mailboxes from 1 to 99999999 |
 | `fleet_region_label` | empty | Optional `--region` label for placement |
@@ -200,6 +225,55 @@ while the fleet has fewer than 100 workers, and waits
 `fleet_refresh_warmup_seconds` between replacements. The AMI is resolved when
 each instance launches, so new AMIs reach new workers without refreshing
 existing ones. Health checks are EC2 status checks.
+
+### Change the fleet cap
+
+The group's cap is the most workers scaling may add. With
+`FLEET_AUTOSCALING_GROUP` set on the backend, the admin panel's Fleet page shows
+the group's size against its cap on the Capacity tab, and the cap can be
+changed there. It warns once the fleet reaches 80% of the cap and again when it
+reaches the cap, and the backend logs `worker fleet is at its size cap` once an
+hour while it stays there.
+
+The new cap must be at least the running fleet and `fleet_min_size`, and at most
+the ceiling. The one way lowering it stops a worker is a scale-out landing in the
+moment between that check and the change: the group then removes every worker
+that scale-out added above the new cap at once, without the quiet period the
+fleet's own scale-in waits for, and picks them the way any scale-in does: AWS
+first picks the Availability Zone with the most workers, then the newest worker
+in it, which can be one that holds mailboxes. Each leaves through the drain hook
+and its mailboxes are placed on the rest of the fleet. A
+change asks for a fresh confirmation of the operator's identity and is recorded
+in the admin audit log.
+
+`fleet_max_size` sets only the starting cap: Terraform ignores the cap after the
+group exists, so a later apply does not undo a change made in the admin panel.
+A plan whose `fleet_max_size` differs from the group's cap warns through the
+`fleet_cap` check instead of changing it; change the cap in the admin panel, or
+with `aws autoscaling update-auto-scaling-group --max-size`, and set
+`fleet_max_size` to match to clear the warning. The ceiling is
+`fleet_max_ceiling`, or the larger of `fleet_max_size` and 100 when it is unset;
+raise it and apply to allow a higher cap.
+
+The backend's role needs:
+
+```json
+[
+  {
+    "Effect": "Allow",
+    "Action": "autoscaling:DescribeAutoScalingGroups",
+    "Resource": "*"
+  },
+  {
+    "Effect": "Allow",
+    "Action": "autoscaling:UpdateAutoScalingGroup",
+    "Resource": "arn:aws:autoscaling:<region>:<account>:autoScalingGroup:*:autoScalingGroupName/<name>-fleet",
+    "Condition": { "NumericLessThanEquals": { "autoscaling:MaxSize": "<fleet_max_ceiling>" } }
+  }
+]
+```
+
+The condition holds the ceiling in IAM as well, whatever the tag says.
 
 ### Metric contract
 

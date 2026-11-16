@@ -54,7 +54,7 @@ interface Draft {
 
 const emptyDraft = (): Draft => ({
     label: "",
-    providers: ["gmail", "outlook", "smtp_imap"],
+    providers: ["gmail", "outlook", "smtp_imap", "vendor"],
     max: 5,
     expiry: "7",
     tags: [],
@@ -254,6 +254,12 @@ function NewLinkForm({ draft, setDraft }: { draft: Draft; setDraft: React.Dispat
                         </label>
                     ))}
                 </div>
+                {draft.providers.includes("vendor") && (
+                    <span className="text-[11px] leading-snug text-slate-400">
+                        With a vendor account, the client pastes the API key of Zapmail, InboxKit or another vendor and picks its mailboxes, many at
+                        once. The key is kept here as one of this workspace's vendor accounts.
+                    </span>
+                )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">

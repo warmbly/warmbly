@@ -43,4 +43,30 @@ describe("cookieless acquisition", () => {
         expect(readAcquisition(`?wb_lp=${encodeURIComponent("/\\evil.example/offer")}`)).toEqual({});
         expect(readAcquisition("?wb_lp=https://evil.example/path&wb_ref=warmbly.com")).toEqual({});
     });
+
+    describe("partner click", () => {
+        it("reads wb_click and keeps it through redirects under that name", () => {
+            browser();
+            expect(readAcquisition("?wb_click=cl1ck_ID-9")).toEqual({ partner_click_id: "cl1ck_ID-9" });
+            expect(acquisitionSearch("?wb_click=abc123&next=/x")).toEqual({ wb_click: "abc123" });
+        });
+
+        it("renames the link service's dub_id when a partner link points at the dashboard", () => {
+            browser();
+            expect(acquisitionSearch("?dub_id=abc123")).toEqual({ wb_click: "abc123" });
+            expect(readAcquisition("?dub_id=abc123")).toEqual({ partner_click_id: "abc123" });
+        });
+
+        it("never reads a cookie", () => {
+            vi.stubGlobal("window", { location: { hostname: "app.warmbly.com", origin: "https://app.warmbly.com", search: "" } });
+            vi.stubGlobal("document", { referrer: "", cookie: "dub_id=from_cookie; wb_click=also" });
+            expect(isEmpty(readAcquisition(""))).toBe(true);
+        });
+
+        it("drops a value no click could have produced", () => {
+            browser();
+            expect(readAcquisition("?wb_click=a%20b&dub_id=%3Cscript%3E")).toEqual({});
+            expect(acquisitionSearch("?wb_click=a%20b")).toEqual({});
+        });
+    });
 });

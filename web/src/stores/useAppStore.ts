@@ -14,9 +14,17 @@ import { createSubscriptionSlice, type SubscriptionSlice } from './slices/subscr
 import { createAPIKeysSlice, type APIKeysSlice } from './slices/apiKeysSlice'
 import { createPresenceSlice, type PresenceSlice } from './slices/presenceSlice'
 import { createAgentSlice, type AgentSlice } from './slices/agentSlice'
+import type { Organization } from './slices/organizationSlice'
+import { overlayClientView, type ClientView } from '@/lib/clientView'
 
 export type AppStore = UserSlice & OrganizationSlice & UISlice & ShortcutSlice & DataSlice
   & RealtimeSlice & CRMSlice & UniboxSlice & AnalyticsSlice & SubscriptionSlice & APIKeysSlice & PresenceSlice & AgentSlice
+
+// A stored workspace is the member's own row; this tab's client view, when it names it, narrows it again.
+function restoreOrganization(member: Organization | null, view: ClientView | null) {
+  const kept = member && view && view.orgId === member.id ? view : null
+  return { memberOrganization: member, clientView: kept, currentOrganization: member ? overlayClientView(member, kept) : null }
+}
 
 export const useAppStore = create<AppStore>()(
   devtools(
@@ -66,6 +74,7 @@ export const useAppStore = create<AppStore>()(
             // The theme lives under its own key, which index.html reads before first paint.
             theme: current.theme,
             resolvedTheme: current.resolvedTheme,
+            ...restoreOrganization(p.currentOrganization ?? null, current.clientView),
           }
         },
         partialize: (state) => ({
@@ -89,8 +98,8 @@ export const useAppStore = create<AppStore>()(
           uniboxRailSectionOrder: state.uniboxRailSectionOrder,
           uniboxRailFavorites: state.uniboxRailFavorites,
           uniboxRailOwner: state.uniboxRailOwner,
-          // Persist current organization selection
-          currentOrganization: state.currentOrganization,
+          // Persist current organization selection: the member's own row, never a client view's narrowing.
+          currentOrganization: state.memberOrganization ?? state.currentOrganization,
         }),
       }
     ),

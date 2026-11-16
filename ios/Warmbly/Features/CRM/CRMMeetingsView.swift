@@ -12,6 +12,7 @@ struct CRMMeetingsView: View {
     @State private var sidebarOpen = false
     @State private var shown = false
     @State private var lastNext: CRMMeeting?
+    @State private var wide = false
     @FocusState private var searchFocused: Bool
 
     private var canWrite: Bool { env.session.can(.manageContacts) }
@@ -100,11 +101,12 @@ struct CRMMeetingsView: View {
                 menuLabel: "Open meetings menu",
                 onMenu: openSidebar
             ) {
-                GlassCircleButton(symbol: "xmark", label: "Close meetings") { dismiss() }
+                CoverCloseButton(label: "Close meetings") { dismiss() }
             }
             list
         }
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
+        .onGeometryChange(for: Bool.self) { $0.size.width >= SplitMetrics.detailMinContentWidth } action: { wide = $0 }
     }
 
     // MARK: Next up
@@ -161,7 +163,7 @@ struct CRMMeetingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .reveal(shown, index + 1)
     }
 
@@ -210,64 +212,90 @@ struct CRMMeetingsView: View {
             ErrorStateView(title: "Couldn't load meetings", message: error) {
                 await store.load(env.api)
             }
+        } else if wide {
+            HStack(alignment: .top, spacing: 0) {
+                agenda(wide: true)
+                rail
+            }
         } else {
-            List {
-                Section {
-                    VStack(spacing: 12) {
-                        if !isSearching {
-                            heroCard
-                                .reveal(shown, 0)
-                            statsRow
-                        }
-                        PillSwitcher(
-                            options: CRMMeetingScope.allCases,
-                            selection: Binding(get: { store.scope }, set: { select($0, close: false) }),
-                            label: \.title
-                        )
-                        .padding(.top, 2)
+            agenda(wide: false)
+        }
+    }
+
+    /// The wide layout's right column: the next call and the counts, beside the agenda.
+    private var rail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                heroCard
+                    .reveal(shown, 0)
+                statsRow
+            }
+            .padding(.top, 4)
+            .padding(.leading, 4)
+            .padding(.trailing, 20)
+            .padding(.bottom, 40)
+        }
+        .scrollIndicators(.hidden)
+        .frame(width: 380)
+    }
+
+    private func agenda(wide: Bool) -> some View {
+        List {
+            Section {
+                VStack(spacing: 12) {
+                    if !wide, !isSearching {
+                        heroCard
+                            .reveal(shown, 0)
+                        statsRow
                     }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    PillSwitcher(
+                        options: CRMMeetingScope.allCases,
+                        selection: Binding(get: { store.scope }, set: { select($0, close: false) }),
+                        label: \.title
+                    )
+                    .padding(.top, 2)
                 }
-                if store.visibleMeetings.isEmpty {
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+            if store.visibleMeetings.isEmpty {
+                Section {
+                    emptyState
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+            } else {
+                ForEach(dayGroups) { group in
                     Section {
-                        emptyState
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                    }
-                } else {
-                    ForEach(dayGroups) { group in
-                        Section {
-                            ForEach(group.meetings) { meeting in
-                                row(meeting)
-                            }
-                        } header: {
-                            CoverSectionHeader(
-                                title: group.title,
-                                count: group.meetings.count,
-                                color: group.isToday ? WTheme.accent : nil,
-                                pulsing: group.isToday && store.scope != .past
-                            )
+                        ForEach(group.meetings) { meeting in
+                            row(meeting)
                         }
+                    } header: {
+                        CoverSectionHeader(
+                            title: group.title,
+                            count: group.meetings.count,
+                            color: group.isToday ? WTheme.accent : nil,
+                            pulsing: group.isToday && store.scope != .past
+                        )
                     }
-                    Section {
-                        CRMEndMarker(endCount, "meeting")
-                            .listRowBackground(Color.clear)
-                    }
+                }
+                Section {
+                    CRMEndMarker(endCount, "meeting")
+                        .listRowBackground(Color.clear)
                 }
             }
-            .listStyle(.insetGrouped)
-            .readableMargins()
-            .listSectionSpacing(18)
-            .contentMargins(.horizontal, 16, for: .scrollContent)
-            .contentMargins(.top, 0, for: .scrollContent)
-            .scrollContentBackground(.hidden)
-            .scrollDismissesKeyboard(.immediately)
-            .defaultScrollAnchor(SettingsDebug.anchor)
-            .refreshable { await store.load(env.api) }
-            .onAppear { shown = true }
         }
+        .listStyle(.insetGrouped)
+        .readableMargins()
+        .listSectionSpacing(18)
+        .contentMargins(.horizontal, 16, for: .scrollContent)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.immediately)
+        .defaultScrollAnchor(SettingsDebug.anchor)
+        .refreshable { await store.load(env.api) }
+        .onAppear { shown = true }
     }
 
     /// Today is a client-side slice, so its exact count is the visible count.
@@ -365,7 +393,7 @@ struct CRMMeetingsView: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 4)
-        .listRowBackground(WTheme.groupedCard)
+        .listRowBackground(Rectangle().fill(GroupedSurface.card))
         .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 14))
         .alignmentGuide(.listRowSeparatorLeading) { _ in 90 }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {

@@ -1,0 +1,20 @@
+{
+  "id": "8Jwomvq5aO",
+  "sequenceId": "JA5YdAr9wy",
+  "createdAt": "2024-09-23T01:18:04.826Z",
+  "deletedAt": null,
+  "emailAccount": [
+    {
+      "id": "WjzR8xpPAq",
+      "userId": "2AwrlZ3aQn",
+      "fromName": "John Doe",
+      "fromEmail": "John@Sender.example",
+      "type": 3,
+      "status": 1,
+      "isDefault": true,
+      "emailServiceProvider": "gsuite",
+      "healthScore": 71,
+      "settings": [{"id": "Z6zxo5O7aA", "code": "available-quota", "value": "11"}]
+    }
+  ]
+}

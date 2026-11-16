@@ -20,7 +20,7 @@ import (
 )
 
 type WorkerService struct {
-	OnMailboxMissing          func()
+	OnMailboxMissing          func(uuid.UUID)
 	ID                        string
 	CipherService             cipher.CipherService
 	Bus                       eventbus.EventBus

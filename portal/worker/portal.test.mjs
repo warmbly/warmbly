@@ -67,6 +67,7 @@ test("paths are split between the portal's own pages, the dashboard and nothing"
     "/embed.js": "loader", "/_portal/assets/index-abc.js": "bundle", [`/connect/${tok("a")}`]: "connect", [`/r/${tok("a")}`]: "report",
     [`/api/connect/${tok("a")}`]: "connect-api", [`/api/connect/${tok("a")}/oauth`]: "connect-api", [`/api/connect/${tok("a")}/oauth/result`]: "connect-api",
     [`/api/connect/${tok("a")}/smtp-imap`]: "connect-api", [`/api/reports/${tok("a")}`]: "report-api",
+    [`/api/connect/${tok("a")}/vendor`]: "connect-api", [`/api/connect/${tok("a")}/vendor/import`]: "connect-api", [`/api/connect/${tok("a")}/vendor/other`]: "api-none",
     "/api/forms/pub/submit": "api-none", "/api/v1/me": "api-none",
     "/f/pub123": "none", "/forms.js": "none", "/_portal/index.html": "none", "/connect/a/b": "none", "/r/a/b": "none",
     "/": "dashboard", "/connect": "dashboard", "/app/campaigns": "dashboard", "/assets/index-def.js": "dashboard", "/rx": "dashboard",
@@ -134,6 +135,8 @@ test("connect calls reach the backend's internal routes with the portal token, t
     "/api/v1/internal/connect-links/oauth/start": async () => Response.json({ url: "https://accounts.example/x", result_key: "k" }),
     "/api/v1/internal/connect-links/oauth/result": async () => Response.json({ status: "pending" }),
     "/api/v1/internal/connect-links/smtp-imap": async () => Response.json({ code: "client_link_full", message: "Full." }, { status: 409 }),
+    "/api/v1/internal/connect-links/vendor/mailboxes": async () => Response.json({ ticket: "t", mailboxes: [], remaining: 5 }),
+    "/api/v1/internal/connect-links/vendor/import": async () => Response.json({ mailboxes: 2, connected: 2, max_mailboxes: 5 }, { status: 201 }),
   };
   const headers = { "X-Warmbly-Render": render, "CF-Connecting-IP": "203.0.113.9", "X-Forwarded-Host": "other.example", "Content-Type": "application/json" };
   const call = (suffix, body) => servePortal(at(`/api/connect/${token}${suffix}`, body === undefined ? { headers } : { method: "POST", headers, body: JSON.stringify(body) }),
@@ -151,9 +154,22 @@ test("connect calls reach the backend's internal routes with the portal token, t
   });
   assert.equal(smtp.status, 409);
   assert.equal((await smtp.json()).code, "client_link_full");
+  // A vendor key goes to the backend once; only a ticket comes back, and the pick names it.
+  const listed = await call("/vendor", { vendor: "zapmail", fields: { api_key: "zm_secret" }, captcha_token: "c", extra: "dropped" });
+  assert.equal(listed.status, 200);
+  assert.deepEqual(await listed.json(), { ticket: "t", mailboxes: [], remaining: 5 });
+  assert.equal((await call("/vendor/import", { ticket: "t", mailbox_ids: ["m1", "m2"], fields: { api_key: "dropped" } })).status, 201);
+  for (const bad of [{ vendor: "zapmail" }, { vendor: "zapmail", fields: {} }, { vendor: "zapmail", fields: { api_key: 7 } }, { vendor: 7, fields: { api_key: "k" } },
+    { vendor: "zapmail", fields: Object.fromEntries(Array.from({ length: 9 }, (_, i) => ["k" + i, "v"])) }]) {
+    assert.equal((await call("/vendor", bad)).status, 400, JSON.stringify(bad));
+  }
+  for (const bad of [{ ticket: "t" }, { ticket: "t", mailbox_ids: [] }, { ticket: "t", mailbox_ids: ["m1", 2] }, { mailbox_ids: ["m1"] },
+    { ticket: "t", mailbox_ids: Array.from({ length: 501 }, (_, i) => "m" + i) }]) {
+    assert.equal((await call("/vendor/import", bad)).status, 400, JSON.stringify(bad).slice(0, 60));
+  }
 
   const sent = calls.filter((c) => c.url.pathname.startsWith("/api/v1/internal/connect-links"));
-  assert.deepEqual(sent.map((c) => c.url.pathname.replace("/api/v1/internal/connect-links", "")), ["/lookup", "/oauth/start", "/oauth/result", "/smtp-imap"]);
+  assert.deepEqual(sent.map((c) => c.url.pathname.replace("/api/v1/internal/connect-links", "")), ["/lookup", "/oauth/start", "/oauth/result", "/smtp-imap", "/vendor/mailboxes", "/vendor/import"]);
   for (const c of sent) {
     assert.equal(c.auth, `Bearer ${TOKEN}`);
     assert.equal(c.body.token, token);
@@ -163,6 +179,8 @@ test("connect calls reach the backend's internal routes with the portal token, t
   assert.deepEqual(sent[2].body, { token, host: PORTAL, result_key: "k" });
   assert.deepEqual(sent[3].body.smtp, { host: "smtp.b.test", port: 465, username: "a", password: "p", security: "tls" });
   assert.equal(sent[3].body.imap, null);
+  assert.deepEqual(sent[4].body, { token, host: PORTAL, vendor: "zapmail", fields: { api_key: "zm_secret" }, captcha_token: "c", remote_ip: "203.0.113.9" });
+  assert.deepEqual(sent[5].body, { token, host: PORTAL, ticket: "t", mailbox_ids: ["m1", "m2"], remote_ip: "203.0.113.9" });
   assert.equal(sent[3].body.remote_ip, "203.0.113.9");
 });
 

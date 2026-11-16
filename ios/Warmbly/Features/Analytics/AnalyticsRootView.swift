@@ -62,6 +62,7 @@ struct AnalyticsRootView: View {
     @State private var sidebarDrag: CGFloat = 0
     @State private var filterOpen = false
     @State private var shown = false
+    @State private var wide = false
 
     private static let sidebarWidth: CGFloat = 300
 
@@ -89,7 +90,7 @@ struct AnalyticsRootView: View {
             )
             Spacer()
         }
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
         .toolbarVisibility(.hidden, for: .navigationBar)
     }
 
@@ -173,9 +174,10 @@ struct AnalyticsRootView: View {
             .scrollIndicators(.hidden)
             .defaultScrollAnchor(SettingsDebug.anchor)
             .refreshable { await store.load(env.api) }
-            .readableMargins(900)
+            .readableMargins(wide && scope == .overview ? 1180 : 900)
         }
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
+        .onGeometryChange(for: Bool.self) { $0.size.width >= SplitMetrics.detailMinContentWidth } action: { wide = $0 }
         .simultaneousGesture(
             DragGesture(minimumDistance: 25)
                 .onEnded { value in
@@ -192,7 +194,31 @@ struct AnalyticsRootView: View {
         store.scopeLabel { id in env.session.user?.folders?.first { $0.id == id }?.name }
     }
 
+    @ViewBuilder
     private var controls: some View {
+        if wide {
+            // One row: the campaign scope leads, the period sits trailing at a fixed width.
+            HStack(spacing: 12) {
+                if scope == .overview {
+                    filterChip
+                } else {
+                    Spacer(minLength: 0)
+                }
+                if scope != .accounts {
+                    PillSwitcher(
+                        options: AnalyticsPeriod.allCases,
+                        selection: Binding(get: { store.period }, set: { store.period = $0 }),
+                        label: \.label
+                    )
+                    .frame(width: 340)
+                }
+            }
+        } else {
+            narrowControls
+        }
+    }
+
+    private var narrowControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             if scope != .accounts {
                 PillSwitcher(
@@ -227,7 +253,7 @@ struct AnalyticsRootView: View {
                 }
                 .padding(.horizontal, 13)
                 .frame(height: 34)
-                .background(scoped ? WTheme.accentSoft : WTheme.groupedCard, in: Capsule())
+                .background(scoped ? AnyShapeStyle(WTheme.accentSoft) : AnyShapeStyle(GroupedSurface.card), in: Capsule())
             }
             .buttonStyle(TapScaleStyle())
             .accessibilityLabel("Campaign filter: \(scopeLabel)")
@@ -239,7 +265,7 @@ struct AnalyticsRootView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(WTheme.inkSecondary)
                         .frame(width: 34, height: 34)
-                        .background(WTheme.groupedCard, in: Circle())
+                        .surfaceCard(in: Circle())
                 }
                 .buttonStyle(TapScaleStyle())
                 .transition(.scale.combined(with: .opacity))
@@ -255,15 +281,19 @@ struct AnalyticsRootView: View {
     @ViewBuilder
     private var overview: some View {
         if store.dashboard != nil {
-            VStack(alignment: .leading, spacing: 16) {
-                trendCard.reveal(shown, 0)
-                kpiCard.reveal(shown, 1)
-                funnelCard.reveal(shown, 2)
-                if !(store.dashboard?.topCampaigns ?? []).isEmpty {
-                    campaignsCard.reveal(shown, 3)
-                }
-                if !(store.dashboard?.recentActivity ?? []).isEmpty {
-                    activityCard.reveal(shown, 4)
+            if wide {
+                wideOverview
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    trendCard.reveal(shown, 0)
+                    kpiCard().reveal(shown, 1)
+                    funnelCard().reveal(shown, 2)
+                    if !(store.dashboard?.topCampaigns ?? []).isEmpty {
+                        campaignsCard().reveal(shown, 3)
+                    }
+                    if !(store.dashboard?.recentActivity ?? []).isEmpty {
+                        activityCard().reveal(shown, 4)
+                    }
                 }
             }
         } else if let error = store.dashboardError {
@@ -273,6 +303,27 @@ struct AnalyticsRootView: View {
             .padding(.top, 40)
         } else {
             AnalyticsLoadingCards()
+        }
+    }
+
+    /// The dashboard grid: the trend across the top, then the cards in pairs of equal height.
+    private var wideOverview: some View {
+        let hasCampaigns = !(store.dashboard?.topCampaigns ?? []).isEmpty
+        let hasActivity = !(store.dashboard?.recentActivity ?? []).isEmpty
+        return VStack(alignment: .leading, spacing: 16) {
+            trendCard.reveal(shown, 0)
+            HStack(alignment: .top, spacing: 16) {
+                kpiCard(fill: true).reveal(shown, 1)
+                funnelCard(fill: true).reveal(shown, 2)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            if hasCampaigns || hasActivity {
+                HStack(alignment: .top, spacing: 16) {
+                    if hasCampaigns { campaignsCard(fill: true).reveal(shown, 3) }
+                    if hasActivity { activityCard(fill: true).reveal(shown, 4) }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -344,7 +395,7 @@ struct AnalyticsRootView: View {
         ]
     }
 
-    private var kpiCard: some View {
+    private func kpiCard(fill: Bool = false) -> some View {
         let items = kpis
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(0 ..< 2, id: \.self) { row in
@@ -365,8 +416,8 @@ struct AnalyticsRootView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 6)
         .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: fill ? .infinity : nil, alignment: .topLeading)
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func kpiCell(_ kpi: KPI, index: Int) -> some View {
@@ -420,7 +471,7 @@ struct AnalyticsRootView: View {
 
     // MARK: Funnel
 
-    private var funnelCard: some View {
+    private func funnelCard(fill: Bool = false) -> some View {
         let now = current
         let steps: [(label: String, symbol: String, value: Int, color: Color)] = [
             ("Sent", "paperplane.fill", now.sent, WTheme.accent),
@@ -466,12 +517,13 @@ struct AnalyticsRootView: View {
                 }
             }
         }
+        .frame(maxHeight: fill ? .infinity : nil, alignment: .top)
         .coverCard()
     }
 
     // MARK: Campaigns
 
-    private var campaignsCard: some View {
+    private func campaignsCard(fill: Bool = false) -> some View {
         let campaigns = Array((store.dashboard?.topCampaigns ?? []).prefix(5))
         return VStack(alignment: .leading, spacing: 4) {
             CardTitle("Top campaigns", caption: "Ranked by sends this period")
@@ -481,12 +533,13 @@ struct AnalyticsRootView: View {
                 AnalyticsCampaignRow(campaign: campaign, rank: index + 1, shown: shown)
             }
         }
+        .frame(maxHeight: fill ? .infinity : nil, alignment: .top)
         .coverCard()
     }
 
     // MARK: Activity
 
-    private var activityCard: some View {
+    private func activityCard(fill: Bool = false) -> some View {
         let items = Array((store.dashboard?.recentActivity ?? []).prefix(8))
         return VStack(alignment: .leading, spacing: 4) {
             CardTitle("Latest from your recipients")
@@ -496,6 +549,7 @@ struct AnalyticsRootView: View {
                 AnalyticsActivityRow(item: item)
             }
         }
+        .frame(maxHeight: fill ? .infinity : nil, alignment: .top)
         .coverCard()
     }
 
@@ -631,7 +685,7 @@ struct AnalyticsActivityRow: View {
                         .foregroundStyle(.white)
                         .frame(width: 18, height: 18)
                         .background(kind.color, in: Circle())
-                        .overlay(Circle().stroke(WTheme.groupedCard, lineWidth: 2))
+                        .overlay(Circle().stroke(GroupedSurface.card, lineWidth: 2))
                         .offset(x: 4, y: 4)
                 }
             VStack(alignment: .leading, spacing: 3) {
@@ -663,7 +717,7 @@ struct AnalyticsLoadingCards: View {
         VStack(spacing: 16) {
             ForEach([240.0, 190, 170], id: \.self) { height in
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(WTheme.groupedCard)
+                    .fill(GroupedSurface.card)
                     .frame(height: height)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 12) {

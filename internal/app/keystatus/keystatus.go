@@ -40,6 +40,7 @@ type SealedColumn struct {
 
 // instanceOnlyColumns are sealed under an instance-wide key on tables that never travel in a workspace archive.
 var instanceOnlyColumns = []SealedColumn{
+	{Table: "agency_vendor_connections", Column: "credentials", Domain: DomainInstance},
 	{Table: "cloud_link", Column: "token", Domain: DomainInstance},
 	{Table: "mailbox_erasures", Column: "refresh_token", Domain: DomainInstance},
 	{Table: "user_totp_settings", Column: "totp_secret_sealed", Domain: DomainMFA},

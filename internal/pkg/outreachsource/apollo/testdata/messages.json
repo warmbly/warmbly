@@ -1,0 +1,30 @@
+{
+  "breadcrumbs": [],
+  "emailer_messages": [
+    {
+      "id": "684b2203a2ce950021cbf730",
+      "status": "completed",
+      "emailer_campaign_id": "66e9e215ece19801b219997f",
+      "emailer_step_id": "684b216ec95a4f001d968d19",
+      "enable_tracking": true,
+      "type": "outreach_automatic_email",
+      "from_email": "Test.Liam@apollomail.io",
+      "to_email": "gina.larkin@example.com",
+      "subject": "Stats for you",
+      "campaign_position": 1
+    },
+    {
+      "id": "684b2203a2ce950021cbf731",
+      "status": "completed",
+      "emailer_campaign_id": "66e9e215ece19801b219997f",
+      "enable_tracking": false,
+      "type": "outreach_automatic_email",
+      "from_email": "test.dana@apollomail.io",
+      "campaign_position": 2
+    }
+  ],
+  "emailer_steps": [
+    {"id": "684b216ec95a4f001d968d19", "emailer_campaign_id": "66e9e215ece19801b219997f", "wait_time": 0, "wait_mode": "minute", "position": 1}
+  ],
+  "num_fetch_result": null
+}

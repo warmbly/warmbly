@@ -23,6 +23,9 @@ type readCache[T any] struct {
 	mu  sync.Mutex
 	ttl time.Duration
 	m   map[string]cacheEntry[T]
+	// gens counts forgets per key, so a read that started before one cannot
+	// store what it read after it.
+	gens map[string]uint64
 	// flights coalesces a cold or expired key: the first miss computes while
 	// every concurrent miss for the same key waits on its result, so a large
 	// campaign is planned once per version rather than once per viewer.
@@ -67,9 +70,31 @@ func (c *readCache[T]) get(key string) (T, bool) {
 	return e.v, true
 }
 
-func (c *readCache[T]) put(key string, v T) {
+// forget drops key, so the next read computes it again.
+func (c *readCache[T]) forget(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	delete(c.m, key)
+	if c.gens == nil {
+		c.gens = map[string]uint64{}
+	}
+	c.gens[key]++
+}
+
+// generation is key's forget count, taken before a read that putAt stores.
+func (c *readCache[T]) generation(key string) uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gens[key]
+}
+
+// putAt stores v unless key was forgotten since gen was taken.
+func (c *readCache[T]) putAt(key string, v T, gen uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.gens[key] != gen {
+		return
+	}
 	c.putLocked(key, v)
 }
 

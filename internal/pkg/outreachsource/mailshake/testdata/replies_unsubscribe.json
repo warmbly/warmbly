@@ -1,0 +1,3 @@
+{"nextToken": null, "results": [
+  {"object": "reply", "id": 1, "actionDate": "2017-04-06T17:42:54.475Z", "recipient": {"object": "recipient", "id": 5, "emailAddress": "eve@doe.com", "fullName": "Eve Doe", "first": "Eve", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "fields": {}}, "campaign": {"object": "campaign", "id": 1, "title": "My campaign", "created": "2017-04-06T17:40:23.194Z"}, "type": "unsubscribe", "subject": "Re: Quick question", "contactID": 5}
+]}

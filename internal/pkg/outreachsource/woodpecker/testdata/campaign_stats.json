@@ -1,0 +1,13 @@
+[
+  {
+    "id": 12345679, "name": "Four step campaign", "status": "PAUSED", "created": "2025-02-10T13:14:57+0100", "per_day": 10,
+    "from_email": "erlich@usebachmanity.com", "from_emails": ["erlich@usebachmanity.com"],
+    "stats": {
+      "prospects": 868, "delivery": 853, "invalid": 6, "bounced": 4, "queue": 3, "sent": 857, "check": 21, "autoreplied": 0, "opened": 286, "optout": 3, "clicked": 0, "replied": 74, "interested": 42, "maybe_later": 11, "not_interested": 13,
+      "emails": [
+        {"subject": "Example subject line", "msg": "<div>Hi</div>", "timezone": "Europe/Warsaw", "track_open": true, "track_click": false, "follow_up": 0, "number": 1, "step": 1},
+        {"subject": "Re: Example subject line", "msg": "<div>First followup</div>", "timezone": "Europe/Warsaw", "track_open": false, "track_click": false, "follow_up": 4, "number": 2, "step": 2}
+      ]
+    }
+  }
+]

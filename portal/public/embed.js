@@ -71,6 +71,12 @@
       } catch (err) {}
       return;
     }
+    if (d.type === "warmbly:connect:importing") {
+      try {
+        document.dispatchEvent(new CustomEvent("warmbly:importing", { detail: { mailboxes: d.mailboxes | 0, connected: d.connected | 0 } }));
+      } catch (err) {}
+      return;
+    }
     if (d.type === "warmbly:resize" && d.page && pages.hasOwnProperty(d.page)) {
       var frames = document.querySelectorAll('iframe[data-warmbly-frame="' + d.page + '"]');
       for (var i = 0; i < frames.length; i++) {

@@ -1,0 +1,5 @@
+{"hasMore":false,"items":[
+  {"addingDate":"2024-03-09T10:00:00+00:00","callStatus":"none","company":null,"contactId":12347,"currentStep":{"stepId":1323,"displayName":"1"},"email":"New@Gamma.dev","emailAccountId":null,"emailDisposition":null,"firstName":"Ned","isOptedOut":false,"lastName":null,"meetingStatus":"none","sequenceId":123,"statusInSequence":"active","title":null},
+  {"addingDate":"2024-03-09T10:00:00+00:00","callStatus":"none","company":"Delta","contactId":12348,"currentStep":{"stepId":1325,"displayName":"3"},"email":"bob@delta.com","emailAccountId":2,"emailDisposition":{"isReplied":false,"isBounced":true},"firstName":"Bob","isOptedOut":false,"lastName":"Ray","meetingStatus":"none","sequenceId":123,"statusInSequence":"finished","title":null},
+  {"addingDate":"2024-03-09T10:00:00+00:00","callStatus":"none","company":"Eps","contactId":12349,"currentStep":{"stepId":1325,"displayName":"3"},"email":"eve@eps.com","emailAccountId":2,"emailDisposition":{"isReplied":false,"isBounced":false},"firstName":"Eve","isOptedOut":true,"lastName":"Ng","meetingStatus":"none","sequenceId":123,"statusInSequence":"paused","title":null}
+]}

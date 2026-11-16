@@ -143,3 +143,36 @@ export function convertWorkerToDedicated(
         data: body,
     });
 }
+
+// The worker Auto Scaling Group's size against its cap; mirrors fleetscale.Status.
+export interface AdminFleetScale {
+    group: string;
+    min: number;
+    max: number;
+    desired: number;
+    in_service: number;
+    pending: number;
+    /** Highest cap the backend accepts; 0 when the group carries no ceiling tag. */
+    ceiling: number;
+}
+
+/** The code answered by an instance that does not manage a worker Auto Scaling Group. */
+export const FLEET_AUTOSCALING_NOT_CONFIGURED = "fleet_autoscaling_not_configured";
+
+export function getFleetScale(): Promise<AdminFleetScale> {
+    return Request({
+        method: "GET",
+        url: "/admin/fleet/scale",
+        authorization: true,
+    });
+}
+
+// Moves the cap; the backend refuses anything below the running fleet or above the ceiling.
+export function setFleetMax(max: number): Promise<AdminFleetScale> {
+    return Request({
+        method: "PATCH",
+        url: "/admin/fleet/scale",
+        authorization: true,
+        data: { max },
+    });
+}

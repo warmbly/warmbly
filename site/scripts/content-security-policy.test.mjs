@@ -26,6 +26,10 @@ test('restricts executable sources while preserving configured analytics and inl
   assert.ok(!scripts.includes("'unsafe-inline'") && !scripts.includes("'unsafe-eval'"));
   assert.ok(directives.get('style-src').includes("'unsafe-inline'"));
   assert.ok(!contentSecurityPolicy(new Set()).includes('posthog'));
+  assert.ok(!contentSecurityPolicy(new Set()).includes('dub'));
+  const partner = new Map(contentSecurityPolicy(new Set(), undefined, true).split('; ').map((value) => { const [name, ...sources] = value.split(' '); return [name, sources]; }));
+  assert.ok(partner.get('connect-src').includes('https://api.dub.co'));
+  assert.ok(!partner.get('script-src').includes('https://api.dub.co'));
   assert.throws(() => contentSecurityPolicy(new Set(), 'http://analytics.example.com'), /HTTPS/);
   assert.throws(() => contentSecurityPolicy(new Set(), 'https://user:password@example.com'), /HTTPS/);
 });

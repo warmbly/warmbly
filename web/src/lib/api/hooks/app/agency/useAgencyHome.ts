@@ -25,6 +25,10 @@ import { useUserProfile } from "@/hooks/context/user";
 import { useAppStore } from "@/stores";
 import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOrganization";
 import { organizationsQuery } from "@/lib/api/hooks/app/organizations/useOrganizations";
+import { rolesQuery } from "@/lib/api/hooks/app/organizations/useRoles";
+import { defaultClientRole, type ClientViewReturn } from "@/lib/clientView";
+import { ALL_PERMISSIONS } from "@/lib/permissions";
+import { orgHasPermission } from "@/hooks/usePermission";
 import { createRefreshCoalescer } from "@/lib/realtime/refreshCoalescer";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -138,8 +142,12 @@ export function useOpenClient() {
     const organizations = useAppStore((s) => s.organizations);
     const current = useAppStore((s) => s.currentOrganization);
     const setCurrentOrganization = useAppStore((s) => s.setCurrentOrganization);
+    const setClientView = useAppStore((s) => s.setClientView);
+    // The client being opened, so the row that was clicked can say so at once.
+    const [opening, setOpening] = useState<string | null>(null);
 
     const open = async (orgId: string, then: (nav: typeof navigate) => unknown = (nav) => nav({ to: "/app/emails" })) => {
+        setOpening(orgId);
         try {
             if (current?.id !== orgId) {
                 await switchOrg.mutateAsync(orgId);
@@ -149,12 +157,39 @@ export function useOpenClient() {
                     (await qc.fetchQuery({ ...organizationsQuery, staleTime: 0 })).find((o) => o.id === orgId);
                 if (org) setCurrentOrganization(org);
             }
+            // Opening a workspace is opening it as staff; a client view is entered on top of this.
+            setClientView(null);
             await then(navigate);
             return true;
         } catch (e) {
             toast.error(buildError(e as AppError));
             return false;
+        } finally {
+            setOpening(null);
         }
     };
-    return { open, pending: switchOrg.isPending };
+    return { open, opening, pending: opening !== null };
+}
+
+/** Opens a client workspace as its members see it, drawn for the role most of them hold. */
+export function useEnterClientView({ returnTo }: { returnTo?: ClientViewReturn } = {}) {
+    const { open, opening, pending } = useOpenClient();
+    const qc = useQueryClient();
+    const setClientView = useAppStore((s) => s.setClientView);
+    const enter = (orgId: string) =>
+        open(orgId, async (nav) => {
+            const role = defaultClientRole((await qc.fetchQuery(rolesQuery)).data ?? []);
+            const view = role
+                ? { orgId, roleId: role.id, roleName: role.name, permissions: role.permissions, returnTo }
+                : { orgId, roleId: "owner", roleName: "Owner", permissions: ALL_PERMISSIONS, returnTo };
+            setClientView(view);
+            // Open on a page the role can use, not on one that only says it cannot.
+            const shown = useAppStore.getState().currentOrganization;
+            if (orgHasPermission(shown, "MANAGE_EMAILS")) return nav({ to: "/app/emails" });
+            if (orgHasPermission(shown, "VIEW_CAMPAIGNS")) return nav({ to: "/app/campaigns" });
+            if (orgHasPermission(shown, "ACCESS_UNIBOX")) return nav({ to: "/app/unibox/{-$scope}/{-$threadId}", params: { scope: "inbox", threadId: undefined } });
+            if (orgHasPermission(shown, "VIEW_CONTACTS")) return nav({ to: "/app/contacts" });
+            return nav({ to: "/app/analytics" });
+        });
+    return { enter, opening, pending };
 }

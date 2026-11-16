@@ -24,6 +24,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/segment"
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/subscription"
+	"github.com/warmbly/warmbly/internal/app/toolmigrate"
 	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
@@ -94,6 +95,8 @@ type Deps struct {
 	Advisor AdvisorReader
 	// WarmupScheduler seeds a mailbox's warmup chain after a tool turns it on. Optional.
 	WarmupScheduler func(ctx context.Context, accountID uuid.UUID) error
+	// ToolMigrations backs the migrate-from-another-tool tools. Optional.
+	ToolMigrations toolmigrate.API
 	// Slack backs the Slack settings tools, added by RegisterSlackTools once
 	// the Slack app is built.
 	Slack SlackControl
@@ -135,6 +138,7 @@ func BuildRegistry(d Deps) *Registry {
 	d.registerSegmentTools(r)
 	d.registerFormTools(r)
 	d.registerSuppressionTools(r)
+	d.registerMigrationTools(r)
 	d.registerAnalyticsTools(r)
 	d.registerUniboxTools(r)
 	d.registerInboxActionTools(r)
@@ -149,6 +153,7 @@ func BuildRegistry(d Deps) *Registry {
 	d.registerWebTools(r)
 	d.registerSkillTools(r)
 	d.registerIntegrationTools(r)
+	d.registerKnowledgeTools(r)
 	// Advisor tools are registered separately, after the advisor service is
 	// constructed against this registry (see aitools.RegisterAdvisorTools).
 	return r
@@ -158,7 +163,7 @@ func BuildRegistry(d Deps) *Registry {
 // dashboard spine refreshes for every teammate after a write-class tool runs.
 func (d Deps) logAudit(ctx context.Context, inv Invocation, action models.AuditAction, entity models.AuditEntityType, entityID *uuid.UUID, meta map[string]string) {
 	if d.Audit != nil {
-		d.Audit.LogAction(ctx, inv.OrgID, inv.UserID, action, entity, entityID, inv.IP, inv.UserAgent, nil, meta)
+		d.Audit.LogAction(ctx, inv.OrgID, inv.UserID, action, entity, entityID, inv.IP, inv.UserAgent, nil, agencyKeyMeta(inv.AgencyKeyID, inv.AgencyKeyName, meta))
 	}
 }
 

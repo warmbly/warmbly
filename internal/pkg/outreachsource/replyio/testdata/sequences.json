@@ -1,0 +1,4 @@
+{"hasMore":false,"items":[
+  {"created":"2024-03-08T10:00:00+00:00","health":"healthy","id":123,"isArchived":false,"name":"Sales Outreach","ownerUserId":42,"status":"active"},
+  {"created":"2024-03-07T14:30:00+00:00","health":"degraded","id":124,"isArchived":true,"name":"Old Follow-up","ownerUserId":42,"status":"paused"}
+]}

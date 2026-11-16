@@ -29,6 +29,7 @@ type stubBehaviorRepo struct {
 	behavior models.SendingBehavior
 	count    int
 	countErr error
+	calls    int
 }
 
 func (s *stubBehaviorRepo) GetBehavior(context.Context, uuid.UUID) (*models.SendingBehavior, error) {
@@ -42,6 +43,7 @@ func (s *stubBehaviorRepo) EnsurePlan(context.Context, models.DailyPlan) (*model
 }
 
 func (s *stubBehaviorRepo) CountSendsBetween(context.Context, uuid.UUID, string, time.Time, time.Time) (int, error) {
+	s.calls++
 	return s.count, s.countErr
 }
 
@@ -110,5 +112,31 @@ func TestRemainingFailsClosedOnACountError(t *testing.T) {
 	}
 	if left := svc.RemainingThisHour(ctx, r, time.Now()); left != 0 {
 		t.Fatalf("RemainingThisHour = %d on an unreadable count, want 0", left)
+	}
+}
+
+// A pass gates every candidate against the same mailbox day, so one Resolved reads each range once.
+func TestRemainingReadsEachRangeOncePerResolve(t *testing.T) {
+	ctx := context.Background()
+	b := models.DefaultSendingBehavior(testAccount)
+	b.Enabled = true
+	b.Weekdays = models.BehaviorWeekdaysAll
+	repo := &stubBehaviorRepo{behavior: b, count: 1}
+	account := &models.Email{ID: testAccount, Timezone: "UTC"}
+	svc := NewService(repo, stubEmailRepo{account: account})
+
+	now := time.Now()
+	r := svc.Resolve(ctx, account)
+	for range 5 {
+		svc.RemainingToday(ctx, r, now)
+		svc.RemainingThisHour(ctx, r, now)
+	}
+	if repo.calls != 2 {
+		t.Fatalf("count reads = %d, want 2 (one day, one hour)", repo.calls)
+	}
+
+	svc.RemainingToday(ctx, svc.Resolve(ctx, account), now)
+	if repo.calls != 3 {
+		t.Fatalf("count reads = %d, want a fresh Resolve to read again", repo.calls)
 	}
 }

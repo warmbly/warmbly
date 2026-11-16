@@ -9,8 +9,10 @@ import { currentPortal } from "@/lib/portal";
 /** The current workspace's agency, and whether the caller is staff of it rather than one of the client's own members. */
 export function useWorkspaceAgency(): { agency?: NonNullable<Organization["agency"]>; staff: boolean } {
     const agency = useAppStore((s) => s.currentOrganization?.agency);
+    // Staff in a client view see the workspace as its members do.
+    const asClient = useAppStore((s) => !!s.clientView);
     const agencies = useAgencies();
-    const staff = !!agency && !!agencies.data?.data.some((a) => a.id === agency.id);
+    const staff = !!agency && !asClient && !!agencies.data?.data.some((a) => a.id === agency.id);
     return { agency, staff };
 }
 

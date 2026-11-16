@@ -67,6 +67,9 @@ type EmailAccountErrorRepository interface {
 	ResolveByCodes(ctx context.Context, accountID uuid.UUID, codes []string, resolvedBy string) *errx.Error
 	RecordTransportSuccess(ctx context.Context, accountID uuid.UUID, operation models.MailTransportOperation, at time.Time, taskID *uuid.UUID, generation uuid.UUID) *errx.Error
 	ResolveAllForAccount(ctx context.Context, accountID uuid.UUID, resolvedBy string) *errx.Error
+	// SwitchOffUnreachable switches off up to limit mailboxes whose server has refused every connection for
+	// silentFor, records why on each, and returns them.
+	SwitchOffUnreachable(ctx context.Context, silentFor time.Duration, limit int) ([]UnreachableMailbox, *errx.Error)
 }
 
 type emailAccountErrorRepository struct {

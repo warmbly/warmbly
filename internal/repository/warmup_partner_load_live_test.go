@@ -46,7 +46,7 @@ func TestLiveWarmupPartnerWeekCacheMatchesExactReadAndKeepsTheCapLive(t *testing
 		for _, w := range want {
 			g, ok := candidateByID(got, w.ID)
 			g.OrganizationID, w.OrganizationID = nil, nil
-			if !ok || g != w {
+			if !ok || !reflect.DeepEqual(g, w) {
 				t.Fatalf("%s: cached %+v, exact %+v", stage, g, w)
 			}
 		}

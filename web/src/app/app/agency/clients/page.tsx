@@ -1,16 +1,14 @@
 import { AgencyPage } from "@/components/app/agency/AgencyPage";
 import React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRightIcon, MoreHorizontalIcon, PlusIcon, UnlinkIcon, GaugeIcon, WalletIcon } from "lucide-react";
+import { ArrowUpRightIcon, EyeIcon, MoreHorizontalIcon, PlusIcon, UnlinkIcon, GaugeIcon, WalletIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import { EmptyBlock, PageBody, SectionBar, TopbarAction } from "@/components/layout/Page";
+import { AgencySkeletonRows } from "@/components/app/agency/AgencySkeleton";
 import { NumberInput } from "@/components/ui/field";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuSeparator, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
-import { useAppStore } from "@/stores";
-import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOrganization";
-import { organizationsQuery } from "@/lib/api/hooks/app/organizations/useOrganizations";
+import { useEnterClientView, useOpenClient } from "@/lib/api/hooks/app/agency/useAgencyHome";
 import {
     useAgencyAIBalance,
     useAgencyClients,
@@ -138,29 +136,13 @@ function AgencyClients() {
     const detach = useDetachAgencyClient(agencyId);
     const confirm = useConfirm();
     const navigate = useNavigate();
-    const qc = useQueryClient();
-    const switchOrg = useSwitchOrganization();
-    const organizations = useAppStore((s) => s.organizations);
-    const setCurrentOrganization = useAppStore((s) => s.setCurrentOrganization);
+    const { open } = useOpenClient();
+    const { enter: viewAsClient } = useEnterClientView();
     const [adding, setAdding] = React.useState(false);
     const canManage = agency?.role === "owner" || agency?.role === "admin";
 
     const used = new Map((usage.data?.clients ?? []).map((c) => [c.organization_id, c.used]));
     const list = clients.data ?? [];
-
-    const open = async (orgId: string) => {
-        try {
-            await switchOrg.mutateAsync(orgId);
-            // A client created a moment ago may not be in the cached list yet.
-            const org =
-                organizations.find((o) => o.id === orgId) ??
-                (await qc.fetchQuery({ ...organizationsQuery, staleTime: 0 })).find((o) => o.id === orgId);
-            if (org) setCurrentOrganization(org);
-            navigate({ to: "/app/emails" });
-        } catch (e) {
-            toast.error(buildError(e as unknown as AppError));
-        }
-    };
 
     const askDetach = (c: AgencyClient) =>
         confirm.show(
@@ -188,7 +170,7 @@ function AgencyClients() {
                     </TopbarAction>
                 )}
             </SectionBar>
-            {clients.isLoading ? null : list.length === 0 ? (
+            {clients.isLoading ? <AgencySkeletonRows rows={5} /> : list.length === 0 ? (
                 <EmptyBlock
                     title="No clients yet"
                     body="Each client gets its own workspace: its own mailboxes, contacts, campaigns and inbox. Add one to start."
@@ -237,6 +219,13 @@ function AgencyClients() {
                                 <PopoverMenuContent minWidth={200}>
                                     <PopoverMenuItem icon={<ArrowUpRightIcon className="w-3 h-3" />} onSelect={() => void open(c.organization_id)}>
                                         Open workspace
+                                    </PopoverMenuItem>
+                                    <PopoverMenuItem
+                                        icon={<EyeIcon className="w-3 h-3" />}
+                                        onSelect={() => void viewAsClient(c.organization_id)}
+                                        description="See it as the client's members do"
+                                    >
+                                        View as client
                                     </PopoverMenuItem>
                                     <PopoverMenuItem icon={<GaugeIcon className="w-3 h-3" />} onSelect={() => navigate({ to: "/app/agency/usage" })}>
                                         Usage

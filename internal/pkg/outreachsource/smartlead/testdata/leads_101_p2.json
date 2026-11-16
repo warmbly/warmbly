@@ -1,0 +1,22 @@
+{
+  "total_leads": "3",
+  "offset": 2,
+  "limit": 100,
+  "data": [
+    {
+      "campaign_lead_map_id": 2433664093,
+      "lead_category_id": null,
+      "status": "STARTED",
+      "created_at": "2025-11-26T12:54:54.000Z",
+      "lead": {
+        "id": 2995276772,
+        "first_name": "Max",
+        "last_name": "Mustermann",
+        "email": "max@example.de",
+        "custom_fields": null,
+        "is_unsubscribed": false,
+        "unsubscribed_client_id_map": {"301": true}
+      }
+    }
+  ]
+}

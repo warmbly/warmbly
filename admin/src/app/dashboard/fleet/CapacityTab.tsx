@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { HealthPill, LiveDot } from "./tones";
 import { fmtAgo, resourceCSV } from "./format";
 import { ResourceUsage } from "./ResourceUsage";
+import { FleetScalePanel } from "./FleetScalePanel";
 
 function MailboxTarget({ row }: { row: AdminFleetWorkerRow }) {
     const u = row.utilization ?? 0;
@@ -207,6 +208,7 @@ export function CapacityTab() {
 
     return (
         <div>
+            <FleetScalePanel />
             <div className="mb-4 flex flex-wrap items-start justify-between gap-x-8 gap-y-3">
                 <p className="max-w-3xl text-[12.5px] leading-relaxed text-muted-foreground">
                     Mailbox targets guide placement, not machine saturation or provider send limits.

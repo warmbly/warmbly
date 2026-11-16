@@ -1,0 +1,15 @@
+{"created":"2024-03-08T10:00:00+00:00","health":"healthy","id":123,"isArchived":false,"name":"Sales Outreach","ownerUserId":42,"status":"active",
+ "emailAccounts":[{"email":"Sales@Acme.io","id":1},{"email":"outreach@acme.io","id":2}],
+ "linkedInAccounts":[{"id":42,"name":"Jane Doe","profileUrl":"https://www.linkedin.com/in/janedoe","status":"enabled"}],
+ "scheduleId":7,
+ "settings":{"dailyThrottling":30,"useDailyThrottling":true,"daysToFinishProspect":14,"disableOpensTracking":true,"emailSendingDelaySeconds":90,"emailsCountPerDay":50,"enableLinksTracking":true,"repliesHandlingType":"markAsFinished","isListUnsubscribeHeaderEnabled":true,"isSendingPlainTextEnabled":false},
+ "steps":[
+  {"delayInMinutes":0,"executionMode":"automatic","id":1323,"type":"email","parentId":null,"variants":[
+    {"id":1,"subject":"Quick question about {{Company}}","message":"<p>{{Random | 'Hi' | 'Hello'}} {{FirstName | &#39;there&#39;}},</p><p>{{leadSource}}</p><p>{{SendingEmail.SenderFirstName}}</p>"},
+    {"id":2,"subject":"{{FirstName}}, an idea","message":"<p>Hey {{FirstName}}</p>"}]},
+  {"actionType":"connect","delayInMinutes":2880,"executionMode":"automatic","id":1324,"type":"linkedIn","variants":[{"id":3,"isEnabled":true,"message":"Hi {{FirstName}}"}]},
+  {"delayInMinutes":4380,"executionMode":"manual","id":1325,"type":"email","variants":[{"id":4,"subject":null,"message":"<p>Following up, {{FirstName | \"friend\"}}. {{Title}} at {{LinkedIn}}</p>"}]},
+  {"delayInMinutes":60,"id":1326,"type":"condition","conditions":[],"waitInMinutes":1440},
+  {"delayInMinutes":0,"executionMode":"automatic","id":1327,"type":"email","parentId":1326,"ifConditionPositive":true,"variants":[{"id":5,"subject":"Branch","message":"<p>Branch</p>"}]},
+  {"actionType":"toDo","delayInMinutes":0,"id":1328,"type":"task","description":"Call them","parentId":1326,"ifConditionPositive":false}
+ ]}

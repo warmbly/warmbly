@@ -224,9 +224,11 @@ func (s *service) Preflight(
 	}
 
 	out := &models.OrgImportPreflight{
-		Archive:   manifest.Info(),
-		Conflicts: map[string]int64{},
-		Warnings:  manifest.attachmentCompatibilityWarnings(),
+		Archive:        manifest.Info(),
+		Conflicts:      map[string]int64{},
+		UnknownMembers: []models.OrgArchiveUser{},
+		SkippedTables:  []string{},
+		Warnings:       manifest.attachmentCompatibilityWarnings(),
 	}
 
 	if manifest.Secrets != nil && passphrase != "" {
@@ -264,6 +266,9 @@ func (s *service) Preflight(
 	}
 
 	// What already exists here, and what this instance cannot take.
+	countCtx, cancelCounts := context.WithTimeout(ctx, preflightConflictBudget)
+	defer cancelCounts()
+	countsCut := false
 	foreignTables := 0
 	for _, mt := range manifest.Tables {
 		t, known := TableByName[mt.Name]
@@ -290,8 +295,15 @@ func (s *service) Preflight(
 		if !ok {
 			continue
 		}
-		n, foreign, err := s.countConflicts(ctx, orgID, t, pk, entry)
+		if countCtx.Err() != nil {
+			countsCut = true
+			continue
+		}
+		n, foreign, err := s.countConflicts(countCtx, orgID, t, pk, entry)
 		if err != nil {
+			if countCtx.Err() != nil {
+				countsCut = true
+			}
 			// A conflict count is advisory; failing the whole preflight over
 			// one unreadable table helps nobody.
 			continue
@@ -304,6 +316,9 @@ func (s *service) Preflight(
 		}
 	}
 
+	if countsCut {
+		out.Warnings = append(out.Warnings, "Not every table could be compared with this workspace in time, so the count of rows that already exist may be low. The import itself still checks every row.")
+	}
 	if foreignTables > 0 {
 		out.Warnings = append(out.Warnings, "Some records in this archive already belong to another workspace on this instance, so the import will be refused. "+
 			"Import it into the workspace it was exported from, or into a workspace on another instance.")
@@ -320,6 +335,9 @@ func (s *service) Preflight(
 // It reads a bounded prefix: the number is there to warn, not to be exact, and
 // scanning a million-row inbox table twice for a preview is not worth it.
 const conflictSampleRows = 2000
+
+// preflightConflictBudget bounds the advisory conflict counts so a busy database cannot hold the check past the request timeout.
+const preflightConflictBudget = 20 * time.Second
 
 // The second count is the sampled keys another workspace already holds.
 func (s *service) countConflicts(ctx context.Context, orgID uuid.UUID, t *Table, pk []string, entry *zip.File) (int64, int64, error) {

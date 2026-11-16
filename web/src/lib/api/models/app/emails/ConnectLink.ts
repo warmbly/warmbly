@@ -1,6 +1,7 @@
 // A client connect link: a client opens it and connects their own mailboxes into the workspace.
 
-export type ConnectLinkProvider = "gmail" | "outlook" | "smtp_imap";
+/** The ways a client may connect: one mailbox at a time, or many from an inbox vendor account. */
+export type ConnectLinkProvider = "gmail" | "outlook" | "smtp_imap" | "vendor";
 export type ConnectLinkStatus = "active" | "expired" | "revoked" | "exhausted";
 
 export interface ConnectLink {
@@ -53,4 +54,5 @@ export const CONNECT_LINK_PROVIDERS: { id: ConnectLinkProvider; label: string }[
     { id: "gmail", label: "Google" },
     { id: "outlook", label: "Microsoft" },
     { id: "smtp_imap", label: "IMAP / SMTP" },
+    { id: "vendor", label: "Inbox vendor account" },
 ];

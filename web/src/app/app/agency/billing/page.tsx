@@ -1,6 +1,6 @@
 import { AgencyPage } from "@/components/app/agency/AgencyPage";
 import React from "react";
-import { CheckIcon, ExternalLinkIcon, Loader2Icon, PlusIcon, SparklesIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import { EmptyBlock, PageBody, SectionBar } from "@/components/layout/Page";
 import { NumberInput } from "@/components/ui/field";
@@ -22,6 +22,8 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "@/components/app/agency/styles";
+import ExtraSends from "@/components/app/agency/ExtraSends";
+import { AIAutoTopup } from "@/components/app/agency/AutoTopup";
 import { AGENCY_PLAN_FEATURES } from "@/components/app/agency/planFeatures";
 import { fmtUsd, fmtUsdTrim, roundCents } from "@/lib/money";
 
@@ -248,29 +250,8 @@ function AgencyBilling() {
 
             {active && u && !u.unlimited && (
                 <>
-                    <SectionBar label="Top-up packs" />
-                    <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center gap-3">
-                        <div className="flex-1 min-w-[220px]">
-                            <div className="text-[12.5px] text-slate-900">
-                                {formatNumber(u.topup_sends)} more sends for {money(u.topup_price_cents / 100)}
-                            </div>
-                            <div className="text-[11.5px] text-slate-500">
-                                One-off, added to this period's pool and gone when the period renews.
-                                {u.topups > 0 && ` ${formatNumber(u.topups)} added this period.`}
-                            </div>
-                        </div>
-                        {canManage && (
-                            <button
-                                type="button"
-                                onClick={() => void go(topup.mutateAsync())}
-                                disabled={topup.isPending}
-                                className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 disabled:opacity-60"
-                            >
-                                {topup.isPending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <PlusIcon className="w-3 h-3" />}
-                                Buy a pack
-                            </button>
-                        )}
-                    </div>
+                    <SectionBar label="Extra sends" />
+                    <ExtraSends agencyId={agencyId} usage={u} canManage={canManage} buying={topup.isPending} onBuy={() => void go(topup.mutateAsync())} />
                 </>
             )}
 
@@ -278,6 +259,9 @@ function AgencyBilling() {
                 <>
                     <SectionBar label="AI balance" />
                     <BuyAIBalance agencyId={agencyId} balance={ai.data} canManage={canManage} />
+                    <div className="px-5 py-4 border-b border-slate-200">
+                        <AIAutoTopup agencyId={agencyId} canManage={canManage} />
+                    </div>
                 </>
             )}
 

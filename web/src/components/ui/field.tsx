@@ -18,6 +18,7 @@ const base =
 
 export function TextInput({
     value,
+    id,
     onChange,
     placeholder,
     type = "text",
@@ -32,6 +33,8 @@ export function TextInput({
     maxLength,
 }: {
     value: string;
+    // Names the field for a <Label htmlFor>.
+    id?: string;
     onChange: (v: string) => void;
     placeholder?: string;
     type?: string;
@@ -55,6 +58,7 @@ export function TextInput({
 }) {
     return (
         <input
+            id={id}
             type={type}
             value={value}
             placeholder={placeholder}

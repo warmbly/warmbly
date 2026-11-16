@@ -23,6 +23,7 @@ import (
 // Sign in. Mailforge
 // hosts its own SMTP/IMAP, pointed here at the sandbox's mailpit and dovecot so
 // its mailboxes import and connect for real, and only forwards domains.
+// It also plays Smartlead at <url>/smartlead for tool migrations.
 type VendorMock struct {
 	mu      sync.Mutex
 	domains map[string]*mockDomain // by id
@@ -33,6 +34,8 @@ type VendorMock struct {
 	latency time.Duration
 	// requests are InboxKit's client-id and consent requests, by uid.
 	requests map[string]mockRequest
+	// smartlead is read only, so it needs no lock.
+	smartlead *smartleadMock
 }
 
 type mockRequest struct {
@@ -44,6 +47,7 @@ type mockRequest struct {
 const (
 	mockTrustAfter   = 5 * time.Second
 	mockConsentAfter = 20 * time.Second
+	smartleadLatency = 250 * time.Millisecond
 )
 
 type endpoint struct {
@@ -76,11 +80,12 @@ var inboxKitWorkspaces = []struct{ UID, Name string }{
 // NewVendorMock seeds both vendors; smtp and imap are where Mailforge's mailboxes connect.
 func NewVendorMock(cfg Config) *VendorMock {
 	m := &VendorMock{
-		domains:  map[string]*mockDomain{},
-		smtp:     endpoint{cfg.SMTPHost, cfg.SMTPPort},
-		imap:     endpoint{cfg.IMAPHost, cfg.IMAPPort},
-		latency:  cfg.VendorLatency,
-		requests: map[string]mockRequest{},
+		domains:   map[string]*mockDomain{},
+		smtp:      endpoint{cfg.SMTPHost, cfg.SMTPPort},
+		imap:      endpoint{cfg.IMAPHost, cfg.IMAPPort},
+		latency:   cfg.VendorLatency,
+		requests:  map[string]mockRequest{},
+		smartlead: newSmartleadMock(time.Now()),
 	}
 	for _, d := range []mockDomain{
 		{ID: "ik-d1", Vendor: "inboxkit", Workspace: inboxKitWorkspaces[0].UID, Name: "sunrise-outbound.test", Forwarding: "https://sunriselabs.test"},
@@ -102,6 +107,16 @@ func NewVendorMock(cfg Config) *VendorMock {
 }
 
 func (m *VendorMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Smartlead takes its key as a query parameter and a migration makes many reads, so it waits less.
+	if path, ok := strings.CutPrefix(r.URL.Path, "/smartlead"); ok && (path == "" || path[0] == '/') {
+		select {
+		case <-time.After(min(m.latency, smartleadLatency)):
+		case <-r.Context().Done():
+			return
+		}
+		m.smartlead.serve(w, r, path)
+		return
+	}
 	if r.Header.Get("Authorization") == "" {
 		writeMock(w, http.StatusUnauthorized, map[string]any{"error": true, "message": "missing API key"})
 		return

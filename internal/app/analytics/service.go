@@ -107,12 +107,16 @@ func (s *analyticsService) GetWarmupAnalytics(ctx context.Context, orgID uuid.UU
 	}
 
 	// Calculate summary
-	var totalSent, totalReplied, totalReceived, totalTarget, daysActive int
+	var totalSent, totalReplied, totalReceived, totalTarget, plannedSent, daysActive int
 	for _, day := range dailyStats {
 		totalSent += day.EmailsSent
 		totalReplied += day.EmailsReplied
 		totalReceived += day.EmailsReceived
 		totalTarget += day.TargetVolume
+		// A day with no recorded plan says nothing about meeting one.
+		if day.TargetVolume > 0 {
+			plannedSent += day.EmailsSent
+		}
 		if day.Active {
 			daysActive++
 		}
@@ -125,7 +129,7 @@ func (s *analyticsService) GetWarmupAnalytics(ctx context.Context, orgID uuid.UU
 		replyRate = float64(totalReplied) / float64(totalSent) * 100
 	}
 	if totalTarget > 0 {
-		targetProgress = float64(totalSent) / float64(totalTarget) * 100
+		targetProgress = float64(plannedSent) / float64(totalTarget) * 100
 	}
 
 	analytics := &models.WarmupAnalytics{

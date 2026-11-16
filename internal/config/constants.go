@@ -270,6 +270,10 @@ const (
 	// it must stay well clear of a slow provider handshake.
 	CampaignSendReclaimAfterMinutes = 30
 
+	// MailboxUnreachableSwitchOffHours is how long a custom-server mailbox may go without one successful sync or send,
+	// while its server keeps refusing the connection, before Warmbly switches it off instead of retrying forever.
+	MailboxUnreachableSwitchOffHours = 72
+
 	// ManualSendInterruptedAfterMinutes is how long a manual send may sit claimed
 	// without a reservation before recovery treats its execution as lost. It is
 	// well past the handler's two-minute deadline and the execution key's lease.
@@ -650,7 +654,10 @@ const (
 	WarmupRecipientArrivalGraceHours        = 6
 	WarmupRecipientUnreachableMinDelivered  = 5
 	WarmupRecipientUnreachableMinSenderOrgs = 2
-	DailyThrottleNewOrgs                    = 3 // new workspaces per owner per day
+	// An address that hard-bounced pool warmup as unknown stays out of the
+	// draw this long, unless warmup mail verifiably arrives at it since.
+	WarmupRecipientBounceDays = 7
+	DailyThrottleNewOrgs      = 3 // new workspaces per owner per day
 
 	// CLI sign-in handshake (`warmbly auth login`). Shorter-lived than the pool
 	// link handshake because a person is watching the terminal while it runs.

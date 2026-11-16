@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/app/fleetscale"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -137,4 +139,66 @@ func (h *Handler) AdminFleetReleaseIsolatedEgress(c *gin.Context) {
 		"worker_id":          workerID,
 		"accounts_remaining": len(remaining),
 	})
+}
+
+// AdminFleetScale reports the worker Auto Scaling Group's size against its cap.
+//
+// GET /admin/fleet/scale
+func (h *Handler) AdminFleetScale(c *gin.Context) {
+	if h.FleetScale == nil {
+		errx.JSON(c, fleetScaleNotConfigured())
+		return
+	}
+	st, err := h.FleetScale.Status(c.Request.Context())
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, st)
+}
+
+type setFleetMaxBody struct {
+	Max int `json:"max" binding:"required"`
+}
+
+// AdminFleetSetMax moves the cap, between the running fleet and the group's ceiling.
+//
+// PATCH /admin/fleet/scale
+func (h *Handler) AdminFleetSetMax(c *gin.Context) {
+	if h.FleetScale == nil {
+		errx.JSON(c, fleetScaleNotConfigured())
+		return
+	}
+	var body setFleetMaxBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errx.JSON(c, errx.InvalidBody(err))
+		return
+	}
+	before, err := h.FleetScale.Status(c.Request.Context())
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, err.Error()))
+		return
+	}
+	st, err := h.FleetScale.SetMax(c.Request.Context(), body.Max)
+	switch {
+	case errors.Is(err, fleetscale.ErrOutOfRange):
+		errx.JSON(c, errx.NewWithIdentifier(errx.BadRequest, "fleet_max_out_of_range", err.Error()))
+		return
+	case errors.Is(err, fleetscale.ErrNoCeiling):
+		errx.JSON(c, errx.NewWithIdentifier(errx.Conflict, "fleet_max_ceiling_missing", "The worker Auto Scaling Group has no "+fleetscale.CeilingTag+" tag, so its cap cannot change here. Apply the workers Terraform root to set it."))
+		return
+	case err != nil:
+		errx.JSON(c, errx.New(errx.Internal, err.Error()))
+		return
+	}
+	h.audit(c, "fleet_max_set", models.AuditEntityWorker, nil, map[string]string{
+		"group": st.Group,
+		"from":  strconv.Itoa(before.Max),
+		"to":    strconv.Itoa(st.Max),
+	})
+	c.JSON(http.StatusOK, st)
+}
+
+func fleetScaleNotConfigured() *errx.Error {
+	return errx.NewWithIdentifier(errx.ServiceUnavailable, "fleet_autoscaling_not_configured", "This instance does not manage a worker Auto Scaling Group. Set FLEET_AUTOSCALING_GROUP on the backend to manage its cap here.")
 }

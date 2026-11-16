@@ -1,0 +1,8 @@
+{
+  "payload": {
+    "message": "Successfully fetched dnc list",
+    "payload": [
+      {"id": "vWjzRkZwAq", "name": "Global Do Not Contact List", "numberOfItems": 3, "createdAt": "2023-01-01T00:00:00.000Z", "createdBy": "John Doe", "clientId": 1, "total": "3", "updatedAt": "2024-06-26T03:23:13.573Z"}
+    ]
+  }
+}

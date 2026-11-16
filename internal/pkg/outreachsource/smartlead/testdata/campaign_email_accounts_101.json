@@ -1,0 +1,7 @@
+{
+  "ok": true,
+  "data": [
+    {"id": 501, "from_email": "Sarah@acme-mail.com", "from_name": "Sarah Lee", "type": "SMTP", "warmup_enabled": true, "warmup_reputation": "excellent"},
+    {"id": 502, "from_email": "david@acme.com", "from_name": "David Smith", "type": "GMAIL", "warmup_enabled": true, "warmup_reputation": "excellent"}
+  ]
+}

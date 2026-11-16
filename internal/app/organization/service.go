@@ -1629,9 +1629,9 @@ func (s *organizationService) SetLimitOverrides(ctx context.Context, orgID uuid.
 //  2. plan != nil   → use plan column
 //  3. otherwise     → fall back to the product-level hard cap
 //
-// Every field but mailboxes and daily sends is never nil: an "unlimited" plan
+// Every field but mailboxes, daily sends and contacts is never nil: an "unlimited" plan
 // is bounded by the product hard caps in config/constants.go. Mailboxes follow
-// MailboxAllowance and daily sends follow the sender's gate, where nil really
+// MailboxAllowance, daily sends and contacts follow the gate, where nil really
 // means unlimited. Admins can raise individual caps per-org by writing an override.
 func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimits, *errx.Error) {
 	plan, err := s.GetOrganizationLimits(ctx, orgID)
@@ -1676,15 +1676,35 @@ func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid
 	if err != nil {
 		return nil, err
 	}
+	contacts, err := s.contactLimit(ctx, orgID, ovMaxContacts)
+	if err != nil {
+		return nil, err
+	}
 
 	return &models.OrganizationLimits{
 		MaxCampaigns:       resolve(ovMaxCampaigns, planLimits.MaxCampaigns, config.HardCapCampaignsTotal),
 		MaxActiveCampaigns: resolve(ovMaxActive, planLimits.MaxActiveCampaigns, config.HardCapCampaignsActive),
 		MaxTeamMembers:     resolve(ovMaxMembers, planLimits.MaxTeamMembers, config.HardCapTeamMembers),
 		MaxEmailAccounts:   mailboxes.Allowance,
-		MaxContacts:        resolve(ovMaxContacts, planLimits.MaxContacts, config.HardCapContacts),
+		MaxContacts:        contacts,
 		DailyCampaignLimit: daily,
 	}, nil
+}
+
+// contactLimit is the ceiling the contact writes enforce, nil when there is none.
+func (s *organizationService) contactLimit(ctx context.Context, orgID uuid.UUID, override int) (*int, *errx.Error) {
+	if s.gate == nil {
+		v := override
+		if v <= 0 {
+			v = config.HardCapContacts
+		}
+		return &v, nil
+	}
+	n, xerr := s.gate.ContactLimit(ctx, orgID)
+	if xerr != nil || n <= 0 {
+		return nil, xerr
+	}
+	return &n, nil
 }
 
 // dailySendLimit is the cap the sender enforces (feature.GetDailyEmailLimit), nil when it is unlimited.

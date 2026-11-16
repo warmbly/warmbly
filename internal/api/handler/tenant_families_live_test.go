@@ -110,7 +110,7 @@ func TestLiveTenantFamiliesRefuseAnotherOrganization(t *testing.T) {
 
 	tools := &countingTools{}
 	integrations := integration.NewService(repository.NewIntegrationRepository(pool), nil, nil)
-	contacts := contact.NewService(repository.NewContactRepostory(handle), nil, nil)
+	contacts := contact.NewService(repository.NewContactRepostory(handle), nil)
 	h := &Handler{
 		AuditService:           audit.NewNoOpService(),
 		IntegrationService:     integrations,

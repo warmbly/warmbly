@@ -411,7 +411,14 @@ func main() {
 	// The lead-intake actions (create or update contact, add to campaign) write
 	// through a contact service so a reply-triggered flow in this process gets
 	// the same plan check, campaign wake and contact.created as the backend.
-	contactServiceC := contact.NewService(contactRepo, subscriptionRepoConsumer, planRepoConsumer, streamingPublisher)
+	contactGate := feature.NewService(subscriptionRepoConsumer, planRepoConsumer)
+	// An approved contact-limit increase applies here as it does in the backend.
+	if g, ok := contactGate.(interface {
+		WireLimitOverrides(feature.LimitOverrideReader)
+	}); ok {
+		g.WireLimitOverrides(orgRepoConsumer)
+	}
+	contactServiceC := contact.NewService(contactRepo, contactGate, streamingPublisher)
 	if aware, ok := contactServiceC.(contact.WebhookAware); ok {
 		aware.WireWebhooks(webhookService)
 	}
@@ -648,6 +655,9 @@ func main() {
 	// Resolve campaign sends that were reserved and dispatched but whose worker
 	// result never came back, so a lead is never held in flight forever.
 	go jobsService.StartStuckSendReclaimer(ctx, 5*time.Minute)
+
+	// Switches off custom-server mailboxes whose server has refused every connection for days.
+	go jobsService.StartUnreachableMailboxSweep(ctx, time.Hour)
 
 	// Gmail push: the watch notifications each Gmail mailbox's worker opened arrive on
 	// this Pub/Sub subscription and wake that worker. Unset keeps Gmail polling.

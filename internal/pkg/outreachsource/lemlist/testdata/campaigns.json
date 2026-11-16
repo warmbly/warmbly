@@ -1,0 +1,4 @@
+[
+  {"_id":"cam_launch","name":"Product Launch Campaign","emoji":"🚀","timezone":"Europe/Paris","labels":[],"createdAt":"2025-02-20T14:45:54.230Z","createdBy":"usr_zdTCrNFyXblc4mrYK","status":"running","sequenceId":"seq_main","hasError":false},
+  {"_id":"cam_old","name":"Old Outreach","labels":[],"createdAt":"2023-01-27T14:58:52.482Z","createdBy":"usr_i52PiQtbq8SucjVTM","status":"ended","hasError":true,"errors":["One of your sender has no email provider."]}
+]

@@ -1,0 +1,6 @@
+{"nextToken": "recipients-2", "results": [
+  {"object": "recipient", "id": 1, "emailAddress": "john@doe.com", "fullName": "John Doe", "first": "John", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "isPaused": false, "contactID": 1, "fields": {"favorite_color": "Red", "account": "J. Doe and Co.", "phoneNumber": "5555555555", "Job Title": "CEO"}},
+  {"object": "recipient", "id": 2, "emailAddress": "jane@doe.com", "fullName": "Jane Doe", "first": "Jane", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "isPaused": false, "contactID": 2, "fields": {}},
+  {"object": "recipient", "id": 3, "emailAddress": "sam@doe.com", "fullName": "Sam Doe", "first": "Sam", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "isPaused": true, "contactID": 3, "fields": {}},
+  {"object": "recipient", "id": 4, "emailAddress": "bob@doe.com", "fullName": "Bob Doe", "first": "Bob", "last": "Doe", "created": "2017-04-06T17:45:07.188Z", "isPaused": false, "contactID": 4, "fields": {}}
+]}

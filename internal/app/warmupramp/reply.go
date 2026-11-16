@@ -13,29 +13,20 @@ import (
 // ReplyShareWindowDays is how many UTC days of warmup sends a mailbox's reply share is read over.
 const ReplyShareWindowDays = 7
 
-// ReplyDeficit is how many replies a mailbox owes, counting its next send, for
-// replies to be target percent of its warmup sends; zero or less is at or ahead.
-func ReplyDeficit(target, sent, replied int) float64 {
+// ReplyDue reports whether a reply as the next send leaves the share no farther from target than a new thread.
+func ReplyDue(target, sent, replied int) bool {
 	if target <= 0 {
-		return 0
+		return false
 	}
-	return float64(min(target, 100))/100*float64(sent+1) - float64(replied)
+	return float64(replied)+0.5 < float64(min(target, 100))/100*float64(sent+1)
 }
 
-// ReplyChance is the chance the next plain send answers owed mail: the target
-// corrected by the window's drift, held within half the target either side so a
-// shortfall is repaid over days instead of in one burst of replies, and a
-// surplus slows replies without stopping conversations.
+// ReplyChance is the chance the next plain send answers owed mail: half again the target while a reply is due, else zero.
 func ReplyChance(target, sent, replied int) float64 {
-	if target <= 0 {
+	if !ReplyDue(target, sent, replied) {
 		return 0
 	}
-	t := float64(min(target, 100)) / 100
-	if sent <= 0 {
-		return t
-	}
-	share := float64(replied) / float64(sent)
-	return min(max(2*t-share, t/2), 1.5*t, 1)
+	return min(1.5*float64(min(target, 100))/100, 1)
 }
 
 // RecoverySignals are the reads that decide whether a sender gets recovery

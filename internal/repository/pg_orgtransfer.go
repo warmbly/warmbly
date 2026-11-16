@@ -531,11 +531,11 @@ func bindOrgParam(fragment string, n int) string {
 	return orgParam.ReplaceAllLiteralString(fragment, "$"+strconv.Itoa(n))
 }
 
-// matchClause builds `e.a IS NOT DISTINCT FROM c.a AND ...` for a key.
+// matchClause builds `e.a = c.a AND ...` for a key; primary keys are never NULL, and `=` is what lets the lookup use the key's index.
 func matchClause(pk []string) string {
 	parts := make([]string, len(pk))
 	for i, c := range pk {
-		parts[i] = "e." + quoteIdent(c) + " IS NOT DISTINCT FROM c." + quoteIdent(c)
+		parts[i] = "e." + quoteIdent(c) + " = c." + quoteIdent(c)
 	}
 	return strings.Join(parts, " AND ")
 }

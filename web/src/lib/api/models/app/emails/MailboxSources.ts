@@ -35,6 +35,8 @@ export interface VendorConnection {
     created_at: Date;
     /** Mailboxes connected through it. */
     mailboxes: number;
+    /** Set on a connection made from an agency's account: only the agency's staff use it, and its key is changed at the agency. */
+    agency_connection_id?: string;
 }
 
 export type VendorMailboxProvider = "google" | "microsoft" | "smtp" | "";

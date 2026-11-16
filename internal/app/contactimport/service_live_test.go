@@ -74,7 +74,7 @@ func newFixture(t *testing.T) *fixture {
 	})
 	f.svc = NewService(Deps{
 		Repo:     repository.NewContactImportRepository(handle),
-		Contacts: contact.NewService(repository.NewContactRepostory(handle), nil, nil),
+		Contacts: contact.NewService(repository.NewContactRepostory(handle), nil),
 	})
 	return f
 }

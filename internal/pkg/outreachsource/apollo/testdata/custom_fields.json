@@ -1,0 +1,16 @@
+{
+  "typed_custom_fields": [
+    {"id": "60c39ed82bd02f01154c470a", "modality": "contact", "name": "New Product Launch Date", "type": "datetime", "picklist_options": []},
+    {
+      "id": "617ff4041e711500a401c25e",
+      "modality": "contact",
+      "name": "Customer Age",
+      "type": "picklist",
+      "picklist_values": [
+        {"_id": "617ff4041e711500a401c25f", "name": "New Customer", "id": "617ff4041e711500a401c25f"},
+        {"_id": "617ff4041e711500a401c260", "name": "1 year", "id": "617ff4041e711500a401c260"}
+      ]
+    },
+    {"id": "70000000000000000000aaaa", "modality": "account", "name": "Account Tier", "type": "string"}
+  ]
+}

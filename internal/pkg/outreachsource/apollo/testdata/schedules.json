@@ -1,0 +1,20 @@
+{
+  "emailer_schedules": [
+    {
+      "id": "6605a1f2e4b0c80012a3d456",
+      "name": "Normal Business Hours",
+      "default": true,
+      "time_zone": "America/Los_Angeles",
+      "schedule_hash": {
+        "monday": [[8, 17]],
+        "tuesday": [[8, 17]],
+        "wednesday": [[8, 17]],
+        "thursday": [[8, 17]],
+        "friday": [[9.5, 15]]
+      },
+      "created_at": "2024-03-28T18:56:24.067Z",
+      "use_contacts_time_zone": true,
+      "skip_holidays": true
+    }
+  ]
+}

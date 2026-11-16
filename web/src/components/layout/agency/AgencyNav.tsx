@@ -4,8 +4,11 @@
 
 import React from "react";
 import { Link, useLocation } from "@tanstack/react-router";
+import { motion, useReducedMotion } from "framer-motion";
 import {
+    ArrowRightLeftIcon,
     Building2Icon,
+    MailIcon,
     CreditCardIcon,
     GaugeIcon,
     InboxIcon,
@@ -27,27 +30,32 @@ import { useAgencyOverview, useOpenClient } from "@/lib/api/hooks/app/agency/use
 import type { Agency } from "@/lib/api/models/app/agency/Agency";
 import type { AgencyClientAccess } from "@/lib/api/models/app/agency/AgencyHome";
 import { useAppStore } from "@/stores";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import { cn } from "@/lib/utils";
 
 type ItemPath =
     | "/app/agency"
     | "/app/agency/clients"
+    | "/app/agency/mailboxes"
     | "/app/agency/inbox"
     | "/app/agency/usage"
     | "/app/agency/billing"
     | "/app/agency/staff"
     | "/app/agency/branding"
-    | "/app/agency/api-keys";
+    | "/app/agency/api-keys"
+    | "/app/agency/migrate";
 
 const ITEMS: { to: ItemPath; label: string; icon: LucideIcon; exact?: boolean; badge?: "replies" }[] = [
     { to: "/app/agency", label: "Overview", icon: LayoutDashboardIcon, exact: true },
     { to: "/app/agency/clients", label: "Clients", icon: Building2Icon },
+    { to: "/app/agency/mailboxes", label: "Mailboxes", icon: MailIcon },
     { to: "/app/agency/inbox", label: "Inbox", icon: InboxIcon, badge: "replies" },
     { to: "/app/agency/usage", label: "Usage", icon: GaugeIcon },
     { to: "/app/agency/billing", label: "Billing", icon: CreditCardIcon },
     { to: "/app/agency/staff", label: "Staff", icon: UsersIcon },
     { to: "/app/agency/branding", label: "Branding", icon: PaletteIcon },
     { to: "/app/agency/api-keys", label: "API keys", icon: KeyRoundIcon },
+    { to: "/app/agency/migrate", label: "Migrate", icon: ArrowRightLeftIcon },
 ];
 
 type Health = "critical" | "warning" | "ok";
@@ -67,8 +75,8 @@ export function AgencyNav({ agency, open, onClose }: { agency: Agency; open: boo
     const overview = useAgencyOverview(agency.id).data;
     const clients = useAgencyClients(agency.id);
     const currentOrgId = useAppStore((s) => s.currentOrganization?.id);
-    const { open: enter, pending } = useOpenClient();
-    const [entering, setEntering] = React.useState<string | null>(null);
+    const { open: enter, opening, pending } = useOpenClient();
+    const reduceMotion = useReducedMotion();
     const [adding, setAdding] = React.useState(false);
     const canManage = agency.role === "owner" || agency.role === "admin";
 
@@ -90,12 +98,6 @@ export function AgencyNav({ agency, open, onClose }: { agency: Agency; open: boo
     }, [overview, clients.data]);
 
     const replies = overview?.totals.replies_waiting ?? 0;
-
-    const openClient = async (id: string) => {
-        setEntering(id);
-        await enter(id);
-        setEntering(null);
-    };
 
     return (
         <>
@@ -142,14 +144,24 @@ export function AgencyNav({ agency, open, onClose }: { agency: Agency; open: boo
                                     aria-current={active ? "page" : undefined}
                                     className={cn(
                                         ROW,
-                                        active ? "wb-nav-active bg-slate-200/70 text-slate-900 font-medium" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40",
+                                        "relative isolate",
+                                        active ? "text-slate-900 font-medium" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40",
                                     )}
                                 >
+                                    {/* One highlight that glides to the page just picked. */}
+                                    {active && (
+                                        <motion.span
+                                            layoutId="agency-nav-active"
+                                            aria-hidden
+                                            transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 40, mass: 0.7 }}
+                                            className="wb-nav-active absolute inset-0 -z-10 rounded-md bg-slate-200/70"
+                                        />
+                                    )}
                                     <Icon className={cn("w-[14px] h-[14px] shrink-0", active ? "text-slate-700" : "text-slate-400")} strokeWidth={active ? 2 : 1.6} />
                                     <span className="flex-1 min-w-0 truncate">{item.label}</span>
                                     {item.badge === "replies" && replies > 0 && (
                                         <span className="min-w-4 h-4 px-1 rounded-full bg-sky-600 text-white text-[10px] font-medium tabular-nums inline-flex items-center justify-center">
-                                            {replies > 99 ? "99+" : replies}
+                                            {replies > 99 ? "99+" : <AnimatedNumber value={replies} />}
                                         </span>
                                     )}
                                 </Link>
@@ -167,9 +179,9 @@ export function AgencyNav({ agency, open, onClose }: { agency: Agency; open: boo
                                 key={c.id}
                                 client={c}
                                 current={c.id === currentOrgId}
-                                busy={entering === c.id}
+                                busy={opening === c.id}
                                 disabled={pending}
-                                onOpen={() => void openClient(c.id)}
+                                onOpen={() => void enter(c.id)}
                             />
                         ))}
                         {entries.length === 0 && !clients.isLoading && (

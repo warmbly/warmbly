@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "list": {"name": "Campaign list", "contacts": 3, "creationDate": {"date": "2020-05-19 17:34:39.000000", "timezone_type": 3, "timezone": "UTC"}, "emailsCount": []},
+  "prospects": [
+    {"id": "226db935fc93422496fda5d5209e8cbf", "name": "Andrew Garfiled", "firstName": "Andrew", "lastName": "Garfiled", "emails": [{"email": "andrew@exp.example", "probability": 99, "isVerified": null, "jobStatus": "any", "domainType": "linkedin_email"}]},
+    {"id": "f20d30219b039d1408d837a748a1e2ab", "name": "John Doe", "firstName": "John", "lastName": "Doe", "emails": [{"email": "JohnDoe@gmail.example", "probability": 99, "smtpStatus": 3}]}
+  ]
+}

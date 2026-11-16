@@ -227,11 +227,11 @@ func NewVendorConnectionRepository(database *db.DB) VendorConnectionRepository {
 }
 
 const vendorColumns = `c.id, c.organization_id, c.vendor, c.label, c.status, c.last_error, c.last_used_at, c.created_at,
-	(SELECT count(*) FROM email_accounts ea WHERE ea.vendor_connection_id = c.id), c.credentials`
+	(SELECT count(*) FROM email_accounts ea WHERE ea.vendor_connection_id = c.id), c.credentials, c.agency_connection_id`
 
 func scanVendor(row pgx.Row, c *models.VendorConnection) error {
 	return row.Scan(&c.ID, &c.OrganizationID, &c.Vendor, &c.Label, &c.Status, &c.LastError, &c.LastUsedAt, &c.CreatedAt,
-		&c.Mailboxes, &c.Credentials)
+		&c.Mailboxes, &c.Credentials, &c.AgencyConnectionID)
 }
 
 func (r *vendorConnectionRepository) Create(ctx context.Context, c *models.VendorConnection, createdBy uuid.UUID) error {

@@ -1,0 +1,10 @@
+{
+  "total_stats": "4",
+  "offset": 0,
+  "limit": 1000,
+  "data": [
+    {"lead_name": "John Doe", "lead_email": "john@example.com", "sequence_number": 1, "sent_time": "2025-12-01T09:10:00.000Z", "is_opened": true, "is_clicked": false, "is_replied": false, "is_bounced": false, "sender_bounce": false},
+    {"lead_name": "John Doe", "lead_email": "john@example.com", "sequence_number": 2, "sent_time": "2025-12-04 09:12:00.000Z", "is_opened": true, "is_clicked": false, "is_replied": true, "is_bounced": false, "sender_bounce": false},
+    {"lead_name": "Jane Roe", "lead_email": "jane@example.org", "sequence_number": 1, "sent_time": "2025-12-01T10:00:00.000Z", "is_opened": false, "is_clicked": false, "is_replied": false, "is_bounced": true, "sender_bounce": false}
+  ]
+}

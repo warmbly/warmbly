@@ -1,0 +1,89 @@
+{
+  "items": [
+    {
+      "id": "01956fbd-0eb1-72db-a565-82977a586084",
+      "name": "Q3 founders",
+      "pl_value": 100,
+      "status": 1,
+      "is_evergreen": false,
+      "campaign_schedule": {
+        "start_date": "2025-09-01",
+        "end_date": null,
+        "schedules": [
+          {
+            "name": "Weekdays",
+            "timing": {"from": "09:00", "to": "17:30"},
+            "days": {"0": false, "1": true, "2": true, "3": true, "4": true, "5": true, "6": false},
+            "timezone": "Europe/Belgrade"
+          },
+          {
+            "name": "Sunday",
+            "timing": {"from": "10:00", "to": "12:00"},
+            "days": {"0": true},
+            "timezone": "Europe/Belgrade"
+          }
+        ]
+      },
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 2,
+              "delay_unit": "days",
+              "variants": [
+                {"subject": "{{RANDOM | Quick question | Idea}} for {{companyName}}", "body": "Hey {{firstName | there}},<br/><br/>{{personalization}}<br/><br/>{{sendingAccountFirstName}}<br/>{{accountSignature}}"},
+                {"subject": "Hello {{firstName}}", "body": "Hi {{firstName}}, saw {{companyDomain}}.", "v_disabled": true}
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 36,
+              "delay_unit": "hours",
+              "variants": [
+                {"subject": "", "body": "{% if position == \"founder\" %}Founders love this.{% endif %} Any thoughts, {{firstName}}?"}
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 3,
+              "variants": [
+                {"subject": "New idea for {{companyName}}", "body": "{{RANDOM | Hi {{firstName}} | Hello}}, last note from {{sendingAccountName}}."}
+              ]
+            }
+          ]
+        }
+      ],
+      "timestamp_created": "2025-08-20T10:00:00.000Z",
+      "timestamp_updated": "2025-08-21T10:00:00.000Z",
+      "email_gap": 12,
+      "random_wait_max": 5,
+      "text_only": false,
+      "first_email_text_only": true,
+      "email_list": ["Jane@acme.io", "sam@acme-mail.com"],
+      "daily_limit": 120,
+      "stop_on_reply": true,
+      "email_tag_list": ["01a1d05e-fd53-7bf0-9fab-b39007e5eeee"],
+      "link_tracking": true,
+      "open_tracking": false,
+      "stop_on_auto_reply": false,
+      "daily_max_leads": 40,
+      "stop_for_company": true,
+      "insert_unsubscribe_header": true,
+      "cc_list": [],
+      "bcc_list": ["boss@acme.io"]
+    },
+    {
+      "id": "01956fbd-0eb1-72db-a565-82977a586099",
+      "name": "Draft idea",
+      "status": 0,
+      "campaign_schedule": {"schedules": []},
+      "sequences": [],
+      "timestamp_created": "2025-08-22T10:00:00.000Z",
+      "timestamp_updated": "2025-08-22T10:00:00.000Z",
+      "open_tracking": true,
+      "email_list": []
+    }
+  ],
+  "next_starting_after": "01956fbd-0eb1-72db-a565-82977a586099"
+}

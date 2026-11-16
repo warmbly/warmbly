@@ -2197,6 +2197,7 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 	// Record bounces + complaints in campaign progress so analytics and the
 	// breaker work correctly. Complaints were previously never recorded, which
 	// is why complaint-rate auto-pause could never fire.
+	pulseSequence := ""
 	if req.CampaignID != nil && req.ContactID != nil && req.TaskID != nil &&
 		(eventType == models.DeliverabilityEventBounce || eventType == models.DeliverabilityEventComplaint) {
 		campaignTask, cErr := s.taskRepo.GetCampaignTask(ctx, *req.TaskID)
@@ -2227,7 +2228,21 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 					return toErrx(err)
 				}
 			}
+			pulseSequence = campaignTask.SequenceID.String()
 		}
+	}
+
+	// Every teammate's campaign numbers move on a bounce or complaint, including
+	// one with no contact (a CC or BCC), and only once it is committed.
+	if req.CampaignID != nil && s.realtime != nil &&
+		(eventType == models.DeliverabilityEventBounce || eventType == models.DeliverabilityEventComplaint) {
+		rt, org, campaign, contact, recipient := s.realtime, organizationID.String(), req.CampaignID.String(), "", req.RecipientEmail
+		if req.ContactID != nil {
+			contact = req.ContactID.String()
+		}
+		repository.AfterSendResultCommit(ctx, func(ctx context.Context) {
+			rt.PublishEmailBounced(ctx, org, "", campaign, contact, recipient, pulseSequence)
+		})
 	}
 
 	if req.CampaignID != nil &&
@@ -2351,6 +2366,15 @@ func (s *service) evaluateCampaignBreaker(ctx context.Context, orgID, campaignID
 	pauseComplaint := complaintThresh > 0 && complaintRate >= complaintThresh
 	if pauseBounce || pauseComplaint {
 		if err := s.campaignRepo.UpdateStatus(ctx, campaignID, "paused"); err == nil {
+			if s.realtime != nil {
+				rt, userID, name := s.realtime, "", ""
+				if c, cerr := s.campaignRepo.GetByID(ctx, campaignID); cerr == nil && c != nil {
+					userID, name = c.UserID, c.Name
+				}
+				repository.AfterSendResultCommit(ctx, func(ctx context.Context) {
+					rt.PublishCampaignPaused(ctx, orgID.String(), userID, campaignID.String(), name)
+				})
+			}
 			s.emit(ctx, orgID, models.WebhookEventCampaignPaused, map[string]any{
 				"campaign_id":    campaignID.String(),
 				"reason":         "deliverability_auto_pause",

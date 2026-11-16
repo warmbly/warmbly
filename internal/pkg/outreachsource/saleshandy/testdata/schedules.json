@@ -1,0 +1,20 @@
+{
+  "message": "Schedules fetched successfully",
+  "payload": [
+    {
+      "id": "aB3xK9",
+      "name": "Weekdays 9-5",
+      "timezone": "America/New_York",
+      "isDefault": true,
+      "timeSlots": [
+        {"day": 0, "slots": []},
+        {"day": 1, "slots": [{"start": {"hour": 9, "minute": 0}, "end": {"hour": 17, "minute": 0}}]},
+        {"day": 2, "slots": [{"start": {"hour": 9, "minute": 0}, "end": {"hour": 17, "minute": 0}}]},
+        {"day": 3, "slots": [{"start": {"hour": 9, "minute": 0}, "end": {"hour": 17, "minute": 0}}]},
+        {"day": 4, "slots": [{"start": {"hour": 9, "minute": 0}, "end": {"hour": 17, "minute": 0}}]},
+        {"day": 5, "slots": [{"start": {"hour": 8, "minute": 30}, "end": {"hour": 17, "minute": 0}}]},
+        {"day": 6, "slots": []}
+      ]
+    }
+  ]
+}

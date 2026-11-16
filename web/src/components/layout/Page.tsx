@@ -22,6 +22,7 @@ import React from "react";
 import { Link } from "@tanstack/react-router";
 import { hrefTarget } from "@/lib/routerSearch";
 import { cn } from "@/lib/utils";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
 
 // Internal app paths navigate client-side (router Link, no full reload);
 // external URLs (http..., mailto:, //) stay as a plain anchor.
@@ -192,9 +193,12 @@ export function Stat({
     href,
     last = false,
     onClick,
+    animated = false,
 }: {
     label: string;
     value: React.ReactNode;
+    /** A live number counts to each new value instead of jumping. */
+    animated?: boolean;
     sub?: React.ReactNode;
     accent?: boolean;
     tone?: "warn";
@@ -219,7 +223,7 @@ export function Stat({
                     tone === "warn" && !zero ? "text-amber-700" : zero ? "text-slate-300" : "text-slate-900",
                 )}
             >
-                {typeof value === "number" ? value.toLocaleString() : value}
+                {typeof value === "number" ? animated ? <AnimatedNumber value={value} /> : value.toLocaleString() : value}
             </div>
             {sub && <div className="text-[11.5px] text-slate-400 mt-1.5 truncate">{sub}</div>}
             {active && <span aria-hidden className="absolute inset-x-0 -bottom-px h-0.5 bg-sky-600" />}

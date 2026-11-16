@@ -40,10 +40,12 @@ export default function ImportPanel({
     const [report, setReport] = React.useState<OrgImportPreflight | null>(null);
     const [selected, setSelected] = React.useState<Set<OrgDataGroup>>(new Set());
     const [conflict, setConflict] = React.useState<OrgImportConflict>("skip");
+    const [checkError, setCheckError] = React.useState<string | null>(null);
 
     function pickFile(next: File | null) {
         setFile(next);
         setReport(null);
+        setCheckError(null);
     }
 
     function toggle(key: OrgDataGroup) {
@@ -59,6 +61,7 @@ export default function ImportPanel({
 
     async function check() {
         if (!file) return;
+        setCheckError(null);
         try {
             const result = await preflight.mutateAsync({ file, passphrase });
             setReport(result);
@@ -66,7 +69,7 @@ export default function ImportPanel({
             setSelected(expandGroups(result.archive.groups, groups));
         } catch (e) {
             setReport(null);
-            toast.error((e as { message?: string })?.message ?? "That archive could not be read.");
+            setCheckError((e as { message?: string })?.message ?? "That archive could not be read.");
         }
     }
 
@@ -90,7 +93,6 @@ export default function ImportPanel({
                 });
                 pickFile(null);
                 setPassphrase("");
-                if (fileRef.current) fileRef.current.value = "";
                 onStarted();
             } catch (e) {
                 toast.error((e as { message?: string })?.message ?? "Could not start the import.");
@@ -117,7 +119,10 @@ export default function ImportPanel({
                     type="file"
                     accept=".zip,application/zip"
                     className="hidden"
-                    onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+                    onChange={(e) => {
+                        pickFile(e.target.files?.[0] ?? null);
+                        e.target.value = "";
+                    }}
                 />
                 <button
                     type="button"
@@ -145,8 +150,14 @@ export default function ImportPanel({
                         className="h-7 px-3 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] font-medium text-slate-700 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
                     >
                         {preflight.isPending && <Loader2Icon className="w-3 h-3 animate-spin" />}
-                        Check this archive
+                        {preflight.isPending ? "Reading the archive…" : "Check this archive"}
                     </button>
+                    {checkError && (
+                        <div role="alert" className="flex items-start gap-1.5 text-[11.5px] text-red-700">
+                            <AlertTriangleIcon className="w-3 h-3 mt-0.5 shrink-0" />
+                            <span className="leading-relaxed">{checkError}</span>
+                        </div>
+                    )}
                 </div>
             )}
 

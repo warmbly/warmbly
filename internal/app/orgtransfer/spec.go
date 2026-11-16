@@ -219,7 +219,11 @@ var Tables = []Table{
 		Secrets: []SecretColumn{
 			{Column: "credentials", Domain: KeyDomainOrgDEK},
 		},
-		Note: "Inbox vendor accounts (InboxKit, Zapmail, ...) the workspace imports from. Above email_accounts, whose vendor_connection_id names them.",
+		// An agency's account lives on the instance that holds the agency, and its key was never in this row:
+		// the connection arrives as the workspace's own, waiting for a key.
+		ResetOnImport:           []string{"agency_connection_id"},
+		ResetColumnsOnOverwrite: []string{"agency_connection_id"},
+		Note:                    "Inbox vendor accounts (InboxKit, Zapmail, ...) the workspace imports from. Above email_accounts, whose vendor_connection_id names them. A connection made from an agency's account holds no key, so it travels without one.",
 	},
 	{
 		Name: "mailbox_domain_grants", Group: models.OrgDataGroupCore,
@@ -243,7 +247,7 @@ var Tables = []Table{
 		Name: "email_accounts", Group: models.OrgDataGroupCore,
 		Scope:                   scopeOrg,
 		ExcludeOnExport:         []string{"transport_generation"},
-		ResetColumnsOnOverwrite: []string{"transport_generation"},
+		ResetColumnsOnOverwrite: []string{"transport_generation", "activated_at"},
 		InvalidateOnImport: []repository.ImportInvalidation{{
 			Table: "email_account_transport_recovery", Column: "email_account_id", Key: "id",
 			LockNamespaces: []int64{repository.SendResultMailboxLockNamespace, repository.MailTransportLockNamespace},
@@ -277,8 +281,9 @@ var Tables = []Table{
 		// send_claimed_at is this instance's per-send gap lock.
 		// previous_worker_id and worker_released_at name a worker on this instance.
 		// signin_switch_* is this instance's vendor reconnect attempt; the destination makes its own.
+		// activated_at restarts so the destination's unreachable sweep measures only its own connection attempts.
 		ResetOnImport: []string{
-			"transport_generation",
+			"transport_generation", "activated_at",
 			"worker_id", "auth_checked_at", "auth_failing_since", "cold_ramp_started_at",
 			"send_lifecycle", "send_lifecycle_since", "send_lifecycle_reason", "seed_scope",
 			"avatar_checked_at", "tracking_domain_verified", "tracking_domain_verified_at",
@@ -1138,8 +1143,10 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"organization_partner_referrals":   "The partner-program click and the Dub customer it became belong to this instance's Dub workspace, and commissions keep following the Stripe customer here. The destination has no partner program for it.",
 	"mailbox_connect_links":            "Single-use sign-in links whose URL points at the source instance and whose secret only the recipient holds. The mailboxes they connected travel; open links do not, so new ones are created on the destination.",
 	"agency_clients":                   "The link to an agency, its billing and its shared send pool belongs to the source instance. An imported workspace starts outside any agency; the agency attaches it again on the destination.",
+	"agency_vendor_connections":        "Inbox vendor accounts an agency holds for its clients, kept against the agency and sealed with the instance key. A client workspace's own connection to one travels without the agency's key.",
 	"agency_ai_transactions":           "The agency's ledger of its shared AI balance on the source instance, kept against the agency rather than the workspace. Money already moved into the workspace travels in its own balance; the destination's agency funds it from when it attaches it.",
 	"agency_pool_usage_days":           "The agency's ledger of pool use on the source instance, kept against the agency rather than the workspace. The destination's agency counts the workspace's sends from when it attaches it.",
 	"website_domains":                  "A website's proof is a TXT value bound to the source workspace, so it proves nothing for the destination. The destination shows its own TXT value on each sending-domain redirect that points at the website, and serves redirects and forms there once it is published.",
@@ -1195,6 +1202,9 @@ var ExcludedTables = map[string]string{
 	"mailbox_import_rows":              "The rows of a mailbox import, with credentials sealed until each row is connected. They follow mailbox_imports, which does not travel.",
 	"contact_imports":                  "Contact imports in progress or recently finished. They are work this instance is doing; the contacts they created travel with the contacts group.",
 	"contact_import_rows":              "The uploaded rows of a contact import and what became of each. They follow contact_imports, which does not travel.",
+	"tool_migrations":                  "Migrations from another outreach tool. They are work this instance is doing and hold the other tool's keys while they run; what they brought over travels in its own tables.",
+	"tool_migration_targets":           "The workspaces a migration from another tool writes into and its progress in each. They follow tool_migrations, which does not travel.",
+	"tool_migration_items":             "Which campaigns and contacts a migration from another tool already created, so a resumed run does not create them twice. They follow tool_migrations, which does not travel.",
 	"placement_renders":                "The copy a tracking comparison is sending to each seed, sealed so both halves send the same words. It lives only while the comparison runs, and a copy that had not been sent stays behind with its task.",
 	"inbox_follow_up_sweeps":           "This instance's hourly follow-up sweep state for the workspace: where its cycle stopped (by this instance's mailbox and message row ids), how far it has checked changed conversations, and which walker holds it. The destination starts its own cycle at the newest conversation.",
 	"slack_user_links":                 "Which Slack member speaks for which Warmbly member. Slack delivers that member's messages to the instance whose Slack app the workspace installed, so each member links again after the workspace reconnects Slack on the destination.",

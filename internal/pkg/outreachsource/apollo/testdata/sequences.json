@@ -1,0 +1,36 @@
+{
+  "pagination": {"page": 1, "per_page": 100, "total_entries": 2, "total_pages": 1},
+  "breadcrumbs": [],
+  "emailer_campaigns": [
+    {
+      "id": "66e9e215ece19801b219997f",
+      "name": "Target Copywriting Clients in Dublin",
+      "archived": false,
+      "created_at": "2024-09-17T20:09:57.837Z",
+      "emailer_schedule_id": "6605a1f2e4b0c80012a3d456",
+      "max_emails_per_day": 120,
+      "user_id": "66302798d03b9601c7934ebf",
+      "active": true,
+      "mark_finished_if_reply": true,
+      "mark_finished_if_interested": true,
+      "mark_paused_if_ooo": true,
+      "last_used_at": "2024-10-01T10:00:00.000Z",
+      "num_steps": 3,
+      "unique_scheduled": 0,
+      "unique_delivered": 12
+    },
+    {
+      "id": "684b215edf80730019db612c",
+      "name": "Old Outreach",
+      "archived": true,
+      "created_at": "2024-06-12T18:50:00.000Z",
+      "emailer_schedule_id": null,
+      "max_emails_per_day": null,
+      "active": false,
+      "mark_finished_if_reply": false,
+      "last_used_at": null,
+      "num_steps": 0
+    }
+  ],
+  "num_fetch_result": null
+}

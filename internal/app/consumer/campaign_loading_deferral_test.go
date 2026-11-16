@@ -121,8 +121,8 @@ func TestLiveCampaignMailboxLoadingDefersWithoutSpendingAttempts(t *testing.T) {
 		t.Fatalf("provider failure must still spend an attempt: attempts=%d err=%v", attempts, err)
 	}
 	logs, err = s.CampaignLogRepo.GetLogs(ctx, f.campaign, 100, nil)
-	if err != nil || logs.Data[0].Metadata["level"] != "error" {
-		t.Fatalf("provider failure must stay actionable: %+v err=%v", logs, err)
+	if err != nil || logs.Data[0].EventType != "email_deferred" || logs.Data[0].Metadata["level"] != "info" {
+		t.Fatalf("a retried provider connection failure is a delay, not an alert: %+v err=%v", logs, err)
 	}
 }
 

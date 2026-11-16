@@ -540,3 +540,52 @@ body.embed .cx-card {
 .cx-sk-button + .cx-sk-button {
     margin-top: 0.6rem;
 }
+
+/* The vendor route: a list of the account's mailboxes to pick from. */
+.cx-pick-tools {
+    display: flex;
+    gap: 1rem;
+    margin: -0.35rem 0 0;
+}
+.cx-pick {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 22rem;
+    overflow: auto;
+    border: 1px solid var(--pt-line);
+    border-radius: var(--cx-r-box);
+    background: var(--pt-raised);
+}
+.cx-pick li + li {
+    border-top: 1px solid var(--pt-line);
+}
+.cx-pick label {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+.cx-pick label.cx-pick-off {
+    cursor: default;
+    color: var(--pt-muted);
+}
+.cx-pick input {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--pt-accent);
+}
+.cx-pick .cx-addr small {
+    display: block;
+    color: var(--pt-muted);
+    font-size: 0.75rem;
+}
+.cx-note-left {
+    text-align: left;
+}
+.cx-note-left a {
+    color: var(--pt-accent);
+}

@@ -68,10 +68,15 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 	}
 
 	ownIDs := make(map[uuid.UUID]bool)
-	returnIDs := make(map[uuid.UUID]bool)
+	returns := make(map[uuid.UUID]models.WarmupPartnerCandidate)
+	// Bounces are rare, so each sender walks only the bounced few.
+	var bounced []models.WarmupPartnerCandidate
 	borrowedByOrg := make(map[uuid.UUID]int)
 	own, borrowed := 0, 0
 	for _, c := range cands {
+		if len(c.BouncedBy) > 0 {
+			bounced = append(bounced, c)
+		}
 		switch c.Origin {
 		case models.WarmupPartnerOwnTier:
 			own++
@@ -82,7 +87,7 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 				borrowedByOrg[*c.OrganizationID]++
 			}
 		case models.WarmupPartnerReturn:
-			returnIDs[c.ID] = true
+			returns[c.ID] = c
 		}
 	}
 	for id, org := range orgs {
@@ -92,6 +97,17 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 		}
 		if borrows {
 			out[id] += borrowed - borrowedByOrg[org]
+		}
+		for _, c := range bounced {
+			if !c.BouncedFrom(&org) {
+				continue
+			}
+			switch {
+			case c.Origin == models.WarmupPartnerOwnTier && c.ID != id:
+				out[id]--
+			case c.Origin == models.WarmupPartnerBorrowed && borrows && (c.OrganizationID == nil || *c.OrganizationID != org):
+				out[id]--
+			}
 		}
 	}
 	if returnsTo {
@@ -115,8 +131,10 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 			if err := rows.Scan(&sender, &partner); err != nil {
 				return nil, err
 			}
-			if _, eligible := orgs[sender]; eligible && returnIDs[partner] {
-				out[sender]++
+			if org, eligible := orgs[sender]; eligible {
+				if c, ok := returns[partner]; ok && !c.BouncedFrom(&org) {
+					out[sender]++
+				}
 			}
 		}
 		if err := rows.Err(); err != nil {

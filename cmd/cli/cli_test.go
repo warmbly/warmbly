@@ -40,7 +40,7 @@ func TestFillPath(t *testing.T) {
 // and no leftovers, or the command is dead on arrival at runtime.
 func TestEverySpecPathMatchesItsArguments(t *testing.T) {
 	seen := map[string]bool{}
-	for _, r := range resourceSpecs() {
+	for _, r := range flattenResources(resourceSpecs(), "") {
 		if seen[r.Name] {
 			t.Errorf("two resources are called %q", r.Name)
 		}
@@ -92,6 +92,17 @@ func TestEverySpecPathMatchesItsArguments(t *testing.T) {
 			}
 		}
 	}
+}
+
+// flattenResources lists nested resources alongside their parents, named by their full path.
+func flattenResources(rs []resource, parent string) []resource {
+	var out []resource
+	for _, r := range rs {
+		r.Name = strings.TrimSpace(parent + " " + r.Name)
+		out = append(out, r)
+		out = append(out, flattenResources(r.Children, r.Name)...)
+	}
+	return out
 }
 
 // Building the whole command tree catches the failures cobra reports by

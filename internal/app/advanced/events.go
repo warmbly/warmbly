@@ -65,6 +65,11 @@ func (s *service) EmitCampaignEvent(ctx context.Context, orgID uuid.UUID, eventT
 // interface so this package stays decoupled from the pubsub event types.
 type ReplyRealtimePublisher interface {
 	PublishEmailReplied(ctx context.Context, orgID, userID, campaignID, contactID, contactEmail, sequenceID string)
+	// PublishEmailBounced pushes an org-scoped EMAIL_BOUNCED pulse for a bounce
+	// or complaint recorded after the send.
+	PublishEmailBounced(ctx context.Context, orgID, userID, campaignID, contactID, contactEmail, sequenceID string)
+	// PublishCampaignPaused pushes an org-scoped CAMPAIGN_PAUSED pulse.
+	PublishCampaignPaused(ctx context.Context, orgID, userID, campaignID, name string)
 	// PublishCustomEvent pushes a developer-defined "fire event" to the gateway so
 	// API-key websocket subscribers receive it (the campaign "fire event" step).
 	PublishCustomEvent(ctx context.Context, orgID, actorID uuid.UUID, name string, payload map[string]string, source, sourceID string)

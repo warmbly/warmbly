@@ -3,6 +3,7 @@
 // switches into that client's own inbox.
 
 import React from "react";
+import { AgencySkeletonRows } from "@/components/app/agency/AgencySkeleton";
 import { ArrowLeftIcon, ChevronDownIcon, Loader2Icon, ReplyIcon } from "lucide-react";
 import { Page, PageTopbar, EmptyBlock } from "@/components/layout/Page";
 import { SearchInput } from "@/components/ui/field";
@@ -118,9 +119,9 @@ export default function AgencyInboxPage() {
                             </ScrollStrip>
                         )}
                     </div>
-                    <div className="flex-1 min-h-0 overflow-auto">
+                    <div className={cn("flex-1 min-h-0 overflow-auto transition-opacity duration-200", inbox.isPlaceholderData && "opacity-60")}>
                         {inbox.isLoading ? (
-                            <div className="py-12 flex justify-center"><Loader2Icon className="w-4 h-4 animate-spin text-slate-400" /></div>
+                            <AgencySkeletonRows rows={8} lines={2} />
                         ) : threads.length === 0 ? (
                             <EmptyBlock
                                 title="No conversations"

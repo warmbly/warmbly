@@ -792,3 +792,23 @@ func TestRemoteCatalogMatchesActualAdminRoutesAndGuards(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteOutputKeepsMailboxRemovalProgress(t *testing.T) {
+	id := "6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"
+	out := redactRemoteJSON("", map[string]any{
+		"dry_run": false, "matched": float64(3), "removed": float64(1), "failed": float64(1), "remaining": float64(2),
+		"mailboxes": []any{map[string]any{"id": id, "email": "a@example.com", "removed": false, "error": "provider said no"}},
+	}).(map[string]any)
+	for _, k := range []string{"dry_run", "matched", "removed", "failed", "remaining"} {
+		if _, ok := out[k]; !ok {
+			t.Fatalf("%s dropped from %v", k, out)
+		}
+	}
+	row := out["mailboxes"].([]any)[0].(map[string]any)
+	if row["id"] != id || row["removed"] != false || row["error"] != "[REDACTED]" {
+		t.Fatalf("mailbox row = %v", row)
+	}
+	if v, ok := row["email"]; ok && v != "[REDACTED]" {
+		t.Fatalf("address leaked: %v", row)
+	}
+}

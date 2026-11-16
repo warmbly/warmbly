@@ -14,7 +14,7 @@ func campaignDetectors() []Detector {
 		{
 			Key:      "campaign_unsubscribe_header_off",
 			Category: models.AdvisorCategoryCampaign,
-			About:    "Whether a campaign sends the List-Unsubscribe header. Google's bulk sender rules require one-click unsubscribe on marketing mail, and an easy unsubscribe is what stops an uninterested recipient reaching for the spam button instead.",
+			About:    "A campaign sending without the List-Unsubscribe header once that costs something: its recipients have started marking it as spam, or its volume reaches Google's bulk-sender line, where one-click unsubscribe is required. For low-volume one-to-one outreach with no complaints, leaving the header off is a legitimate choice and is not raised.",
 			Reads:    []repository.AdvisorSection{repository.AdvisorSectionCampaigns},
 			Run:      detectUnsubscribeHeaderOff,
 		},
@@ -45,10 +45,23 @@ func detectUnsubscribeHeaderOff(s *repository.AdvisorSnapshot) []Finding {
 		if camp.Status == "draft" || camp.UnsubscribeHeader {
 			continue
 		}
+		// Off is a legitimate choice for low-volume one-to-one outreach; it costs something once recipients complain or the volume is bulk.
+		bulk := camp.Sent >= googleBulkSenderDaily*30
+		if camp.Complaints == 0 && !bulk {
+			continue
+		}
 
 		severity := models.AdvisorMedium
 		if camp.Status == "active" {
 			severity = models.AdvisorHigh
+		}
+		detail := fmt.Sprintf(
+			"%s has the List-Unsubscribe header switched off, and %s marked it as spam in the last 30 days. A recipient who cannot find an easy way out reaches for the spam button instead, which costs far more than an unsubscribe does.",
+			camp.Name, plural(camp.Complaints, "recipient", "recipients"))
+		if camp.Complaints == 0 {
+			detail = fmt.Sprintf(
+				"%s sent %d emails in the last 30 days with the List-Unsubscribe header switched off. At that volume its sending domains can cross Google's bulk-sender line of %d messages a day, where one-click unsubscribe is required.",
+				camp.Name, camp.Sent, googleBulkSenderDaily)
 		}
 
 		out = append(out, Finding{
@@ -62,10 +75,8 @@ func detectUnsubscribeHeaderOff(s *repository.AdvisorSnapshot) []Finding {
 			EntityLabel: camp.Name,
 			Impact:      clampImpact(45 + camp.Sent/100),
 			Title:       fmt.Sprintf("%s sends without a one-click unsubscribe", camp.Name),
-			Detail: fmt.Sprintf(
-				"%s has the List-Unsubscribe header switched off. Google's bulk sender rules require one-click unsubscribe, and more practically: a recipient who cannot find an easy way out reaches for the spam button instead, which costs far more than an unsubscribe does.",
-				camp.Name),
-			Remedy: "Turn the unsubscribe header on. It is a header, not visible copy, so it changes nothing about how the email reads.",
+			Detail:      detail,
+			Remedy:      "Turn the unsubscribe header on. It is a header, not visible copy, so it changes nothing about how the email reads.",
 			Evidence: map[string]any{
 				"campaign":       camp.Name,
 				"status":         camp.Status,

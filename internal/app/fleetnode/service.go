@@ -119,6 +119,18 @@ const (
 // any previous token, which is also how you revoke one. Existing nodes are
 // unaffected: they are already enrolled, and the token only gates joining.
 func (s *Service) IssueJoinToken(ctx context.Context, ttl time.Duration) (string, time.Time, error) {
+	token, expiresAt, err := NewJoinToken(ttl)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if err := s.ActivateJoinToken(ctx, token, expiresAt); err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expiresAt, nil
+}
+
+// NewJoinToken mints a token that joins nothing until ActivateJoinToken stores it.
+func NewJoinToken(ttl time.Duration) (string, time.Time, error) {
 	if ttl <= 0 {
 		ttl = DefaultJoinTokenTTL
 	}
@@ -129,12 +141,12 @@ func (s *Service) IssueJoinToken(ctx context.Context, ttl time.Duration) (string
 	if _, err := rand.Read(raw); err != nil {
 		return "", time.Time{}, err
 	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
-	expiresAt := time.Now().Add(ttl).UTC().Truncate(time.Second)
-	if err := s.settings.SetJoinToken(ctx, crypt.SHA256(token), expiresAt); err != nil {
-		return "", time.Time{}, err
-	}
-	return token, expiresAt, nil
+	return base64.RawURLEncoding.EncodeToString(raw), time.Now().Add(ttl).UTC().Truncate(time.Second), nil
+}
+
+// ActivateJoinToken makes token the instance's join token until expiresAt, revoking the previous one.
+func (s *Service) ActivateJoinToken(ctx context.Context, token string, expiresAt time.Time) error {
+	return s.settings.SetJoinToken(ctx, crypt.SHA256(token), expiresAt)
 }
 
 // VerifyJoinToken checks a presented token in constant time, then its expiry.
@@ -155,6 +167,15 @@ func (s *Service) VerifyJoinToken(ctx context.Context, token string) error {
 		return ErrJoinTokenExpired
 	}
 	return nil
+}
+
+// JoinTokenExpiresAt is when the current join token stops working, nil when none has been issued.
+func (s *Service) JoinTokenExpiresAt(ctx context.Context) (*time.Time, error) {
+	want, expiresAt, err := s.settings.GetJoinToken(ctx)
+	if err != nil || want == "" {
+		return nil, err
+	}
+	return expiresAt, nil
 }
 
 // ErrNoNodeCredential is a node that holds no credential of its own yet; joining again issues one.

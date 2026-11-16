@@ -245,10 +245,15 @@ func GetMemberPermissions(c *gin.Context) (models.OrganizationPermission, bool) 
 	if !ok || m == nil {
 		return 0, false
 	}
+	return memberPermissions(m), true
+}
+
+// memberPermissions is a membership's effective permissions; an owner holds every one.
+func memberPermissions(m *models.OrganizationMember) models.OrganizationPermission {
 	if m.IsOwner() {
-		return models.AllPermissions, true
+		return models.AllPermissions
 	}
-	return m.Permissions, true
+	return m.Permissions
 }
 
 // GetAuthMember returns the caller's membership resolved at authentication (session or OAuth token), or nil.

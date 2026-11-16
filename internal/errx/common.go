@@ -339,6 +339,16 @@ func MailboxAllowanceReached(used, allowance int, paid bool) *Error {
 		fmt.Sprintf("This workspace holds %d of its %d mailboxes. Request an increase, or move to a plan with more daily sends.", used, allowance))
 }
 
+// ContactLimitReachedCode identifies ContactLimitReached.
+const ContactLimitReachedCode = "contact_limit_reached"
+
+// ContactLimitReached refuses new contacts that would take the workspace past its contact limit.
+func ContactLimitReached(have, limit, adding int) *Error {
+	return NewWithIdentifier(Forbidden, ContactLimitReachedCode,
+		fmt.Sprintf("Adding %d contacts would take this workspace past its limit of %d (it has %d). Remove contacts, request an increase, or upgrade your plan.",
+			adding, limit, have))
+}
+
 // StorageLimitReached is the refusal for an upload or copy (an attachment, or
 // an image for an email body) that would take the workspace past its storage
 // quota.

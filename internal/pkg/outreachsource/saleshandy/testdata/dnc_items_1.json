@@ -1,0 +1,10 @@
+{
+  "payload": {
+    "message": "Successfully fetched dnc item",
+    "dncDetails": [
+      {"id": "bZwpbE09aQ", "value": "Blocked@Example.com", "type": "email", "createdAt": "2024-09-19T07:44:00.100Z", "addedBy": "John Doe"},
+      {"id": "bZwpbE09aR", "value": "competitor.example", "type": "domain", "createdAt": "2024-09-19T07:44:00.100Z", "addedBy": "John Doe"}
+    ],
+    "meta": {"totalItems": 3, "currentPage": 1, "itemsPerPage": 2, "totalPages": 2, "itemCount": 2}
+  }
+}

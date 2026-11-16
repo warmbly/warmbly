@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "email": "lee@acme.onmicrosoft.com",
+      "timestamp_created": "2025-03-03T09:00:00.000Z",
+      "first_name": "Lee",
+      "last_name": "Park",
+      "status": 2,
+      "provider_code": 3
+    }
+  ],
+  "next_starting_after": "2025-03-03T09:00:00.000Z&lee@acme.onmicrosoft.com"
+}

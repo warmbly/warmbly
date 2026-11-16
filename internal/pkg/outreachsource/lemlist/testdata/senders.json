@@ -1,0 +1,8 @@
+{"data":{"senders":[
+  {"userId":"usr_john","name":"John Doe","email":"john@example.com","channels":[
+    {"type":"email","id":"usm_google","label":"john@example.com","aliases":["hello@example.com"],"esp":"google","diagnostics":[]},
+    {"type":"linkedin","id":"usr_john","label":"John Doe","diagnostics":[]}],"diagnostics":[]},
+  {"userId":"usr_jane","name":"Jane Smith","email":"jane@example.com","channels":[
+    {"type":"email","id":"usm_smtp","label":"jane@example.org","esp":"smtp","diagnostics":[]},
+    {"type":"whatsapp","id":"uwa_1","label":"+15550100199","diagnostics":[]}],"diagnostics":[]}
+]}}

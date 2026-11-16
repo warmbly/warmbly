@@ -1,0 +1,48 @@
+{
+  "success": true,
+  "data": {
+    "id": 237945,
+    "status": "paused",
+    "title": "New Campaign",
+    "email_accounts": [11980, 404404],
+    "linkedin_accounts": [3],
+    "priority": "high",
+    "tracking": {"open": true, "link_click": false},
+    "sending_settings": {
+      "sending_priority": "first_email",
+      "daily_sending_all": 120,
+      "daily_sending_new_recipients": 30,
+      "skip_unverifiable": true,
+      "skip_unverified": false,
+      "skip_who_replied": true,
+      "skip_company_domain_who_replied": false,
+      "skip_recipients_without_variables_data": true,
+      "skip_other_recipients_email_addresses": true,
+      "skip_recipients_added_to_my_another_campaign": false,
+      "skip_recipients_added_to_team_another_campaign": false,
+      "one_click_unsubscribe": true
+    },
+    "recipients": {"list_id": 8512947, "black_list_id": 8},
+    "schedule_id": 1074,
+    "start_campaign_at": "2027-03-25 09:00:00",
+    "complete_campaign_at": null,
+    "timezone": "America/New York",
+    "complete_campaign_after_last_step": false,
+    "archive_in_months": 3,
+    "provider_matching": false,
+    "sequence": {
+      "entry": "100",
+      "steps": [
+        {"_ref": "100", "type": "email", "content_slots": 2, "content": [{"id": 1000, "plain_text": false, "usage": "active"}, {"id": 1001, "plain_text": false, "usage": "pause"}], "next": "101"},
+        {"_ref": "101", "type": "delay", "waiting_type": "days", "waiting_val": 2, "next": "102"},
+        {"_ref": "102", "type": "trigger", "action": "open", "waiting_type": "hours", "waiting_val": 24, "yes": "103", "no": "104"},
+        {"_ref": "103", "type": "email", "content_slots": 1, "content": [{"id": 1030, "plain_text": false, "usage": "active"}], "next": "105"},
+        {"_ref": "104", "type": "linkedin", "action": "invite", "body": "Hi", "next": "106"},
+        {"_ref": "106", "type": "email", "content_slots": 1, "content": [{"id": 1060, "plain_text": true, "usage": "active"}], "next": "107"},
+        {"_ref": "107", "type": "delay", "waiting_type": "minutes", "waiting_val": 90, "next": "108"},
+        {"_ref": "108", "type": "email", "content_slots": 0, "content": [], "next": "105"},
+        {"_ref": "105", "type": "goal", "goal_name": "end"}
+      ]
+    }
+  }
+}

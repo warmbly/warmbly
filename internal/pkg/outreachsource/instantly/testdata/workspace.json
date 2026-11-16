@@ -1,0 +1,10 @@
+{
+  "id": "01a1d05a-877c-70a5-842d-eb707afa9498",
+  "timestamp_created": "2025-01-10T09:00:00.000Z",
+  "timestamp_updated": "2025-06-01T09:00:00.000Z",
+  "owner": "01a1d05a-877c-70a5-842d-eb7116c1a02b",
+  "name": "Acme Agency",
+  "plan_id": "pid_hg_v1",
+  "plan_id_bundle": null,
+  "add_unsub_to_block": true
+}

@@ -1,0 +1,6 @@
+{
+  "content": [
+    {"id": 12345678, "name": "Dunmore High School", "owner": "Jim Halpert", "active": true, "running_campaigns": 2, "email_slots": 2, "linkedin_slots": 1}
+  ],
+  "pagination_data": {"total_elements": 1, "total_pages": 1, "current_page_number": 1, "page_size": 50}
+}

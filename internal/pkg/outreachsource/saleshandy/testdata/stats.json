@@ -1,0 +1,9 @@
+{
+  "message": "Sequence consolidated fetched successfully",
+  "payload": {
+    "prospects": [{"total": "25", "replied": "2", "notContacted": "20"}],
+    "emails": {"total": 5, "status": {"scheduled": 0, "delivered": 5}},
+    "sequenceId": "JA5YdAr9wy",
+    "sequenceName": "Founders Q3"
+  }
+}

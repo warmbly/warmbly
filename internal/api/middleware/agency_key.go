@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -86,6 +87,26 @@ func (h *Handler) authenticateAgencyKey(c *gin.Context, raw string) (*models.Age
 	return k, true
 }
 
+// agencyClientAccess is the one check that lets an agency key act in a client workspace: the
+// workspace is a current client of the key's agency and the key's creator is an accepted member of it.
+// The key's bits are narrowed to the ones it may use in a workspace.
+func (h *Handler) agencyClientAccess(ctx context.Context, k *models.AgencyAPIKey, orgID uuid.UUID) (*models.OrganizationMember, uint64, *errx.Error) {
+	if xerr := h.AgencyKeys.RequireClient(ctx, k, orgID); xerr != nil {
+		return nil, 0, xerr
+	}
+	if h.OrganizationService == nil {
+		return nil, 0, errx.InternalError()
+	}
+	member, xerr := h.OrganizationService.GetMembership(ctx, orgID, k.CreatedBy)
+	if xerr != nil {
+		return nil, 0, xerr
+	}
+	if member == nil || member.AcceptedAt == nil {
+		return nil, 0, errAgencyKeyMemberGone
+	}
+	return member, k.Permissions & models.AgencyKeyWorkspaceScopes, nil
+}
+
 // validateAgencyKeyForWorkspace admits an agency key to one client workspace named by header,
 // checked to be a current client before the tenant is set.
 func (h *Handler) validateAgencyKeyForWorkspace(c *gin.Context, raw string) {
@@ -99,31 +120,64 @@ func (h *Handler) validateAgencyKeyForWorkspace(c *gin.Context, raw string) {
 		c.Abort()
 		return
 	}
-	if xerr := h.AgencyKeys.RequireClient(c.Request.Context(), k, orgID); xerr != nil {
-		errx.JSON(c, xerr)
-		c.Abort()
-		return
-	}
-	if h.OrganizationService == nil {
-		errx.JSON(c, errx.InternalError())
-		c.Abort()
-		return
-	}
-	member, xerr := h.OrganizationService.GetMembership(c.Request.Context(), orgID, k.CreatedBy)
+	member, perms, xerr := h.agencyClientAccess(c.Request.Context(), k, orgID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		c.Abort()
 		return
 	}
-	if member == nil || member.AcceptedAt == nil {
-		errx.JSON(c, errAgencyKeyMemberGone)
-		c.Abort()
-		return
-	}
-	c.Set(APIKeyPermissionsKey, k.Permissions&models.AgencyKeyWorkspaceScopes)
+	c.Set(APIKeyPermissionsKey, perms)
 	c.Set(OrganizationIDKey, orgID)
 	c.Set(SessionMemberKey, member)
 	c.Next()
+}
+
+// AgencyClient is what an agency key may do in one client workspace.
+type AgencyClient struct {
+	// Perms are the member's permissions there; an owner holds every one.
+	Perms models.OrganizationPermission
+	// APIPerms are the key's workspace bits.
+	APIPerms uint64
+}
+
+// agencyClientResolver resolves a client workspace for an agency key that named none up front.
+type agencyClientResolver func(ctx context.Context, orgID uuid.UUID) (*AgencyClient, *errx.Error)
+
+const agencyClientResolverKey = "agency_client_resolver"
+
+// validateAgencyKeyForAgency admits an agency key for its agency as a whole; a client workspace
+// is resolved per call through ResolveAgencyClient, with the same check the header path runs.
+func (h *Handler) validateAgencyKeyForAgency(c *gin.Context, raw string) {
+	k, ok := h.authenticateAgencyKey(c, raw)
+	if !ok {
+		return
+	}
+	c.Set(APIKeyPermissionsKey, k.Permissions)
+	c.Set(agencyClientResolverKey, agencyClientResolver(func(ctx context.Context, orgID uuid.UUID) (*AgencyClient, *errx.Error) {
+		member, perms, xerr := h.agencyClientAccess(ctx, k, orgID)
+		if xerr != nil {
+			return nil, xerr
+		}
+		// Nothing reached this way is scope-aware, which is how the gate treats a restricted member.
+		if member.IsRestricted() {
+			return nil, errMemberAccessRestricted
+		}
+		return &AgencyClient{Perms: memberPermissions(member), APIPerms: perms}, nil
+	}))
+	c.Next()
+}
+
+// ResolveAgencyClient checks an agency key admitted for its whole agency against one client workspace.
+func ResolveAgencyClient(c *gin.Context, orgID uuid.UUID) (*AgencyClient, *errx.Error) {
+	v, ok := c.Get(agencyClientResolverKey)
+	resolve, _ := v.(agencyClientResolver)
+	if !ok || resolve == nil {
+		return nil, errAgencyKeyOrgRequired
+	}
+	if orgID == uuid.Nil {
+		return nil, errAgencyKeyOrgRequired
+	}
+	return resolve(c.Request.Context(), orgID)
 }
 
 // AgencyAuthMiddleware admits a signed-in session or an agency API key to the agency endpoints.

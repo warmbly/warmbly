@@ -30,6 +30,7 @@ import CampaignFormsPanel from "@/components/app/campaigns/CampaignFormsPanel";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
 import CampaignPeriodPicker from "@/components/app/campaigns/CampaignPeriodPicker";
+import { trackedRate, trackedUnit } from "@/lib/trackedRate";
 import { formatWindow, loadCampaignPeriod, periodWindow, utcDay, utcToday, type CampaignPeriod, type DayWindow } from "@/lib/campaignPeriod";
 
 const AUTO_OPENS_TIP = "Auto-opens: pixel fetches from privacy proxies (e.g. Apple Mail) or within seconds of sending, not a person reading. Logged as delivery proof, not counted as opens";
@@ -135,12 +136,17 @@ export default function CampaignOverview() {
     const periodLabel = covered ? formatWindow(covered) : null;
 
     const shared = loading ? undefined : summary;
+    const openRate = trackedRate(summary?.open_rate, summary?.open_tracked_sent, summary?.emails_sent);
+    const clickRate = trackedRate(summary?.click_rate, summary?.click_tracked_sent, summary?.emails_sent);
     const shareData = {
         title: campaign?.name ?? "Campaign",
         subtitle: periodLabel ? `${allTime ? "All time, " : ""}${periodLabel}` : "Campaign",
         metrics: [
             { label: "Sent", value: shared ? num(shared.emails_sent) : "—", sub: "emails" },
-            { label: "Open rate", value: pct(shared?.open_rate) },
+            {
+                label: "Open rate",
+                value: shared && trackedRate(shared.open_rate, shared.open_tracked_sent, shared.emails_sent) == null ? "Off" : pct(shared?.open_rate),
+            },
             { label: "Reply rate", value: pct(shared?.reply_rate) },
             {
                 label: "Positive rate",
@@ -226,8 +232,8 @@ export default function CampaignOverview() {
                             />
                             <TrendStat
                                 label="Open rate"
-                                value={loading ? "—" : <AnimatedNumber value={summary?.open_rate ?? 0} format={pctFmt} />}
-                                unit="after delivery"
+                                value={loading ? "—" : openRate == null ? "Off" : <AnimatedNumber value={openRate} format={pctFmt} />}
+                                unit={trackedUnit(summary?.open_tracked_sent, summary?.emails_sent, "after delivery")}
                                 points={loading ? undefined : dayPoints.opens}
                                 pending={loading}
                                 tone="slate"
@@ -235,8 +241,8 @@ export default function CampaignOverview() {
                             />
                             <TrendStat
                                 label="Click rate"
-                                value={loading ? "—" : <AnimatedNumber value={summary?.click_rate ?? 0} format={pctFmt} />}
-                                unit="of delivered"
+                                value={loading ? "—" : clickRate == null ? "Off" : <AnimatedNumber value={clickRate} format={pctFmt} />}
+                                unit={trackedUnit(summary?.click_tracked_sent, summary?.emails_sent, "of delivered")}
                                 points={loading ? undefined : dayPoints.clicks}
                                 pending={loading}
                                 tone="slate"
@@ -377,6 +383,7 @@ export default function CampaignOverview() {
                                             count={s.opens ?? 0}
                                             rate={s.open_rate}
                                             sent={s.emails_sent ?? 0}
+                                            tracked={s.open_tracked_sent}
                                             tone="text-emerald-600"
                                             auto={s.machine_opens}
                                             autoTip={AUTO_OPENS_TIP}
@@ -386,6 +393,7 @@ export default function CampaignOverview() {
                                             count={s.clicks ?? 0}
                                             rate={s.click_rate}
                                             sent={s.emails_sent ?? 0}
+                                            tracked={s.click_tracked_sent}
                                             tone="text-violet-600"
                                             auto={s.machine_clicks}
                                             autoTip={AUTO_CLICKS_TIP}
@@ -492,6 +500,7 @@ function StepMetric({
     count,
     rate,
     sent,
+    tracked,
     tone,
     auto,
     autoTip,
@@ -501,17 +510,26 @@ function StepMetric({
     count: number;
     rate: number | undefined;
     sent: number;
+    // The sends that could register this metric, when it needs tracking.
+    tracked?: number;
     tone: string;
     auto?: number;
     autoTip?: string;
     desktopOnly?: boolean;
 }) {
-    // A step that has not sent has no rate, and 0.0% would read as a result.
-    const share = sent > 0 ? `${(rate ?? 0).toFixed(1)}%` : "—";
+    // A step that has not sent has no rate, and neither has one sent with
+    // tracking off: 0.0% would read as a result.
+    const off = sent > 0 && tracked === 0;
+    const base = tracked ?? sent;
+    const share = off ? "off" : sent > 0 ? `${(rate ?? 0).toFixed(1)}%` : "—";
     const flagged = !!auto && !!autoTip;
     const title = [
         `${label}: ${count.toLocaleString()}`,
-        sent > 0 ? `${share} of ${sent.toLocaleString()} sent` : "nothing sent yet",
+        off
+            ? "not tracked: tracking was off for this step's sends"
+            : sent > 0
+              ? `${share} of ${base.toLocaleString()} ${base < sent ? "tracked sends" : "sent"}`
+              : "nothing sent yet",
         flagged ? `${auto} automated. ${autoTip}` : null,
     ]
         .filter(Boolean)

@@ -518,7 +518,7 @@ function mailboxHint(a: OrganizationLimits["mailboxes"] | undefined, trial: bool
 }
 
 // Yearly when Stripe charges the plan's yearly price, else by period length (a rotated price or a granted plan).
-function isYearly(sub: Subscription | undefined, periodEnd: Date | null): boolean {
+function isYearly(sub: Subscription | null | undefined, periodEnd: Date | null): boolean {
     const yearlyId = sub?.plan?.stripe_price_id_yearly;
     if (yearlyId && sub?.stripe_price_id === yearlyId) return true;
     const start = sub?.current_period_start ? new Date(sub.current_period_start as unknown as string) : null;

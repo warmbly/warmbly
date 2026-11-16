@@ -242,6 +242,109 @@ func TestWarmupOffWhileSendingIsCriticalOnANewMailbox(t *testing.T) {
 	}
 }
 
+// Warmbly Cloud manages an enrolled mailbox's warmup, so its local columns being off is not evidence.
+func TestCloudEnrolledMailboxIsNotJudgedOnLocalWarmup(t *testing.T) {
+	m := healthyMailbox()
+	m.WarmupActive = false
+	m.CampaignLimit = newMailboxSafeCap
+	m.CloudOwnsWarmup = true
+
+	got := findingsByKey(Detect(snapshotOf(m), defaults()))
+	if _, fired := got["warmup_off_while_sending"]; fired {
+		t.Error("warmup-off fired on a mailbox enrolled in Warmbly Cloud")
+	}
+
+	m.WarmupPaused = true
+	if _, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["warmup_paused"]; fired {
+		t.Error("warmup-paused fired on a mailbox enrolled in Warmbly Cloud")
+	}
+
+	// The ramp finding names Cloud as the owner rather than reporting the local columns as warmup not running.
+	m.AgeDays, m.CampaignLimit = 3, 50
+	m.ColdSent30d, m.ColdSent7d, m.ColdSent1d = 120, 120, 45
+	f, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["mailbox_new_ramping_fast"]
+	if !fired {
+		t.Fatal("a new Cloud mailbox sending at full volume should still be flagged")
+	}
+	if _, ok := f.Evidence["warmup_running"]; ok || f.Evidence["warmup_managed_by_cloud"] != true {
+		t.Errorf("ramp evidence on a Cloud mailbox = %v, want Cloud ownership and no local warmup reading", f.Evidence)
+	}
+}
+
+// A self-host warms only among its own mailboxes, so missing warmup there is a suggestion, never an alarm.
+func TestWarmupFindingsAreSuggestionsOnASelfHost(t *testing.T) {
+	m := healthyMailbox()
+	m.WarmupActive = false
+	m.AgeDays = 10
+	m.CampaignLimit = newMailboxSafeCap
+
+	snap := snapshotOf(m)
+	snap.SelfHosted = true
+	f, fired := findingsByKey(Detect(snap, defaults()))["warmup_off_while_sending"]
+	if !fired {
+		t.Fatal("warmup-off should still be offered on a self-host")
+	}
+	if f.Severity != models.AdvisorLow {
+		t.Errorf("warmup-off on a self-host = %s, want low", f.Severity)
+	}
+	if f.Evidence["self_hosted"] != true {
+		t.Errorf("evidence = %v, want self_hosted so the narrator does not call it urgent", f.Evidence)
+	}
+
+	m.WarmupPaused = true
+	snap = snapshotOf(m)
+	snap.SelfHosted = true
+	if f := findingsByKey(Detect(snap, defaults()))["warmup_paused"]; f.Severity != models.AdvisorLow {
+		t.Errorf("warmup-paused on a self-host = %q, want low", f.Severity)
+	}
+
+	// A workspace that only wants real problems never sees it.
+	settings := defaults()
+	settings.MinSeverity = models.AdvisorMedium
+	snap = snapshotOf(m)
+	snap.SelfHosted = true
+	if got := Detect(snap, settings); len(got) != 0 {
+		t.Errorf("self-host warmup advice passed a medium severity floor: %v", findingsByKey(got))
+	}
+}
+
+// Leaving the header off is a legitimate choice until recipients complain or the volume is bulk.
+func TestUnsubscribeHeaderOffNeedsComplaintsOrBulkVolume(t *testing.T) {
+	camp := repository.AdvisorCampaign{ID: uuid.New(), Name: "Candidates", Status: "active", Sent: 450}
+	snap := snapshotOf(healthyMailbox())
+	snap.Campaigns = []repository.AdvisorCampaign{camp}
+	if _, fired := findingsByKey(Detect(snap, defaults()))["campaign_unsubscribe_header_off"]; fired {
+		t.Error("header-off fired on a low-volume campaign with no complaints")
+	}
+
+	camp.Complaints = 1
+	snap.Campaigns = []repository.AdvisorCampaign{camp}
+	f, fired := findingsByKey(Detect(snap, defaults()))["campaign_unsubscribe_header_off"]
+	if !fired || f.Severity != models.AdvisorHigh {
+		t.Errorf("header-off on an active campaign drawing complaints: fired=%v severity=%s, want high", fired, f.Severity)
+	}
+
+	camp.Complaints, camp.Sent = 0, googleBulkSenderDaily*30
+	snap.Campaigns = []repository.AdvisorCampaign{camp}
+	if _, fired := findingsByKey(Detect(snap, defaults()))["campaign_unsubscribe_header_off"]; !fired {
+		t.Error("header-off should fire at Google's bulk-sender volume")
+	}
+}
+
+// A self-host's tracking host is the operator's own, so it is not a shared domain.
+func TestSharedTrackingDomainIsNotRaisedOnASelfHost(t *testing.T) {
+	m := healthyMailbox()
+	m.TrackingDomain, m.TrackedOnMailboxHost = "", true
+	snap := snapshotOf(m)
+	if _, fired := findingsByKey(Detect(snap, defaults()))["mailbox_shared_tracking_domain"]; !fired {
+		t.Fatal("hosted: a tracked mailbox with no tracking domain should be flagged")
+	}
+	snap.SelfHosted = true
+	if _, fired := findingsByKey(Detect(snap, defaults()))["mailbox_shared_tracking_domain"]; fired {
+		t.Error("shared tracking domain fired on a self-host")
+	}
+}
+
 func TestSpamPlacementRespectsItsSampleFloorAndBands(t *testing.T) {
 	m := healthyMailbox()
 	m.WarmupPlacement = models.WarmupPlacementEvidence{MajorDelivered: minWarmupDeliveriesForPlacement - 1, MajorSpam: 5}
@@ -1064,7 +1167,7 @@ func busySnapshot() *repository.AdvisorSnapshot {
 			DailyLimit: 900, StartTime: "09:00", EndTime: "09:30",
 			SenderCount: 1, SenderCapacity: 50, PickedSenders: 1, SenderStrategy: "explicit",
 			StepCount: 2, EmailStepCount: 2, VariantCount: 1,
-			Sent: 3000, Opened: 300, Replied: 1, Bounced: 10,
+			Sent: 3000, Opened: 300, Replied: 1, Bounced: 10, Complaints: 2,
 			LeadsTotal: 1000, LeadsRemaining: 5,
 		},
 		{ID: otherID, Name: "Solo", Status: "active", StepCount: 1, EmailStepCount: 1, DailyLimit: 10, Sent: 10},

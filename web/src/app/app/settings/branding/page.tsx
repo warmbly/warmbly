@@ -78,6 +78,7 @@ function BrandingSettings() {
                 inherited={data?.inherited}
                 inheritedTheme={source === "agency" ? data?.effective.brand.theme : undefined}
                 fallbackName={orgName}
+                address={data?.portal_host || undefined}
                 poweredBy={data?.powered_by}
                 entitled={!!data?.effective.full_white_label}
                 canWrite={write.allowed}

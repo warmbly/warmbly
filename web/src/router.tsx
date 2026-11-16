@@ -113,15 +113,18 @@ export const dashboardPages = {
     webhooks: () => import("./app/app/settings/webhooks/page"),
     connections: () => import("./app/app/settings/connections/page"),
     data: () => import("./app/app/settings/data/page"),
+    migrate: () => import("./app/app/settings/migrate/page"),
     danger: () => import("./app/app/settings/danger/page"),
     agencyHome: () => import("./app/app/agency/page"),
     agencyInbox: () => import("./app/app/agency/inbox/page"),
     agencyClients: () => import("./app/app/agency/clients/page"),
+    agencyMailboxes: () => import("./app/app/agency/mailboxes/page"),
     agencyStaff: () => import("./app/app/agency/staff/page"),
     agencyUsage: () => import("./app/app/agency/usage/page"),
     agencyBilling: () => import("./app/app/agency/billing/page"),
     agencyBranding: () => import("./app/app/agency/branding/page"),
     agencyAPIKeys: () => import("./app/app/agency/api-keys/page"),
+    agencyMigrate: () => import("./app/app/agency/migrate/page"),
     notFound: () => import("./app/app/not-found"),
 };
 
@@ -430,6 +433,7 @@ const settingsChildren = [
     dash(settingsRoute, "webhooks", dashboardPages.webhooks, "Webhooks", loaders.webhooksLoader),
     dash(settingsRoute, "connections", dashboardPages.connections, "Connections"),
     dash(settingsRoute, "data", dashboardPages.data, "Data"),
+    dash(settingsRoute, "migrate", dashboardPages.migrate, "Migrate from another tool", loaders.migrateLoader),
     dash(settingsRoute, "danger", dashboardPages.danger, "Danger zone"),
 ] as const;
 // Legacy /app/billing entry points.
@@ -441,11 +445,13 @@ const agencyChildren = [
     dash(agencyRoute, "/", dashboardPages.agencyHome, "Agency", loaders.agencyLoader),
     dash(agencyRoute, "inbox", dashboardPages.agencyInbox, "Agency inbox", loaders.agencyInboxLoader),
     dash(agencyRoute, "clients", dashboardPages.agencyClients, "Agency clients", loaders.agencyClientsLoader),
+    dash(agencyRoute, "mailboxes", dashboardPages.agencyMailboxes, "Agency mailboxes", loaders.agencyMailboxesLoader),
     dash(agencyRoute, "usage", dashboardPages.agencyUsage, "Agency usage", loaders.agencyUsageLoader),
     dash(agencyRoute, "billing", dashboardPages.agencyBilling, "Agency billing", loaders.agencyBillingLoader),
     dash(agencyRoute, "staff", dashboardPages.agencyStaff, "Agency staff", loaders.agencyStaffLoader),
     dash(agencyRoute, "branding", dashboardPages.agencyBranding, "Agency branding", loaders.agencyBrandingLoader),
     dash(agencyRoute, "api-keys", dashboardPages.agencyAPIKeys, "Agency API keys", loaders.agencyAPIKeysLoader),
+    dash(agencyRoute, "migrate", dashboardPages.agencyMigrate, "Migrate from another tool", loaders.agencyMigrateLoader),
 ] as const;
 // The pages used to be tabs under /app/agency/settings; links to those keep working.
 const agencySettingsRoute = createRoute({ getParentRoute: () => agencyRoute, path: "settings" });

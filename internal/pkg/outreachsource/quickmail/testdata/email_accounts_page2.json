@@ -1,0 +1,6 @@
+{"data": {"emailAccounts": {
+  "nodes": [
+    {"id": "eac_3", "name": "Ops", "email": "ops@acme-mail.com", "type": "smtp", "dailySendingLimit": 0}
+  ],
+  "pageInfo": {"hasNextPage": false, "endCursor": "Mw"}
+}}}

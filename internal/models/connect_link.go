@@ -16,8 +16,11 @@ const (
 	ClientConnectLinkExhausted ClientConnectLinkStatus = "exhausted"
 )
 
-// ConnectLinkProviders are the ways a client may connect, as stored in email_provider.
-var ConnectLinkProviders = []InboxProvider{InboxProviderGoogle, InboxProviderOutlook, InboxProviderSMTPIMAP}
+// ConnectLinkVendor is the way in that is not one mailbox: the client connects an inbox vendor account and picks its mailboxes.
+const ConnectLinkVendor InboxProvider = "vendor"
+
+// ConnectLinkProviders are the ways a client may connect: the email_provider values, and a vendor account.
+var ConnectLinkProviders = []InboxProvider{InboxProviderGoogle, InboxProviderOutlook, InboxProviderSMTPIMAP, ConnectLinkVendor}
 
 const (
 	// ClientConnectLinkMaxMailboxes bounds one link's mailboxes, matching the table's check.

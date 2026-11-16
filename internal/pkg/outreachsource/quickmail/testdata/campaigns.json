@@ -1,0 +1,20 @@
+{"data": {"workspace": {"campaigns": {
+  "nodes": [
+    {
+      "id": "cmp_1", "name": "Q3 Founders", "paused": false, "createdAt": "2026-03-01T10:00:00Z",
+      "leadStatus": {"total": 120, "active": 80, "available": 20, "completed": 15, "failed": 5},
+      "steps": {"nodes": [
+        {"id": "stp_1", "position": 1, "variations": {"nodes": [{"info": {"__typename": "WaitVariation"}}]}},
+        {"id": "stp_2", "position": 2, "variations": {"nodes": [{"info": {"__typename": "EmailVariation"}}]}},
+        {"id": "stp_3", "position": 3, "variations": {"nodes": [{"info": {"__typename": "LinkedinMessageVariation"}}]}},
+        {"id": "stp_5", "position": 5, "variations": {"nodes": [{"info": {"__typename": "EmailVariation"}}]}}
+      ]}
+    },
+    {
+      "id": "cmp_2", "name": "Old list", "paused": true, "createdAt": "2025-11-20T08:30:00Z",
+      "leadStatus": {"total": 0, "active": 0, "available": 0, "completed": 0, "failed": 0},
+      "steps": {"nodes": []}
+    }
+  ],
+  "pageInfo": {"hasNextPage": false, "endCursor": "Mg"}
+}}}}

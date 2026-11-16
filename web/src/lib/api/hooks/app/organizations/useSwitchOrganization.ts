@@ -31,6 +31,11 @@ interface UseSwitchOrganizationOptions {
     mode?: "reset" | "sync";
 }
 
+// Identity and the agency view do not belong to a workspace, so a switch keeps them.
+function outlivesSwitch(key: readonly unknown[]): boolean {
+    return key[0] === "auth" || key[0] === "agency" || (key[0] === "brand" && key[1] === "agency");
+}
+
 export default function useSwitchOrganization({ mode = "reset" }: UseSwitchOrganizationOptions = {}) {
     const queryClient = useQueryClient();
 
@@ -40,20 +45,12 @@ export default function useSwitchOrganization({ mode = "reset" }: UseSwitchOrgan
             markOrgSynced(id);
             if (mode === "sync") {
                 queryClient.invalidateQueries({
-                    predicate: (q) => {
-                        const root = q.queryKey[0];
-                        return root !== "auth" && root !== "organizations";
-                    },
+                    predicate: (q) => !outlivesSwitch(q.queryKey) && q.queryKey[0] !== "organizations",
                 });
                 void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
                 return;
             }
-            queryClient.removeQueries({
-                predicate: (q) => {
-                    const root = q.queryKey[0];
-                    return root !== "auth";
-                },
-            });
+            queryClient.removeQueries({ predicate: (q) => !outlivesSwitch(q.queryKey) });
             void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
         },
     });

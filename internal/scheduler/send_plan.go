@@ -22,6 +22,10 @@ type CampaignSendPlanner interface {
 	// estimate) or for the whole workspace (the dashboard meter). A campaign
 	// with no daily limit clamps nothing at the campaign level.
 	PoolCapacityToday(ctx context.Context, campaign *models.Campaign, accounts []models.Email) (*models.WorkspaceSendCapacity, error)
+	// WorkspaceCapacityToday is what the workspace's running campaigns can
+	// send today: each of their mailboxes under the clamps of the campaign
+	// that sends from it. A mailbox no running campaign uses sends nothing.
+	WorkspaceCapacityToday(ctx context.Context, orgID uuid.UUID, accounts []models.Email) (*models.WorkspaceSendCapacity, error)
 	// ProjectCampaign simulates a campaign that may not exist yet day by
 	// day, for the wizard's estimate. Read-only.
 	ProjectCampaign(ctx context.Context, in CampaignProjectionInput) (*models.CampaignEstimateResult, error)
@@ -658,10 +662,78 @@ func (s *schedulerService) PoolCapacityToday(ctx context.Context, campaign *mode
 	// whose sends are unknown counts toward capacity and nothing toward
 	// remaining, which is the conservative side.
 	_ = s.prefillPool(ctx, pass, accounts)
+	return s.poolCapacity(ctx, pass, accounts, nil), nil
+}
+
+// WorkspaceCapacityToday implements CampaignSendPlanner.
+func (s *schedulerService) WorkspaceCapacityToday(ctx context.Context, orgID uuid.UUID, accounts []models.Email) (*models.WorkspaceSendCapacity, error) {
+	defaults := &models.Campaign{OrganizationID: &orgID, WarmupGraduation: true}
+	pass := s.newCampaignPass(ctx, defaults, accounts)
+	_ = s.prefillPool(ctx, pass, accounts)
+	caps, err := s.runningCampaignCaps(ctx, pass, orgID, accounts)
+	if err != nil {
+		return nil, err
+	}
+	sending := make([]models.Email, 0, len(caps))
+	for _, a := range accounts {
+		if _, ok := caps[a.ID]; ok {
+			sending = append(sending, a)
+		}
+	}
+	return s.poolCapacity(ctx, pass, sending, caps), nil
+}
+
+// runningCampaignCaps is each mailbox's cap under the running campaigns that
+// send from it. Campaigns sharing a mailbox share its cap, so the most
+// generous one is the mailbox's day.
+func (s *schedulerService) runningCampaignCaps(ctx context.Context, pass *campaignPass, orgID uuid.UUID, accounts []models.Email) (map[uuid.UUID]int, error) {
+	ids, err := s.campaignRepo.ListIDsByStatus(ctx, orgID, "active")
+	if err != nil {
+		return nil, err
+	}
+	inWorkspace := make(map[uuid.UUID]bool, len(accounts))
+	for _, a := range accounts {
+		inWorkspace[a.ID] = true
+	}
+	defaults := pass.campaign
+	defer func() { pass.campaign = defaults }()
+	now := time.Now()
+	caps := map[uuid.UUID]int{}
+	for _, id := range ids {
+		campaign, err := s.campaignRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		projectRampLevel(campaign, now)
+		senders, _, err := s.campaignSenders(ctx, campaign)
+		if err != nil {
+			return nil, err
+		}
+		pass.campaign = campaign
+		for _, acct := range senders {
+			if !inWorkspace[acct.ID] {
+				continue
+			}
+			stages, _ := stagedCap(pass, acct)
+			if prev, ok := caps[acct.ID]; !ok || stages[4] > prev {
+				caps[acct.ID] = stages[4]
+			}
+		}
+	}
+	return caps, nil
+}
+
+// poolCapacity sums a pool's day under pass's clamps; caps, when it names a
+// mailbox, replaces that mailbox's cap.
+func (s *schedulerService) poolCapacity(ctx context.Context, pass *campaignPass, accounts []models.Email, caps map[uuid.UUID]int) *models.WorkspaceSendCapacity {
 	out := &models.WorkspaceSendCapacity{}
 	for _, acct := range accounts {
 		out.ConfiguredCeiling += acct.CampaignLimit
 		stages, _ := stagedCap(pass, acct)
+		capv := stages[4]
+		if c, ok := caps[acct.ID]; ok {
+			capv = c
+		}
 		// A worker gap is minutes long, not a day's capacity.
 		if gate, _ := s.gateFor(ctx, pass, acct, 1); !gate.open() && gate.reason != gateBudget && gate.reason != gateNoWorker {
 			out.Held++
@@ -673,7 +745,6 @@ func (s *schedulerService) PoolCapacityToday(ctx context.Context, campaign *mode
 				continue
 			}
 		}
-		capv := stages[4]
 		if capv <= 0 {
 			out.Held++
 			continue
@@ -686,7 +757,7 @@ func (s *schedulerService) PoolCapacityToday(ctx context.Context, campaign *mode
 		}
 		out.Remaining += max(0, capv-sent)
 	}
-	return out, nil
+	return out
 }
 
 // prefillPool loads the pool's sends today and warmup health in one query

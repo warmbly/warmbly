@@ -5,7 +5,9 @@ package agencyhome
 
 import (
 	"context"
+	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/repository"
+	"golang.org/x/sync/errgroup"
 )
 
 // overviewTTL is how long one caller's agency home is reused.
@@ -23,6 +26,12 @@ const overviewTTL = 20 * time.Second
 const (
 	DefaultInboxLimit = 30
 	MaxInboxLimit     = 100
+)
+
+// Mailbox list page sizes.
+const (
+	DefaultMailboxLimit = 50
+	MaxMailboxLimit     = 200
 )
 
 // Agencies is the slice of the agency service this package needs.
@@ -77,6 +86,8 @@ var (
 	errInvalidCursor  = errx.NewWithIdentifier(errx.BadRequest, "invalid_cursor", "The cursor is not valid.")
 	errInvalidLimit   = errx.NewWithIdentifier(errx.BadRequest, "invalid_limit", "limit must be between 1 and 100.")
 	errMessageMissing = errx.New(errx.NotFound, "message not found")
+	// errUsage marks the usage read's own error inside the overview's parallel reads.
+	errUsage = errors.New("agency usage")
 )
 
 func internal(err error) *errx.Error {
@@ -132,26 +143,45 @@ func (s *Service) Overview(ctx context.Context, agencyID, userID uuid.UUID) (*mo
 		return hit.overview, nil
 	}
 
-	usage, xerr := s.agencies.Usage(ctx, agencyID, userID)
-	if xerr != nil {
-		return nil, xerr
-	}
+	// The reads are independent, so the page waits for the slowest rather than their sum.
 	p := partition(list)
-	campaigns, err := s.repo.CampaignStats(ctx, p.campaigns, now.Add(-7*24*time.Hour))
-	if err != nil {
-		return nil, internal(err)
-	}
+	var (
+		usage     *models.AgencyUsage
+		usageErr  *errx.Error
+		campaigns map[uuid.UUID]*models.AgencyClientCampaigns
+		mailboxes map[uuid.UUID]*models.AgencyClientMailboxes
+		replies   map[uuid.UUID]int64
+		advisor   map[uuid.UUID]*models.AgencyClientAdvisor
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		usage, usageErr = s.agencies.Usage(gctx, agencyID, userID)
+		if usageErr != nil {
+			return errUsage
+		}
+		return nil
+	})
+	g.Go(func() (err error) {
+		campaigns, err = s.repo.CampaignStats(gctx, p.campaigns, now.Add(-7*24*time.Hour))
+		return err
+	})
 	// The mailbox list is gated on view_campaigns, so its health is too.
-	mailboxes, err := s.repo.MailboxStats(ctx, p.campaigns)
-	if err != nil {
-		return nil, internal(err)
-	}
-	replies, err := s.repo.RepliesWaiting(ctx, p.inbox)
-	if err != nil {
-		return nil, internal(err)
-	}
-	advisor, err := s.repo.AdvisorCounts(ctx, p.advisor)
-	if err != nil {
+	g.Go(func() (err error) {
+		mailboxes, err = s.repo.MailboxStats(gctx, p.campaigns)
+		return err
+	})
+	g.Go(func() (err error) {
+		replies, err = s.repo.RepliesWaiting(gctx, p.inbox)
+		return err
+	})
+	g.Go(func() (err error) {
+		advisor, err = s.repo.AdvisorCounts(gctx, p.advisor)
+		return err
+	})
+	if err := g.Wait(); err != nil {
+		if errors.Is(err, errUsage) {
+			return nil, usageErr
+		}
 		return nil, internal(err)
 	}
 
@@ -163,7 +193,8 @@ func (s *Service) Overview(ctx context.Context, agencyID, userID uuid.UUID) (*mo
 	for _, m := range list {
 		c := models.AgencyOverviewClient{
 			OrganizationID: m.OrganizationID, Name: m.Name, AvatarURL: m.AvatarURL, Access: m.Access(),
-			PoolUsed: used[m.OrganizationID], MonthlySendLimit: m.MonthlySendLimit,
+			ManageMailboxes: m.Can(models.PermManageEmails),
+			PoolUsed:        used[m.OrganizationID], MonthlySendLimit: m.MonthlySendLimit,
 		}
 		if m.Can(models.PermViewCampaigns) {
 			c.Campaigns = orZero(campaigns[m.OrganizationID])
@@ -494,4 +525,74 @@ func (s *Service) Message(ctx context.Context, agencyID, userID, orgID, messageI
 		return nil, errMessageMissing
 	}
 	return msg, nil
+}
+
+// MailboxFilter narrows the agency's mailbox list.
+type MailboxFilter struct {
+	// Clients keeps these workspaces; empty keeps every client the caller can list.
+	Clients []uuid.UUID
+	Search  string
+	// Attention keeps mailboxes that are disconnected, erroring or held from warmup.
+	Attention bool
+	Limit     int
+	Cursor    string
+}
+
+// Mailboxes lists mailboxes across the clients whose mailbox list the caller reads, newest first.
+// A client where the caller is restricted to selected mailboxes is left out, like its numbers on the agency home.
+func (s *Service) Mailboxes(ctx context.Context, agencyID, userID uuid.UUID, f MailboxFilter) (*models.AgencyMailboxList, *errx.Error) {
+	if f.Limit == 0 {
+		f.Limit = DefaultMailboxLimit
+	}
+	if f.Limit < 1 || f.Limit > MaxMailboxLimit {
+		return nil, errx.NewWithIdentifier(errx.BadRequest, "invalid_limit", "limit must be between 1 and 200.")
+	}
+	q := models.AgencyMailboxQuery{Search: strings.TrimSpace(f.Search), Attention: f.Attention, Limit: f.Limit}
+	if f.Cursor != "" {
+		at, id, xerr := decodeCursor(f.Cursor)
+		if xerr != nil {
+			return nil, xerr
+		}
+		q.BeforeAt, q.BeforeID = at, id
+	}
+	list, xerr := s.memberships(ctx, agencyID, userID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	readable := map[uuid.UUID]bool{}
+	for _, m := range list {
+		// The workspace's own mailbox list is gated on view_campaigns.
+		if m.Can(models.PermViewCampaigns) {
+			readable[m.OrganizationID] = true
+		}
+	}
+	if len(f.Clients) == 0 {
+		for id := range readable {
+			q.OrgIDs = append(q.OrgIDs, id)
+		}
+	}
+	for _, id := range f.Clients {
+		isClient := false
+		for _, m := range list {
+			isClient = isClient || m.OrganizationID == id
+		}
+		if !isClient {
+			return nil, errClientNotFound
+		}
+		if readable[id] {
+			q.OrgIDs = append(q.OrgIDs, id)
+		}
+	}
+	rows, err := s.repo.Mailboxes(ctx, q)
+	if err != nil {
+		return nil, internal(err)
+	}
+	out := &models.AgencyMailboxList{Data: rows}
+	if len(rows) > f.Limit {
+		out.Data = rows[:f.Limit]
+		last := out.Data[len(out.Data)-1]
+		next := encodeCursor(last.CreatedAt, last.ID)
+		out.Pagination = models.CPagination{HasMore: true, NextCursor: &next}
+	}
+	return out, nil
 }

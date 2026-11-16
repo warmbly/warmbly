@@ -1,0 +1,5 @@
+{
+  "andrew@exp.example": {"exist": true, "status": "active"},
+  "johndoe@gmail.example": {"exist": true, "status": "unsubscribe"},
+  "rita@moss.example": {"exist": false, "status": null}
+}

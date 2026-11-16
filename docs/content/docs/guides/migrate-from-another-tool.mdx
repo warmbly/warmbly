@@ -1,0 +1,320 @@
+---
+title: Migrate from another tool
+description: "Bring your blocklist, mailboxes, campaigns and leads over from Smartlead, Instantly, lemlist, Reply.io, Woodpecker, Mailshake, Saleshandy, Snov.io, Apollo or QuickMail with an API key."
+---
+
+**Migrate from another tool** reads your old outreach tool through its API and rebuilds what it holds in Warmbly: the blocklist, the mailboxes, the campaigns with their steps and the leads in them. You paste an API key, see what Warmbly found, and choose what comes over. Warmbly only reads from the other tool and never changes anything there.
+
+## Run a migration
+
+<Steps>
+
+<Step>
+
+Open **Settings**, then **Migrate from another tool**, and choose **Start a migration**. An agency starts from **Migrate** in the agency dashboard instead (see [Agencies](#agencies)).
+
+</Step>
+
+<Step>
+
+**Tool**: pick the tool you are moving from.
+
+</Step>
+
+<Step>
+
+**Connect**: paste its API key. The step says where that tool keeps it, and the [tools](#the-tools) below do too. For a tool that issues one key per workspace, choose **Add another workspace key** for each workspace you want brought over.
+
+</Step>
+
+<Step>
+
+**Preview**: Warmbly reads the account and shows, for each source workspace, how many mailboxes, campaigns, leads and blocklist entries it holds, with every campaign listed. Choose what to bring over, which campaigns, whether to **Skip finished campaigns**, whether to **Start warmup on connected mailboxes**, and what happens to [leads part way through a sequence](#leads-part-way-through-a-sequence). Nothing changes in Warmbly until you start.
+
+</Step>
+
+<Step>
+
+**Migrate**: start it and follow the progress for each source workspace. It runs on the server, so closing the window does not stop it. When it finishes, the same screen lists what is left for you to do.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Campaigns arrive as drafts and never launch on their own. Pause each campaign in the old tool before you launch it in Warmbly, so nobody is emailed twice.
+- The blocklist is applied first, so nobody who opted out in the old tool is enrolled by a later step. Then come mailboxes, campaigns and leads, in that order.
+- Leads who replied, were interested or not interested, booked a meeting, bounced or unsubscribed are imported as contacts and never enrolled.
+- Every imported contact is filed under a contact category named after the tool, such as **From Smartlead**.
+- Warmup history and sender reputation stay with the mailbox provider and the old tool; they do not move. Analytics and past inbox conversations are not imported either.
+- A migration does not count against the limit of 20 new campaigns a day. It brings over at most 500 campaigns from each source workspace and lists any it left out.
+
+## What comes over
+
+| Kind | What Warmbly does with it |
+|------|---------------------------|
+| Blocklist | Blocked addresses and domains join the workspace's [suppression list](/guides/unsubscribe/), with the reason **Imported from** and the tool's name |
+| Mailboxes | SMTP and IMAP mailboxes connect with their saved passwords when the tool returns them. Every other mailbox is listed for you to connect again |
+| Campaigns | A draft campaign for each, with its email steps, A/B variants, waits, sending schedule, sender mailboxes and settings such as the daily limit, stop on reply and tracking |
+| Leads | Contacts with their custom fields, enrolled in the imported campaign according to where they stand in it |
+
+Leads come over with their campaigns, so they can only be chosen together with campaigns. A kind a tool does not share through its API is shown but cannot be chosen; export it from that tool and import the file instead.
+
+### Mailboxes
+
+A mailbox with its password comes over through an ordinary [mailbox import](/guides/mailbox-import/), which you can follow on the **Mailboxes** page. That only happens when both of these are true:
+
+- the tool returns the password. Of the supported tools, only Smartlead does, and only for SMTP and IMAP mailboxes
+- a signed-in person started the migration. A migration started with an API key, an OAuth app, the MCP server or the CLI never uses a password from the other tool
+
+Google and Microsoft mailboxes always sign in again, and so does every mailbox whose password the tool does not return. The finished migration lists them under **Mailboxes to connect again**, with two ways to do it: **Connect them myself**, or **Create a connect link** to send the owners a [client connect link](/guides/agencies/#client-connect-links) that works for 7 days. A mailbox already connected in the workspace is left as it is.
+
+### Campaigns
+
+Each campaign keeps its name and becomes a draft. Warmbly adds the mailboxes it sent from as its senders, matching them by address. A sender that is not connected in Warmbly yet is listed under the campaign as missing. Once you have connected those mailboxes, choose **Link senders again** on the migration and they are added to the campaigns that named them. Running it again changes nothing more.
+
+Merge fields and spintax are rewritten into Warmbly's syntax: `{{firstName|there}}` becomes `{{.FirstName | default "there"}}` and a token like `{{RANDOM | Hi | Hey}}` becomes `{Hi|Hey}`. A field Warmbly has no built-in name for becomes a custom field of the same name, filled from the lead's custom fields. Signature tokens are removed, because Warmbly adds the sending mailbox's own signature. See [Personalization](/guides/expressions/) for the syntax.
+
+A few things are adjusted to fit Warmbly. Each change is listed under **Did not carry over**, starting with the campaign's name:
+
+- non-email steps, such as LinkedIn, call and task steps, are not created
+- a merge field that could not be read is removed from the copy
+- waits between steps are rounded up to whole days, and shortened to 60 days at most
+- a minimum gap between sends is not copied, because Warmbly sets the gap on each mailbox
+- an end date already in the past is left off
+- a time zone Warmbly does not know is replaced by the workspace's
+
+Check each draft before you launch it. Where a tool does not share the email copy through its API, the draft has its steps and settings but the emails have to be written again.
+
+### Leads
+
+Each lead becomes a contact, or updates the contact you already have for that address. Unsubscribed and bounced leads are imported unsubscribed and their addresses are added to the suppression list. Leads with a final outcome (replied, interested, not interested, meeting booked, finished the sequence) and paused leads are imported but not enrolled. Leads who had not been sent anything yet are enrolled from the first step.
+
+## Leads part way through a sequence
+
+Choose what happens to a lead the old tool had already sent some of the sequence to:
+
+| Choice | What happens |
+|--------|--------------|
+| **Import without enrolling** | The lead is imported as a contact and left out of the campaign. This is the default |
+| **Restart from step one** | The lead is enrolled from the first step and is sent the whole sequence again |
+
+Picking up a lead at the step it reached in the old tool is not available: Warmbly would have to treat emails it never sent as sent. Import without enrolling is the safe default, because no one receives an email twice. Saleshandy prospects are never enrolled, whichever you choose. Leads that were not enrolled are filed under the tool's category (**From Smartlead**, for example), so you can find them and add them to a new campaign once the old one has finished with them.
+
+## The tools
+
+Each tool's API shares different things. The preview shows the same notes before you choose.
+
+| Tool | Blocklist | Mailboxes | Campaigns | Leads | Workspaces from one key |
+|------|-----------|-----------|-----------|-------|-------------------------|
+| Smartlead | Yes | Yes, SMTP with passwords | Yes | Yes | Every client |
+| Instantly | Yes | Listed to reconnect | Yes | Yes | Sub workspaces of an admin workspace; otherwise a key per workspace |
+| lemlist | Yes | Listed to reconnect | Yes | Yes | A key per team |
+| Reply.io | Yes | Listed to reconnect | Yes | Yes | A key per team |
+| Woodpecker | Yes | Listed to reconnect | Yes | Yes | Every active client account |
+| Mailshake | No | Listed to reconnect | Without email copy | Yes | A key per team |
+| Saleshandy | Yes | Listed to reconnect | Yes | As contacts only | Every workspace |
+| Snov.io | Yes | Listed to reconnect | Yes | Yes | One account |
+| Apollo | No | Listed to reconnect | Without steps or copy | Yes | One account |
+| QuickMail | Yes | Listed to reconnect | Yes | Yes | Every workspace in the agency |
+
+### Smartlead
+
+In Smartlead, click your profile icon, open **Settings** and copy the key from the **API Keys** section. Use the main account's key, not a client key, to see every client.
+
+- Each Smartlead client becomes its own workspace.
+- SMTP mailboxes come over with their passwords. Google and Microsoft mailboxes are signed in again.
+- Leads that are only in a lead list, outside every campaign, cannot be read through Smartlead's API.
+- Subsequences come over as separate campaigns, without the reply categories that moved leads into them.
+
+### Instantly
+
+In Instantly, open **Settings**, then **Integrations**, then **API Keys**, and create an API V2 key with the `all:read` scope.
+
+- Each Instantly key reads one workspace. An admin workspace key also reads the sub workspaces in its workspace group; add a key for every other workspace.
+- Instantly does not return mailbox passwords, so custom SMTP and IMAP mailboxes are asked for again.
+- Subsequences and Liquid conditions are not brought over.
+
+### lemlist
+
+In lemlist, open **Settings**, then **Integrations**, and generate an API key.
+
+- Each lemlist team has its own API key, so an agency adds one key per client team.
+- Only email steps are brought over. LinkedIn, call, WhatsApp, manual task and condition steps are listed so you can rebuild them.
+- Mailbox passwords are not available through the lemlist API, so each mailbox is connected again in Warmbly.
+- Unsubscribed LinkedIn URLs and phone numbers are not brought over, only addresses and domains.
+
+### Reply.io
+
+In Reply.io, open **Settings**, then **API Key**, and create or copy a key. A personal or Team key works; it needs read access to contacts, sequences and channels.
+
+- A Reply.io key reads one team, so an agency adds one key per client team. Organization keys are not supported.
+- Only email steps are brought over. LinkedIn, call, SMS, WhatsApp, task and condition steps are listed so you can rebuild them.
+- Mailbox passwords are not available through the Reply.io API, so each mailbox is connected again in Warmbly.
+- Reply.io's own global blacklist rules are not brought over, only your team's.
+
+### Woodpecker
+
+In Woodpecker, open **Add-ons**, then **API & Integrations**, then **API keys**, and create a key. The key needs Woodpecker's API keys add-on. An agency HQ key reads every active client account.
+
+- LinkedIn steps are not brought over.
+- Woodpecker's API cannot read campaigns with IF conditions, a scheduled start or manual task steps, so their emails are not brought over.
+- Mailbox passwords are not available through the API, so SMTP mailboxes are connected again in Warmbly.
+- Templates refer to custom snippets by number (`snippet_1` to `snippet_15`), as Woodpecker's API returns them.
+- Wildcard domain patterns in the blacklist are not brought over.
+
+### Mailshake
+
+In Mailshake, open **Extensions**, then **API**, and create a key.
+
+- Mailshake's API returns each email's subject but not its body, delay or sending hours, so campaigns need their emails written before they start.
+- Drip and on-click emails are not brought over.
+- The unsubscribe list cannot be read through Mailshake's API. Export it in Mailshake and upload the CSV as [suppressions](/guides/unsubscribe/).
+- Senders are connected again in Warmbly.
+- Mailshake meters its API by the hour, so a large team can take a few hours to read.
+
+### Saleshandy
+
+In Saleshandy, open **Settings**, then **API Keys**, and generate a key.
+
+- Saleshandy's API does not say which prospects are in a sequence, so prospects come over as contacts and are not enrolled in the imported campaigns.
+- Prospects belong to the whole Saleshandy account, so they are imported into the account's own workspace, not a client's.
+- Every do-not-contact list is applied to each workspace.
+- Mailbox passwords are not available through the API, so each mailbox is connected again.
+- LinkedIn, call, WhatsApp and task steps are not brought over.
+
+### Snov.io
+
+In Snov.io, open **Account settings**, then **API**, and copy the client ID and the client secret. Warmbly asks for both.
+
+- LinkedIn steps are not brought over.
+- Where a sequence branches on a condition, only the path for leads who did not meet it is brought over.
+- Snov.io's prospect lists hold names and addresses only, so company, job title and custom fields are not brought over.
+- Snov.io does not report how many emails a lead was sent, so a lead part way through a campaign cannot continue where it left off.
+- Mailbox passwords are not available through the API, so each mailbox is connected again.
+- Snov.io allows 60 API requests a minute, so a large account takes a while to read.
+
+### Apollo
+
+In Apollo, open **Settings**, then **Integrations**, then **API Keys**, and create a master key, or a scoped key allowed to search sequences, contacts, outreach emails, email accounts, schedules and custom fields.
+
+- Apollo's API does not return a sequence's steps or email copy, so sequences come over with their settings and their emails are written again in Warmbly.
+- Apollo mailboxes are linked Google or Microsoft accounts, so each one is connected again in Warmbly.
+- Apollo has no readable blocklist. Contacts marked unsubscribed in Apollo come over unsubscribed.
+- Apollo's contact search stops at 50,000 contacts, so a larger account brings over the first 50,000.
+
+This is separate from the [Apollo integration](/guides/apollo/), which keeps importing and enriching contacts from Apollo after you have moved.
+
+### QuickMail
+
+In QuickMail, open your agency settings, find **API Keys** and create an agency API key. API access has to be included in your QuickMail plan.
+
+- One QuickMail key reads every workspace in the agency.
+- QuickMail does not return mailbox passwords, so every inbox is connected again in Warmbly.
+- QuickMail's API does not say which workspace an inbox belongs to, so the agency's inboxes are listed for every workspace.
+- QuickMail's API does not return a campaign's sending schedule, inboxes or tracking settings; set them on the imported campaign.
+- QuickMail's API does not say how far each lead got in a campaign, so leads already in a campaign are restarted or skipped, never continued.
+- LinkedIn, call, task, SMS, Slack, webhook and checkpoint steps, Liquid conditions and domain-level Do Not Contact entries are not brought over.
+
+## Agencies
+
+An [agency](/guides/agencies/) moves every client in one pass from **Migrate** in the agency dashboard. Each source workspace lands in a client workspace of its own.
+
+How the source workspaces are found depends on the tool:
+
+- **One key reads them all**: Smartlead (each client), Woodpecker (each active client account with an agency HQ key), Saleshandy and QuickMail (each workspace in the agency). Paste the one key.
+- **One key per workspace**: Instantly, lemlist, Reply.io and Mailshake. Choose **Add another workspace key** and paste one key for each client you are moving. An Instantly admin workspace key also reads its sub workspaces.
+
+After the preview, the agency wizard adds a **Clients** step. For each source workspace choose **New client workspace** (named after the source workspace, which you can change), one of your existing clients, or **Skip**. A source workspace whose name matches an existing client is mapped to that client to begin with. The run then groups its progress by client, with **Open client** to go straight to one.
+
+Only the agency's owner and admins can start a migration. In each client it writes to, they need an accepted membership that covers the whole workspace and the permissions for what is brought over, as for a [workspace migration](#who-can-run-one).
+
+## Who can run one
+
+A migration needs permission to manage contacts. Bringing campaigns over also needs permission to manage campaigns, and bringing mailboxes over needs permission to manage mailboxes. A member restricted to [selected resources](/guides/team-roles/#access-scope) cannot run one, because a migration writes across the whole workspace.
+
+Up to 5 migrations can be in progress in one workspace or agency at a time.
+
+## Your API keys
+
+The key you paste is checked with the tool before anything else happens; a key the tool refuses stops the migration at the **Connect** step with that tool's own explanation. Warmbly stores the key encrypted only while the migration needs it, and deletes it when the migration finishes, is canceled or is removed from the list. A migration that sits untouched for 7 days has its key deleted too. The key is never shown again, in the dashboard or through the API.
+
+## After the migration
+
+<Steps>
+
+<Step>
+
+Connect the mailboxes listed under **Mailboxes to connect again**, yourself or through a connect link.
+
+</Step>
+
+<Step>
+
+Choose **Link senders again**, so the draft campaigns pick up the mailboxes you just connected.
+
+</Step>
+
+<Step>
+
+Open each campaign under **Draft campaigns to review**. Read its copy, check its senders and schedule, and read what is listed under **Did not carry over**.
+
+</Step>
+
+<Step>
+
+Pause the campaign in the old tool.
+
+</Step>
+
+<Step>
+
+[Launch](/guides/campaigns/#start-and-stop) it in Warmbly.
+
+</Step>
+
+</Steps>
+
+**Cancel migration** stops a running migration at its next checkpoint. What came over before that stays, and the rest is left in the old tool. **Remove from list** deletes a finished or canceled migration from the list and keeps everything it brought over.
+
+A migration and its stored key do not move with a [workspace export](/guides/workspace-export-import/). What it imported (the contacts, campaigns, mailboxes and suppressions) does.
+
+## Automate it
+
+Everything the wizard does is also available to an API key with the `IMPORT_TOOLS` permission, or an agency key with `AGENCY_MIGRATE`. A migration started this way never uses mailbox passwords from the other tool.
+
+- **REST**: `GET /migrations/providers` lists the tools and the credentials each needs. `POST /migrations` checks the key and starts the scan, `GET /migrations/:id` returns the preview once its `status` is `ready`, and `POST /migrations/:id/start` takes your choices. An agency uses the same routes under `/agency/:agencyId/migrations` and maps each source workspace in `targets`; a target that creates a new client also needs `AGENCY_MANAGE_CLIENTS` on an agency key. See the [endpoint scope map](/api/endpoints/#tool-migrations) and the [error codes](/api/error-codes/#tool-migration-refusals).
+- **MCP**: the [MCP server](/api/mcp/) has `create_migration`, `get_migration`, `start_migration` and the rest, for a workspace and for an agency.
+- **CLI**: `warmbly migration` and `warmbly agency migration` in the [CLI](/api/cli/).
+
+Create the migration with `POST /v1/migrations`. Each entry in `credentials` is one key, with the field names `GET /migrations/providers` lists for the tool:
+
+```json
+{
+  "provider": "smartlead",
+  "credentials": [{ "api_key": "..." }]
+}
+```
+
+When `GET /v1/migrations/:id` answers `status` `ready`, start it with `POST /v1/migrations/:id/start`:
+
+```json
+{
+  "options": {
+    "kinds": ["blocklist", "mailboxes", "campaigns", "leads"],
+    "in_flight": "restart",
+    "skip_finished": true,
+    "warmup": true
+  }
+}
+```
+
+## Related guides
+
+<Cards>
+  <Card title="Import mailboxes" href="/guides/mailbox-import/" />
+  <Card title="Contacts" href="/guides/contacts-crm/" />
+  <Card title="Campaigns" href="/guides/campaigns/" />
+  <Card title="Agencies" href="/guides/agencies/" />
+</Cards>

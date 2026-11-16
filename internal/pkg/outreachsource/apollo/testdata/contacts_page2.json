@@ -1,0 +1,43 @@
+{
+  "breadcrumbs": [],
+  "pagination": {"page": 2, "per_page": 3, "total_entries": 7, "total_pages": 2},
+  "contacts": [
+    {
+      "id": "c4",
+      "first_name": "Grace",
+      "last_name": "Hopper",
+      "email": "grace@example.com",
+      "emailer_campaign_ids": ["66e9e215ece19801b219997f"],
+      "contact_campaign_statuses": [
+        {"emailer_campaign_id": "66e9e215ece19801b219997f", "inactive_reason": "Completed last step", "status": "finished", "current_step_position": 3}
+      ],
+      "typed_custom_fields": {}
+    },
+    {
+      "id": "c5",
+      "first_name": "Alan",
+      "email": "alan@example.com",
+      "emailer_campaign_ids": ["66e9e215ece19801b219997f"],
+      "contact_campaign_statuses": [],
+      "typed_custom_fields": {}
+    },
+    {
+      "id": "c6",
+      "first_name": "Other",
+      "email": "other@example.com",
+      "emailer_campaign_ids": ["684b215edf80730019db612c"],
+      "contact_campaign_statuses": [
+        {"emailer_campaign_id": "684b215edf80730019db612c", "inactive_reason": "Sequence inactive", "status": "paused", "current_step_position": 1}
+      ],
+      "typed_custom_fields": {}
+    },
+    {
+      "id": "c7",
+      "first_name": "No",
+      "last_name": "Email",
+      "email": null,
+      "emailer_campaign_ids": [],
+      "contact_campaign_statuses": []
+    }
+  ]
+}

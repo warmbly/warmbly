@@ -45,6 +45,7 @@ import (
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/fleetnode"
+	"github.com/warmbly/warmbly/internal/app/fleetscale"
 	"github.com/warmbly/warmbly/internal/app/form"
 	"github.com/warmbly/warmbly/internal/app/group"
 	"github.com/warmbly/warmbly/internal/app/hubspot"
@@ -90,6 +91,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/team"
 	"github.com/warmbly/warmbly/internal/app/template"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/toolmigrate"
 	"github.com/warmbly/warmbly/internal/app/trial"
 	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/app/tz"
@@ -107,6 +109,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
+	"net/http"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
@@ -291,9 +294,15 @@ type Handler struct {
 	TypeSafe typesafe.Asker
 	AISearch generation.SearchClient
 
+	// Router is the backend's own router, which the assistant's API tools call through as the caller.
+	Router http.Handler
 	// AITools is the shared tool registry the dashboard agent and MCP server
 	// run on. Handlers bound to the invoking user's permissions.
 	AITools *aitools.Registry
+	// AgencyTools are the agency-wide tools an agency API key sees on the MCP server. Nil-safe.
+	AgencyTools *aitools.AgencyRegistry
+	// ToolMigrations brings data over from other outreach tools. Nil-safe.
+	ToolMigrations toolmigrate.API
 
 	// AIAgentService orchestrates the dashboard agent (sessions, SSE runs,
 	// approvals, per-iteration credits). Nil when no LLM provider is configured.
@@ -469,7 +478,9 @@ type Handler struct {
 	AdminSendsRepo   repository.AdminSendsRepository
 	AdminFleetRepo   repository.AdminFleetRepository
 	AdminInsightRepo repository.AdminInsightRepository
-	JobRuns          repository.JobRunRepository
+	// FleetScale moves the worker Auto Scaling Group's cap; nil unless FLEET_AUTOSCALING_GROUP is set.
+	FleetScale *fleetscale.Service
+	JobRuns    repository.JobRunRepository
 	// WebhookRepo backs the operator's "reclaim stuck deliveries" action.
 	WebhookRepo repository.WebhookRepository
 

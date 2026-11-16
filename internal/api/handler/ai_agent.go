@@ -47,8 +47,11 @@ func (h *Handler) jwtInvocation(c *gin.Context) (aitools.Invocation, *errx.Error
 		OrgPerms:    perms,
 		IsAPIKey:    false,
 		FreshAuthed: middleware.SessionFresh(c),
-		IP:          c.ClientIP(),
-		UserAgent:   c.Request.UserAgent(),
+		// Only this path is a person signed in to the dashboard.
+		ViaDashboardSession: middleware.GetAuthType(c) == middleware.AuthTypeJWT,
+		IP:                  c.ClientIP(),
+		UserAgent:           c.Request.UserAgent(),
+		API:                 h.agentAPI(c),
 	}, nil
 }
 

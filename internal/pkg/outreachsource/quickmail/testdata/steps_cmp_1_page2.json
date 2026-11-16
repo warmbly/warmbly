@@ -1,0 +1,17 @@
+{"data": {"campaign": {"steps": {
+  "nodes": [
+    {"id": "stp_3", "position": 3, "variations": {"nodes": [
+      {"id": "var_3", "position": 1, "type": "linkedin_message", "info": {"__typename": "LinkedinMessageVariation"}}
+    ], "pageInfo": {"hasNextPage": false, "endCursor": "MQ"}}},
+    {"id": "stp_4", "position": 4, "variations": {"nodes": [
+      {"id": "var_4", "position": 1, "type": "wait", "info": {"__typename": "WaitVariation", "unit": "hours", "value": 30, "business": false}}
+    ], "pageInfo": {"hasNextPage": false, "endCursor": "MQ"}}},
+    {"id": "stp_5", "position": 5, "variations": {"nodes": [
+      {"id": "var_5", "position": 1, "type": "email", "info": {"__typename": "EmailVariation", "subject": "", "body": "Following up, {{lead.first_name}}."}}
+    ], "pageInfo": {"hasNextPage": false, "endCursor": "MQ"}}},
+    {"id": "stp_6", "position": 6, "variations": {"nodes": [
+      {"id": "var_6", "position": 1, "type": "wait", "info": {"__typename": "WaitVariation", "unit": "minutes", "value": 45, "business": false}}
+    ], "pageInfo": {"hasNextPage": false, "endCursor": "MQ"}}}
+  ],
+  "pageInfo": {"hasNextPage": false, "endCursor": "NA"}
+}}}}

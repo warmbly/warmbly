@@ -21,6 +21,11 @@ func TestLiveCampaignStepRatesAreOfTheStepsOwnSends(t *testing.T) {
 	f := newSharedOrgFixture(t, pool)
 	ctx := context.Background()
 
+	// Rates of opens and clicks are of tracked sends; this campaign tracks both.
+	if _, err := pool.Exec(ctx, `UPDATE campaigns SET open_tracking = true, link_tracking = true, text_only = false WHERE id = $1`, f.campaign); err != nil {
+		t.Fatalf("tracking: %v", err)
+	}
+
 	// Two steps, created in order so position 1 is the intro.
 	intro, follow := uuid.New(), uuid.New()
 	for i, step := range []uuid.UUID{intro, follow} {

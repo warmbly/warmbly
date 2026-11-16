@@ -134,6 +134,12 @@ type ProductAnalytics interface {
 	Capture(name string, req analytics.Request, properties map[string]any)
 }
 
+// PartnerAttribution tags a subscription checkout so the partner program's
+// Stripe app can attribute its payments. Satisfied by *partners.Service.
+type PartnerAttribution interface {
+	CheckoutMetadata(ctx context.Context, orgID uuid.UUID) map[string]string
+}
+
 type stripeService struct {
 	cfg              *config.StripeConfig
 	subRepo          repository.SubscriptionRepository
@@ -148,12 +154,16 @@ type stripeService struct {
 	balanceCharges   repository.SavedCardChargeRepository
 	balance          BalanceSettler
 	agency           AgencyWebhooks
+	partners         PartnerAttribution
 }
 
 // AgencyWebhooks applies the Stripe events that bill an agency rather than a workspace.
 type AgencyWebhooks interface {
 	HandleStripeEvent(ctx context.Context, event *stripe.Event) (bool, *errx.Error)
 }
+
+// WirePartners tags checkouts of partner-referred workspaces (nil = no program).
+func (s *stripeService) WirePartners(p PartnerAttribution) { s.partners = p }
 
 // WireAgency routes agency billing events away from the workspace path.
 func (s *stripeService) WireAgency(a AgencyWebhooks) { s.agency = a }
@@ -276,6 +286,12 @@ func (s *stripeService) CreateCheckoutSessionUntil(ctx context.Context, userID u
 	}
 
 	businesscheckout.Apply(params)
+
+	if s.partners != nil {
+		for k, v := range s.partners.CheckoutMetadata(ctx, orgID) {
+			params.Metadata[k] = v
+		}
+	}
 
 	if customerID != "" {
 		params.Customer = stripe.String(customerID)

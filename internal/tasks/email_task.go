@@ -1217,6 +1217,12 @@ func (s *tasksService) replyPartner(ctx context.Context, target uuid.UUID, accou
 			return nil
 		}
 	}
+	// A partner can still send from an address that no longer receives; the draw's bounce rule holds for a reply.
+	if bounces, ok := s.warmupRepo.(repository.WarmupBouncedRecipients); ok && account.OrganizationID != nil {
+		if bounced, err := bounces.WarmupRecipientBounced(ctx, target, *account.OrganizationID); err != nil || bounced {
+			return nil
+		}
+	}
 	return partner
 }
 

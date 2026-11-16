@@ -1,6 +1,6 @@
 ---
 title: Permissions reference
-description: Complete reference for the 26 workspace and 4 agency API permissions available in Warmbly.
+description: Complete reference for the 27 workspace and 5 agency API permissions available in Warmbly.
 ---
 
 Warmbly uses a bitmask system for API permissions. Each permission is one bit in a `uint64`, so a single integer can express any combination of the permissions below.
@@ -41,14 +41,18 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `AGENCY_MANAGE_CLIENTS` | 27 | 134217728 | agency | Create, attach, cap and detach client workspaces |
 | `AGENCY_READ_USAGE` | 28 | 268435456 | agency | View the shared send pool and AI balance |
 | `AGENCY_TRANSFER_AI` | 29 | 536870912 | agency | Move AI balance from the agency into a client workspace |
+| `IMPORT_TOOLS` | 30 | 1073741824 | bulk | Migrate data in from another outreach tool |
+| `AGENCY_MIGRATE` | 31 | 2147483648 | agency | Migrate client accounts in from another outreach tool |
 
-Bits 26 to 29 exist only on [agency API keys](/api/authentication/#agency-api-keys). A workspace key or OAuth app never holds them, and `POST /api-keys` refuses them as unknown bits.
+Bits 26 to 29 and bit 31 exist only on [agency API keys](/api/authentication/#agency-api-keys). A workspace key or OAuth app never holds them, and `POST /api-keys` refuses them as unknown bits.
 
 `AI_AGENT` gates the web and playbook tools (`search_web`, `fetch_url`, `load_skill`) on [`/v1/mcp`](/api/mcp/) and [`/ai/tools`](/api/agent-tools/); every other tool there checks its own scope. It also gates the [AI skills](/api/endpoints/#ai-skills) endpoints for keys; creating, editing or deleting a playbook with a key further needs the member who created the key to hold `manage_settings`.
 
 `CONNECT_EMAILS` is the only scope that lets a key hand Warmbly a mailbox password: it gates the [mailbox connect](/api/endpoints/#mailbox-connect-partnership) routes, which take SMTP/IMAP credentials, mint Google and Microsoft sign-in links and save the workspace's own OAuth apps. Those routes also refuse a workspace that is not on the [Partnership plan](/guides/partnership/) with `403` `partnership_plan_required`. It is left out of the Full access preset, and an OAuth app can never be granted it.
 
 `MANAGE_REPORTS` covers creating and editing [client reports](/guides/client-reports/), minting and revoking their public links and setting their email schedules. A report link shows analytics to anyone who holds it, so this is separate from `READ_ANALYTICS`, which is all that listing, reading and previewing a report takes.
+
+`IMPORT_TOOLS` covers [migrating from another tool](/guides/migrate-from-another-tool/): the `/migrations` routes and the migration tools on the MCP server. It is numbered after the agency bits so no earlier bit moved. A migration writes contacts, suppressions, draft campaigns and mailboxes across the workspace, so the member behind the key also needs `manage_campaigns` to bring campaigns over and `manage_emails` to bring mailboxes over. A migration started with a key never uses mailbox passwords from the other tool.
 
 `SEND_CAMPAIGNS` is intentionally separate from `WRITE_CAMPAIGNS`: editing a campaign draft and starting one that actually transmits mail are different blast radii, so a key can be granted the first without the second. An [inbox placement test](/guides/placement-tests/) sends real mail from a real mailbox too, so starting or cancelling one, and scheduling a campaign's placement monitor, takes `SEND_CAMPAIGNS`, while reading results takes `READ_ANALYTICS`.
 
@@ -80,6 +84,7 @@ The agency's own endpoints under `/v1/agency/:agencyId`. Only an agency API key 
 | `AGENCY_MANAGE_CLIENTS` | Create, attach, update (send and AI caps) and detach clients |
 | `AGENCY_READ_USAGE` | `GET /agency/:agencyId/usage` and `GET /agency/:agencyId/ai-balance` |
 | `AGENCY_TRANSFER_AI` | `POST /agency/:agencyId/clients/:orgId/ai-balance` |
+| `AGENCY_MIGRATE` | The `/agency/:agencyId/migrations` routes, which [migrate](/guides/migrate-from-another-tool/#agencies) a source account into client workspaces. Mapping a source workspace to a new client also needs `AGENCY_MANAGE_CLIENTS` |
 
 An agency key never holds `API_KEYS`, `REALTIME_SUBSCRIBE` or `CONNECT_EMAILS`: it manages no workspace keys, opens no realtime socket and takes no mailbox credentials.
 
@@ -95,7 +100,7 @@ An API key or an OAuth grant acts for a member of the workspace, so it never hol
 | `READ_ANALYTICS`, `READ_AUDIT_LOGS` | `view_analytics` |
 | `WRITE_EMAILS`, `CONNECT_EMAILS` | `manage_emails` |
 | `WRITE_CAMPAIGNS`, `WRITE_TEMPLATES`, `BULK_CAMPAIGNS` | `manage_campaigns` |
-| `WRITE_CONTACTS`, `WRITE_CRM`, `BULK_CONTACTS` | `manage_contacts` |
+| `WRITE_CONTACTS`, `WRITE_CRM`, `BULK_CONTACTS`, `IMPORT_TOOLS` | `manage_contacts` |
 | `SEND_CAMPAIGNS` | `send_campaigns` |
 | `WEBHOOKS`, `WARMUP_ROUTING` | `manage_settings` |
 | `API_KEYS` | `manage_api_keys` |
@@ -129,12 +134,12 @@ READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
 = 688159
 ```
 
-### Full access (50331647)
+### Full access (1124073471)
 
 Every workspace permission except `CONNECT_EMAILS`, which is granted by hand:
 
 ```
-((1 << 26) - 1) & ~16777216 = 50331647
+(((1 << 26) - 1) & ~16777216) | 1073741824 = 1124073471
 ```
 
 ### Agency key presets
@@ -142,7 +147,7 @@ Every workspace permission except `CONNECT_EMAILS`, which is granted by hand:
 `GET /agency/:agencyId/api-keys/permissions` returns the bits an agency key may hold, grouped as `workspace` and `agency`, with two presets:
 
 - **Read only (336232479)**: the workspace read set plus `AGENCY_READ` and `AGENCY_READ_USAGE`, `688159 | 67108864 | 268435456`.
-- **Full access (1056954367)**: every bit an agency key may hold, which is every workspace bit except `API_KEYS`, `REALTIME_SUBSCRIBE` and `CONNECT_EMAILS` (50321407) plus the four agency bits (1006632960).
+- **Full access (4278179839)**: every bit an agency key may hold, which is every workspace bit except `API_KEYS`, `REALTIME_SUBSCRIBE` and `CONNECT_EMAILS` (1124063231) plus the five agency bits (3154116608).
 
 ## Working with bitmasks
 
@@ -170,7 +175,7 @@ hasPermission(16387, 64);    // false: WRITE_CAMPAIGNS missing
 
 ### Rejecting unknown bits
 
-`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `33554431`. `POST /agency/:agencyId/api-keys` does the same against `536860671` and answers `400` `invalid_agency_key_permissions`.
+`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `1140850687`. `POST /agency/:agencyId/api-keys` does the same against `4278179839` and answers `400` `invalid_agency_key_permissions`.
 
 ## Common permission sets
 
@@ -259,6 +264,10 @@ export const Permissions = {
   AGENCY_MANAGE_CLIENTS: 134217728,
   AGENCY_READ_USAGE: 268435456,
   AGENCY_TRANSFER_AI: 536870912,
+  // A workspace permission, numbered after the agency bits
+  IMPORT_TOOLS: 1073741824,
+  // Agency API keys only
+  AGENCY_MIGRATE: 2147483648,
 } as const;
 ```
 
@@ -299,6 +308,10 @@ class Permissions:
     AGENCY_MANAGE_CLIENTS = 134217728
     AGENCY_READ_USAGE = 268435456
     AGENCY_TRANSFER_AI = 536870912
+    # A workspace permission, numbered after the agency bits
+    IMPORT_TOOLS = 1073741824
+    # Agency API keys only
+    AGENCY_MIGRATE = 2147483648
 ```
 
 </Tab>
@@ -338,6 +351,10 @@ const (
     APIPermAgencyManageClients                  // 134217728
     APIPermAgencyReadUsage                      // 268435456
     APIPermAgencyTransferAI                     // 536870912
+    // A workspace permission, numbered after the agency bits
+    APIPermImportTools                          // 1073741824
+    // Agency API keys only
+    APIPermAgencyMigrate                        // 2147483648
 )
 ```
 

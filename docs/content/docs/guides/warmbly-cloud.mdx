@@ -233,7 +233,7 @@ Premium is the workspace's regular hosted plan, not a separate purchase: a works
 
 ## Safety and enforcement
 
-Enrolled mailboxes are ordinary members of the hosted pool and are held to the same rules: verification tokens on every warmup message, complaint and bounce tracking with automatic quarantine or blocking when a mailbox starts hurting partners, and spam placement that slows a mailbox down. A mailbox that gets quarantined on the cloud stops being offered to partners and re-enters on the same probation terms as any hosted mailbox.
+Enrolled mailboxes are ordinary members of the hosted pool and are held to the same rules: verification tokens on every warmup message, complaint and bounce tracking with automatic quarantine or blocking when a mailbox starts hurting partners, partners whose address [hard-bounces](/guides/warmup/#mailboxes-the-pool-cannot-reach) dropped from the draw, and spam placement that slows a mailbox down. A mailbox that gets quarantined on the cloud stops being offered to partners and re-enters on the same probation terms as any hosted mailbox.
 
 Your instance holds the mailbox to the cloud's verdict as well, exactly as it would one from its own pool. It reads every enrolled mailbox's standing from the cloud every five minutes, on enrolling, pausing or resuming, and when loading the mailbox list in **Settings > Warmbly Cloud**. A recognized status from that list refreshes the local observation instead of being replaced by an older cached status. From then on:
 

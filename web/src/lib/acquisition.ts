@@ -4,7 +4,8 @@
 // "start free" links (see site/src/layouts/Layout.astro), the dashboard reads
 // them off its own URL at signup, and the backend writes them once onto the new
 // organization. No cookie, no localStorage, and nothing captured before someone
-// actually signs up.
+// actually signs up. A partner referral's click id travels the same way, as
+// wb_click.
 //
 // This is first-party on purpose. Cookieless analytics answers "which page
 // converts" for a day, because the identifying salt is rotated daily; this
@@ -19,6 +20,7 @@ export interface Acquisition {
     utm_campaign?: string;
     utm_term?: string;
     utm_content?: string;
+    partner_click_id?: string;
 }
 
 // The parameters carried across. The five UTM names are the conventional set
@@ -44,6 +46,9 @@ export function acquisitionSearch(search: string): Record<string, string> {
         const value = clamp(params.get(name));
         if (value) result[name] = value;
     }
+    // Validated, and renamed from dub_id when a partner link points at the dashboard.
+    const click = partnerClick(params);
+    if (click) result.wb_click = click;
     return result;
 }
 
@@ -73,7 +78,23 @@ export function readAcquisition(search: string = window.location.search): Acquis
     const referrer = (forwarded ? hostOf(forwarded) : undefined) ?? hostOf(document.referrer);
     if (referrer) acquisition.referrer_host = referrer;
 
+    const click = partnerClick(params);
+    if (click) acquisition.partner_click_id = click;
+
     return acquisition;
+}
+
+// A partner click id is a short nanoid; anything else was not issued for a click.
+const PARTNER_CLICK_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// wb_click is what the marketing site carries; dub_id is the link service's own
+// name, seen when a partner link points at the dashboard directly.
+function partnerClick(params: URLSearchParams): string | undefined {
+    for (const candidate of [params.get("wb_click"), params.get("dub_id")]) {
+        const value = candidate?.trim();
+        if (value && PARTNER_CLICK_ID.test(value)) return value;
+    }
+    return undefined;
 }
 
 // Omit the field entirely when no acquisition data is available.

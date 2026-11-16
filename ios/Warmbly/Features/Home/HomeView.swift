@@ -35,6 +35,7 @@ struct HomeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.switchTab) private var switchTab
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.shellLayout) private var shell
     @State private var store = HomeStore()
     @State private var path: [HomeRoute] = []
     @State private var appeared = false
@@ -272,7 +273,8 @@ struct HomeView: View {
 
     private var topBar: some View {
         HStack(spacing: 10) {
-            orgMenu
+            // The iPad sidebar heads with the workspace already.
+            if shell.bar != .sidebar { orgMenu }
             Spacer()
             PresenceAvatars()
         }

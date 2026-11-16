@@ -9,25 +9,42 @@ import (
 )
 
 const (
-	openAIMaxTools     = 128
+	// maxWireTools is OpenAI's per-request tool limit, held for every provider.
+	maxWireTools       = 128
 	toolSearchPageSize = 20
+	// maxLoadedTools bounds the discovered tools kept on the wire beside the core set.
+	maxLoadedTools = 40
 )
 
-// toolCatalog exposes oversized registries in bounded pages without changing execution or approval.
+// toolCatalog keeps deferred tools off the wire until the model searches for
+// them, without changing how any tool executes or is approved.
 type toolCatalog struct {
 	all    []ToolDef
-	active []ToolDef
+	core   []ToolDef
+	loaded []ToolDef // most recently found or used first
 	search ToolDef
 }
 
+// newToolCatalog returns nil when every tool can be sent as is. Tools marked
+// Deferred wait for discovery; an unmarked set over the wire limit defers all of them.
 func newToolCatalog(tools []ToolDef, messages []AgentMessage) *toolCatalog {
-	if len(tools) <= openAIMaxTools {
+	deferred := false
+	for _, t := range tools {
+		deferred = deferred || t.Deferred
+	}
+	if !deferred && len(tools) <= maxWireTools {
 		return nil
 	}
 	c := &toolCatalog{all: tools}
 	byName := make(map[string]ToolDef, len(tools))
 	for _, t := range tools {
 		byName[t.Name] = t
+		if deferred && !t.Deferred {
+			c.core = append(c.core, t)
+		}
+	}
+	if len(c.core) > maxWireTools-maxLoadedTools-1 {
+		c.core = c.core[:maxWireTools-maxLoadedTools-1]
 	}
 	name := "search_available_tools"
 	for i := 2; ; i++ {
@@ -38,7 +55,7 @@ func newToolCatalog(tools []ToolDef, messages []AgentMessage) *toolCatalog {
 	}
 	c.search = ToolDef{
 		Name:        name,
-		Description: "Find available tools by keywords in their names or descriptions. Loads up to 20 matching tools for your next turn, replacing the previous selection. Use an empty query to browse all tools; use next_offset to get the next page. Discovery does not execute the tools.",
+		Description: "Find more tools by keywords in their names or descriptions, and load up to 20 matches for your next turn. Use it whenever the tools you can see do not cover the task: there are many more for contacts, campaigns, sequences, mailboxes, warmup, the inbox, CRM, segments, forms, automations, settings and connected apps. An empty query browses everything; next_offset pages on. Discovery does not run anything.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -52,32 +69,44 @@ func newToolCatalog(tools []ToolDef, messages []AgentMessage) *toolCatalog {
 		Handler: c.find,
 	}
 
-	// Restore only tools still permitted in this invocation, including after an approval pause.
-	seen := map[string]bool{}
-	for i := len(messages) - 1; i >= 0 && len(c.active) < toolSearchPageSize; i-- {
-		for j := len(messages[i].ToolCalls) - 1; j >= 0 && len(c.active) < toolSearchPageSize; j-- {
-			call := messages[i].ToolCalls[j]
+	// Replay discovery and use in order, so a resumed run sees the tools it had, limited to what is permitted now.
+	for _, m := range messages {
+		for _, call := range m.ToolCalls {
 			if call.Name == c.search.Name {
-				if len(c.active) == 0 {
-					_, _ = c.find(context.Background(), call.Args)
-				}
-				return c
-			}
-			if tool, ok := byName[call.Name]; ok && !seen[call.Name] {
-				c.active = append(c.active, tool)
-				seen[call.Name] = true
+				_, _ = c.find(context.Background(), call.Args)
+			} else if tool, ok := byName[call.Name]; ok {
+				c.load(tool)
 			}
 		}
 	}
 	return c
 }
 
+// load puts a deferred tool at the front of the loaded set, evicting the least recent past the bound.
+func (c *toolCatalog) load(tool ToolDef) {
+	for _, t := range c.core {
+		if t.Name == tool.Name {
+			return
+		}
+	}
+	kept := []ToolDef{tool}
+	for _, t := range c.loaded {
+		if t.Name != tool.Name && len(kept) < maxLoadedTools {
+			kept = append(kept, t)
+		}
+	}
+	c.loaded = kept
+}
+
 func (c *toolCatalog) definitions() []ToolDef {
-	return append(append([]ToolDef(nil), c.active...), c.search)
+	out := make([]ToolDef, 0, len(c.core)+len(c.loaded)+1)
+	out = append(out, c.core...)
+	out = append(out, c.loaded...)
+	return append(out, c.search)
 }
 
 func (c *toolCatalog) instructions() string {
-	return fmt.Sprintf("\n\nThe full tool catalog is available through %s. If a needed tool is not currently listed, search for it before acting or saying it is unavailable. Search by short keywords, or browse with an empty query and pagination. Each search loads a new page of tools for the next turn; call those tools by their original names with their documented arguments.", c.search.Name)
+	return fmt.Sprintf("\n\nOnly some of your tools are listed; the rest load through %s. If a needed tool is not listed, search for it before acting or saying something cannot be done. Search by short keywords, or browse with an empty query and pagination. Found tools stay loaded for the following turns; call them by their names with their documented arguments.", c.search.Name)
 }
 
 type toolSearchMatch struct {
@@ -93,7 +122,7 @@ type toolSearchResult struct {
 	NextOffset   *int              `json:"next_offset,omitempty"`
 }
 
-// find preserves matching argument schemas in the transcript while replacing the active tool page.
+// find returns matching tools with their argument schemas and loads them for the next turn.
 func (c *toolCatalog) find(_ context.Context, args json.RawMessage) (string, error) {
 	var input struct {
 		Query  string `json:"query"`
@@ -134,10 +163,12 @@ func (c *toolCatalog) find(_ context.Context, args json.RawMessage) (string, err
 	if end < len(matches) {
 		result.NextOffset = &end
 	}
-	c.active = nil
-	for _, match := range matches[start:end] {
+	page := matches[start:end]
+	for i := len(page) - 1; i >= 0; i-- {
+		c.load(page[i].tool)
+	}
+	for _, match := range page {
 		tool := match.tool
-		c.active = append(c.active, tool)
 		result.Tools = append(result.Tools, toolSearchMatch{Name: tool.Name, Description: tool.Description, Risk: tool.Risk, InputSchema: tool.InputSchema})
 	}
 	out, err := json.Marshal(result)

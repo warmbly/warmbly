@@ -1,0 +1,45 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1002,
+      "email_campaign_id": 101,
+      "seq_number": 2,
+      "subject": "",
+      "follow_up_subject": "Quick question about {{company_name}}",
+      "email_body": "<p>{{#if first_name}}Hey {{first_name}},{{else}}Hey there,{{/if}}</p><p>Good {{sl_time_of_day}}. {{#if employees 'gte' 50}}Big team!{{/if}}</p><p>%sender-firstname%</p>%signature%",
+      "seq_delay_details": {"delay_in_days": 3},
+      "sequence_variants": []
+    },
+    {
+      "id": 1001,
+      "email_campaign_id": 101,
+      "seq_number": 1,
+      "subject": "Quick question about {{company_name}}",
+      "email_body": "<p>Hi {{first_name}},</p><p>I saw {{Company Size}} at {{company_name}}.</p><p>%sender-name%<br>%unsubscribe-text%</p>",
+      "seq_delay_details": {"delay_in_days": 0},
+      "sequence_variants": [
+        {"id": 5001, "variant_label": "A", "subject": "Quick question about {{company_name}}", "email_body": "<p>Hi {{first_name}},</p><p>I saw {{Company Size}} at {{company_name}}.</p><p>%sender-name%<br>%unsubscribe-text%</p>"},
+        {"id": 5002, "variant_label": "B", "subject": "{{first_name}}, a thought on {{company_name}}", "email_body": "{Hi|Hey} {{first_name}}, short one."},
+        {"id": 5003, "variant_label": "C", "subject": "old", "email_body": "old", "is_deleted": true}
+      ]
+    },
+    {
+      "id": 1003,
+      "email_campaign_id": 101,
+      "seq_number": 3,
+      "subject": "A different angle",
+      "email_body": "Plain text follow-up for {{first_name}}.",
+      "seq_delay_details": {"delayInDays": 5}
+    },
+    {
+      "id": 1004,
+      "email_campaign_id": 101,
+      "seq_number": 4,
+      "seq_type": "LINKEDIN",
+      "subject": "",
+      "email_body": "",
+      "seq_delay_details": {"delay_in_days": 2}
+    }
+  ]
+}

@@ -151,8 +151,7 @@ type WebhookAware interface {
 
 type contactService struct {
 	contactRepository  repository.ContactRepository
-	subRepo            repository.SubscriptionRepository
-	planRepo           repository.PlanRepository
+	limits             ContactLimiter
 	streamingPublisher *pubsub.StreamingPublisher
 	campaignWaker      CampaignWaker
 	segmentLinker      SegmentLinker
@@ -203,10 +202,14 @@ type OrgRiskAware interface {
 	WireOrgRisk(r orgrisk.Service)
 }
 
+// ContactLimiter is the organization's contact ceiling; satisfied by feature.FeatureGateService.
+type ContactLimiter interface {
+	ContactLimit(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
+}
+
 func NewService(
 	contactRepository repository.ContactRepository,
-	subRepo repository.SubscriptionRepository,
-	planRepo repository.PlanRepository,
+	limits ContactLimiter,
 	streamingPublisher ...*pubsub.StreamingPublisher,
 ) ContactService {
 	var publisher *pubsub.StreamingPublisher
@@ -216,8 +219,7 @@ func NewService(
 
 	return &contactService{
 		contactRepository:  contactRepository,
-		subRepo:            subRepo,
-		planRepo:           planRepo,
+		limits:             limits,
 		streamingPublisher: publisher,
 	}
 }

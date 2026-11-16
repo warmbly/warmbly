@@ -3,7 +3,9 @@
 -- proof), and "Meridian Outbound" has the seeded workspace as a client and no plan yet. Re-runnable.
 BEGIN;
 
-UPDATE users SET admin_permissions = 8388607 WHERE id = '11111111-0000-0000-0000-000000000001';
+-- The product tour is marked seen, so it does not open over a walkthrough on a fresh database.
+UPDATE users SET admin_permissions = 8388607, product_tour_completed_at = COALESCE(product_tour_completed_at, now())
+WHERE id = '11111111-0000-0000-0000-000000000001';
 UPDATE sessions SET mfa_verified = true WHERE user_id = '11111111-0000-0000-0000-000000000001';
 
 INSERT INTO agencies (id, name, owner_user_id, status)
@@ -20,7 +22,11 @@ INSERT INTO agency_clients (organization_id, agency_id, added_by)
 VALUES ('22222222-0000-0000-0000-000000000001', 'a9e00000-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001')
 ON CONFLICT (organization_id) DO UPDATE SET agency_id = EXCLUDED.agency_id;
 
+-- The agency holds no inbox vendor account, so flows/agency-mailboxes.flow.ts connects its first.
+DELETE FROM agency_vendor_connections WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 DELETE FROM agency_pool_topups WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
+-- No brand yet, so the branding page opens as a new agency sees it.
+DELETE FROM agency_brands WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 DELETE FROM agency_ai_transactions WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 DELETE FROM agency_ai_ledger WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 UPDATE subscriptions SET managed_at = NULL, managed_by = NULL, managed_reason = NULL, managed_until = NULL,

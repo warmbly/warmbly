@@ -29,6 +29,8 @@ type Factory struct {
 	AssumeYes bool
 	NoColor   bool
 	Debug     bool
+	// Organization names the client workspace an agency key acts in.
+	Organization string
 
 	cfg   *config.Config
 	hosts config.Hosts
@@ -88,6 +90,10 @@ func (f *Factory) Client() (*api.Client, error) {
 		return nil, err
 	}
 	c := api.New(r.APIURL, r.Token, UserAgent())
+	c.Organization = strings.TrimSpace(f.Organization)
+	if c.Organization == "" {
+		c.Organization = strings.TrimSpace(os.Getenv(config.OrganizationEnv))
+	}
 	if f.Debug {
 		c.Debug = f.IO.ErrOut
 	}

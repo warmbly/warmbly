@@ -1,0 +1,4 @@
+[
+  {"hasAttachments":false,"id":1,"isEnabled":false,"letter":"A","subject":"Quick question about {{Company}}","message":"<p>{{Random | 'Hi' | 'Hello'}} {{FirstName | &#39;there&#39;}},</p><p>{{leadSource}}</p><p>{{SendingEmail.SenderFirstName}}</p>"},
+  {"hasAttachments":false,"id":2,"isEnabled":true,"letter":"B","subject":"{{FirstName}}, an idea","message":"<p>Hey {{FirstName}}</p>"}
+]

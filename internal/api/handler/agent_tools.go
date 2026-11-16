@@ -38,6 +38,7 @@ func (h *Handler) agentToolInvocation(c *gin.Context) (aitools.Invocation, *errx
 		APIPerms:  middleware.GetAPIKeyPermissions(c),
 		IP:        c.ClientIP(),
 		UserAgent: c.Request.UserAgent(),
+		API:       h.agentAPI(c),
 	}
 	if uid, err := middleware.GetUserUUID(c); err == nil {
 		inv.UserID = uid

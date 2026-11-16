@@ -646,3 +646,10 @@ type StartCampaignOptions struct {
 	// verification), which skips the member-facing cooldown.
 	Automatic bool `json:"-"`
 }
+
+// SendTracking is what one campaign send could register: an open when it
+// carried the pixel, a click when it carried tracked links.
+type SendTracking struct {
+	Opens  bool
+	Clicks bool
+}

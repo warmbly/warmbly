@@ -1,0 +1,46 @@
+{
+  "items": [
+    {
+      "id": "01a1d05e-ffec-71bd-932c-000000000001",
+      "timestamp_created": "2025-08-25T10:00:00.000Z",
+      "organization": "01a1d05a-877c-70a5-842d-eb707afa9498",
+      "campaign": "01956fbd-0eb1-72db-a565-82977a586084",
+      "status": 1,
+      "email": "Ana@Globex.com",
+      "personalization": "Loved your talk at SaaStr.",
+      "website": "https://globex.com",
+      "first_name": "Ana",
+      "last_name": "Lopez",
+      "company_name": "Globex",
+      "job_title": "CEO",
+      "phone": "+1 555 0100",
+      "email_open_count": 2,
+      "email_reply_count": 0,
+      "email_click_count": 0,
+      "company_domain": "globex.com",
+      "payload": {"Company Size": "51-200", "icpTier": 2, "isHot": true, "empty": null},
+      "last_step_from": "campaign",
+      "last_step_id": "01a1d05e-b21b-78d6-9fcd-33f0dce8895c",
+      "last_step_timestamp_executed": "2025-08-26T10:00:00.000Z",
+      "lt_interest_status": null,
+      "timestamp_last_contact": "2025-08-26T10:00:00.000Z"
+    },
+    {
+      "id": "01a1d05e-ffec-71bd-932c-000000000002",
+      "timestamp_created": "2025-08-25T10:00:00.000Z",
+      "organization": "01a1d05a-877c-70a5-842d-eb707afa9498",
+      "campaign": "01956fbd-0eb1-72db-a565-82977a586084",
+      "status": 1,
+      "email": "bo@initech.com",
+      "first_name": "Bo",
+      "last_name": null,
+      "company_name": "Initech",
+      "email_reply_count": 1,
+      "company_domain": "initech.com",
+      "payload": null,
+      "lt_interest_status": 1,
+      "timestamp_last_contact": "2025-08-27T10:00:00.000Z"
+    }
+  ],
+  "next_starting_after": "01a1d05e-ffec-71bd-932c-000000000002"
+}

@@ -148,7 +148,7 @@ type CampaignProgressRepository interface {
 	//
 	// arm is the step A/B arm this send carries, nil when no split ran; it is
 	// rewritten on every claim so it always names the copy actually sent.
-	ReserveSend(ctx context.Context, campaignID, contactID, sequenceID, taskID, senderID uuid.UUID, newLead bool, arm *models.StepABArm) (bool, error)
+	ReserveSend(ctx context.Context, campaignID, contactID, sequenceID, taskID, senderID uuid.UUID, newLead bool, arm *models.StepABArm, tracking models.SendTracking) (bool, error)
 	// ReleaseSend gives a reservation back when the send provably never reached
 	// the bus (no worker assigned, worker offline), so the step is retried on the
 	// next tick without spending an attempt. Only an unstamped reservation is
@@ -393,7 +393,7 @@ func NewCampaignProgressRepository(db *pgxpool.Pool) CampaignProgressRepository 
 // flight (dispatched_at set) or already sent updates nothing and returns no
 // row, so two ticks that picked the same pair cannot both dispatch. A step
 // walked back after a worker failure has both cleared and is claimable again.
-func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID, contactID, sequenceID, taskID, senderID uuid.UUID, newLead bool, arm *models.StepABArm) (bool, error) {
+func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID, contactID, sequenceID, taskID, senderID uuid.UUID, newLead bool, arm *models.StepABArm, tracking models.SendTracking) (bool, error) {
 	tx, err := beginResultTx(ctx, r.db)
 	if err != nil {
 		return false, err
@@ -409,15 +409,15 @@ func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID
 
 	var claimed bool
 	err = tx.QueryRow(ctx, `
-		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id, dispatched_at, dispatch_task_id, ab_arm, ab_variant_id)
-		VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id, dispatched_at, dispatch_task_id, ab_arm, ab_variant_id, open_tracked, click_tracked)
+		VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8)
 		ON CONFLICT (campaign_id, contact_id, sequence_id)
 		DO UPDATE SET dispatched_at = NOW(), dispatch_task_id = $4, failed_at = NULL, failure_reason = '',
-		              ab_arm = $5, ab_variant_id = $6
+		              ab_arm = $5, ab_variant_id = $6, open_tracked = $7, click_tracked = $8
 		WHERE campaign_contact_progress.sent_at IS NULL
 		  AND campaign_contact_progress.dispatched_at IS NULL
 		RETURNING true
-	`, campaignID, contactID, sequenceID, taskID, armKind, armVariant).Scan(&claimed)
+	`, campaignID, contactID, sequenceID, taskID, armKind, armVariant, tracking.Opens, tracking.Clicks).Scan(&claimed)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil

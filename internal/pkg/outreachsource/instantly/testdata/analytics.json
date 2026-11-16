@@ -1,0 +1,4 @@
+[
+  {"campaign_name": "Q3 founders", "campaign_id": "01956fbd-0eb1-72db-a565-82977a586084", "campaign_status": 1, "campaign_is_evergreen": false, "leads_count": 150, "contacted_count": 90, "emails_sent_count": 200, "reply_count": 7, "bounced_count": 2, "unsubscribed_count": 1, "completed_count": 30},
+  {"campaign_name": "Draft idea", "campaign_id": "01956fbd-0eb1-72db-a565-82977a586099", "campaign_status": 0, "campaign_is_evergreen": false, "leads_count": 0, "contacted_count": 0, "emails_sent_count": 0, "reply_count": 0, "bounced_count": 0, "unsubscribed_count": 0, "completed_count": 0}
+]

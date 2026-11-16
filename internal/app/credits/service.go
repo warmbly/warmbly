@@ -162,6 +162,8 @@ type creditService struct {
 	shortLimit int
 	dailyLimit int
 	monitor    func(orgID uuid.UUID, before, after models.Micro)
+	// agencyMonitor hears of charges the agency's shared balance paid part of.
+	agencyMonitor func(orgID uuid.UUID)
 	// selfHost bypasses the ledger (BILLING_PROVIDER=none): the operator pays
 	// their providers directly, so nothing is metered.
 	selfHost bool
@@ -187,6 +189,11 @@ func (s *creditService) Unmetered() bool { return s.selfHost }
 
 func (s *creditService) SetMonitor(fn func(orgID uuid.UUID, before, after models.Micro)) {
 	s.monitor = fn
+}
+
+// SetAgencyMonitor installs a hook invoked (async, best-effort) after a charge drew on the workspace's agency balance.
+func (s *creditService) SetAgencyMonitor(fn func(orgID uuid.UUID)) {
+	s.agencyMonitor = fn
 }
 
 // notifyMonitor runs the watch hook on a detached goroutine so notices and
@@ -383,6 +390,9 @@ func (s *creditService) debit(ctx context.Context, orgID uuid.UUID, u Usage, d m
 		}
 		// The monitor watches the workspace's own balance, not what the agency paid.
 		s.notifyMonitor(orgID, after+taken+txn.AgencyDelta, after)
+		if txn.AgencyDelta != 0 && s.agencyMonitor != nil {
+			go s.agencyMonitor(orgID)
+		}
 	}
 	return taken, nil
 }

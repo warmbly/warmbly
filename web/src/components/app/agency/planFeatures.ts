@@ -5,10 +5,12 @@ export const AGENCY_PLAN_FEATURES: Record<string, string[]> = {
         "The API and webhooks in every client workspace",
         "Your logo, colour and portal domain on client pages",
         "Shared send pool and AI balance across clients",
+        "Extra sends when you need them: 50,000 for $85",
     ],
     "Agency Pro": [
         "Everything in Agency",
         "No \"Powered by Warmbly\" on client pages",
         "Sending kept apart from other customers",
+        "Extra sends when you need them: 50,000 for $60",
     ],
 };

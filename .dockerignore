@@ -56,7 +56,10 @@ coverage.html
 *.log
 logs/
 
-# Docs/markdown aren't needed inside the image.
-docs
+# Docs/markdown aren't needed inside the image, except what package docs embeds for Remie and MCP.
+docs/*
+!docs/embed.go
+!docs/content
+!docs/public/openapi.json
 *.md
 !README.md

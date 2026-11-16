@@ -281,6 +281,8 @@ func Run(
 		portal.POST("/connect-links/oauth/start", h.InternalStartConnectOAuth)
 		portal.POST("/connect-links/oauth/result", h.InternalConnectOAuthResult)
 		portal.POST("/connect-links/smtp-imap", h.InternalConnectSMTPIMAP)
+		portal.POST("/connect-links/vendor/mailboxes", h.InternalConnectVendorMailboxes)
+		portal.POST("/connect-links/vendor/import", h.InternalConnectVendorImport)
 	}
 
 	corsConfig := cors.Config{
@@ -1071,6 +1073,23 @@ func Run(
 				contacts.DELETE("/:id/salesforce/links/:linkId", m.RequireAccess(models.PermUseIntegrations, models.APIPermIntegrations), h.UnlinkContactSalesforce)
 			}
 
+			// Migrations from another outreach tool. The service also requires the
+			// campaign and mailbox permissions for those kinds; the protected group
+			// already honours Idempotency-Key on the POSTs.
+			toolMigrations := protected.Group("/migrations")
+			toolMigrations.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageContacts, models.APIPermImportTools),
+				m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"))
+			{
+				toolMigrations.GET("/providers", h.ListToolMigrationProviders)
+				toolMigrations.GET("", h.ListToolMigrations)
+				toolMigrations.POST("", h.CreateToolMigration)
+				toolMigrations.GET("/:id", h.GetToolMigration)
+				toolMigrations.POST("/:id/start", h.StartToolMigration)
+				toolMigrations.POST("/:id/cancel", h.CancelToolMigration)
+				toolMigrations.POST("/:id/link-senders", h.LinkToolMigrationSenders)
+				toolMigrations.DELETE("/:id", h.DismissToolMigration)
+			}
+
 			// Group endpoints map to the resources they organize: campaign
 			// Segments: saved contact audiences. Contact permissions on both
 			// sides, since a segment is only a view over contacts.
@@ -1788,6 +1807,24 @@ func Run(
 				agencyRoutes.POST("/:agencyId/clients/:orgId/ai-balance", middleware.RequireAgencyAccess(models.APIPermAgencyTransferAI), middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.TransferAgencyAIBalance)
 				// The agency home and the cross-client inbox read each client through the caller's own membership in it.
 				agencyRoutes.GET("/:agencyId/overview", read, h.GetAgencyOverview)
+				agencyRoutes.GET("/:agencyId/mailboxes", read, h.ListAgencyMailboxes)
+				// Client accounts migrated in from another outreach tool; the service checks staff and each client membership.
+				migrate := middleware.RequireAgencyAccess(models.APIPermAgencyMigrate)
+				agencyRoutes.GET("/:agencyId/migrations/providers", migrate, h.ListToolMigrationProviders)
+				agencyRoutes.GET("/:agencyId/migrations", migrate, h.ListAgencyToolMigrations)
+				agencyRoutes.POST("/:agencyId/migrations", migrate, m.IdempotencyMiddleware(), h.CreateAgencyToolMigration)
+				agencyRoutes.GET("/:agencyId/migrations/:id", migrate, middleware.UUIDParams("id"), h.GetAgencyToolMigration)
+				agencyRoutes.POST("/:agencyId/migrations/:id/start", migrate, middleware.UUIDParams("id"), m.IdempotencyMiddleware(), h.StartAgencyToolMigration)
+				agencyRoutes.POST("/:agencyId/migrations/:id/cancel", migrate, middleware.UUIDParams("id"), h.CancelAgencyToolMigration)
+				agencyRoutes.POST("/:agencyId/migrations/:id/link-senders", migrate, middleware.UUIDParams("id"), h.LinkAgencyToolMigrationSenders)
+				agencyRoutes.DELETE("/:agencyId/migrations/:id", migrate, middleware.UUIDParams("id"), h.DismissAgencyToolMigration)
+				// Inbox vendor accounts the agency holds once and uses in any client; session-only, they carry keys.
+				agencyRoutes.GET("/:agencyId/vendors", sessionOnly, h.ListAgencyVendors)
+				agencyRoutes.POST("/:agencyId/vendors", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.CreateAgencyVendor)
+				agencyRoutes.PATCH("/:agencyId/vendors/:id", sessionOnly, middleware.RequireFreshAuth(), h.UpdateAgencyVendor)
+				agencyRoutes.DELETE("/:agencyId/vendors/:id", sessionOnly, middleware.RequireFreshAuth(), h.DeleteAgencyVendor)
+				// PUT: naming the same client twice answers with the connection it already has.
+				agencyRoutes.PUT("/:agencyId/vendors/:id/clients/:orgId", sessionOnly, h.UseAgencyVendor)
 				inbox := middleware.RequireAgencyAccess(models.APIPermAgencyRead | models.APIPermReadUnibox)
 				agencyRoutes.GET("/:agencyId/inbox", inbox, h.ListAgencyInbox)
 				agencyRoutes.GET("/:agencyId/inbox/thread", inbox, h.GetAgencyInboxThread)
@@ -1796,6 +1833,11 @@ func Run(
 				agencyRoutes.POST("/:agencyId/billing/checkout", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.AgencyCheckout)
 				agencyRoutes.GET("/:agencyId/billing/change/preview", sessionOnly, h.PreviewAgencyPlanChange)
 				agencyRoutes.POST("/:agencyId/billing/change", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.ChangeAgencyPlan)
+				agencyRoutes.GET("/:agencyId/billing/auto-topup", sessionOnly, h.GetAgencyAutoTopup)
+				// Turning it on lets the saved card be charged with nobody present.
+				agencyRoutes.PUT("/:agencyId/billing/auto-topup", sessionOnly, middleware.RequireFreshAuth(), h.SetAgencyAutoTopup)
+				agencyRoutes.GET("/:agencyId/billing/ai-auto-topup", sessionOnly, h.GetAgencyAIAutoTopup)
+				agencyRoutes.PUT("/:agencyId/billing/ai-auto-topup", sessionOnly, middleware.RequireFreshAuth(), h.SetAgencyAIAutoTopup)
 				agencyRoutes.POST("/:agencyId/billing/topup", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.AgencyTopup)
 				agencyRoutes.POST("/:agencyId/billing/ai-topup", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.AgencyAITopup)
 				agencyRoutes.POST("/:agencyId/billing/portal", sessionOnly, middleware.RequireFreshAuth(), h.AgencyPortal)
@@ -2221,6 +2263,8 @@ func Run(
 		// are tightly coupled to user/org context; a dedicated bit
 		// can be carved later if mailbox-specific actions land.
 		adminRoutes.GET("/mailboxes", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminSearchMailboxes)
+		// A domain owner asking for every mailbox on their domains to go, across workspaces.
+		adminRoutes.POST("/mailboxes/remove", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRemoveMailboxes)
 
 		// Campaign Management
 		adminRoutes.GET("/campaigns", middleware.RequireAdminPermission(models.AdminPermViewCampaigns), h.AdminSearchCampaigns)
@@ -2294,6 +2338,8 @@ func Run(
 		adminRoutes.GET("/fleet/release", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetRelease)
 		adminRoutes.PUT("/fleet/release", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminFleetSetRelease)
 		adminRoutes.GET("/fleet/capacity", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetCapacity)
+		adminRoutes.GET("/fleet/scale", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetScale)
+		adminRoutes.PATCH("/fleet/scale", middleware.RequireAdminPermission(models.AdminPermManageWorkers), middleware.RequireFreshAuth(), h.AdminFleetSetMax)
 		adminRoutes.GET("/fleet/decisions", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetDecisions)
 		adminRoutes.GET("/fleet/dedicated", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetDedicated)
 		adminRoutes.POST("/fleet/dedicated/:orgId/release", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminFleetReleaseIsolatedEgress)
@@ -2342,17 +2388,19 @@ func Run(
 	// Stripe webhook (no auth - uses signature verification)
 	r.POST("/webhook/stripe", h.HandleStripeWebhook)
 
+	h.Router = r
 	return r
 }
 
 // largeUploadRoute reports the routes whose handlers cap the body themselves
-// (maxImportUploadBytes), so the global cap does not cut them short.
+// (maxImportUploadBytes, models.MaxOrgArchiveUploadBytes), so the global cap does not cut them short.
 func largeUploadRoute(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
 	}
 	switch r.URL.Path {
-	case "/v1/contacts/imports", "/v1/contacts/import/preview", "/v1/contacts/import/commit":
+	case "/v1/contacts/imports", "/v1/contacts/import/preview", "/v1/contacts/import/commit",
+		"/v1/organization/current/import", "/v1/organization/current/import/preflight":
 		return true
 	}
 	return false

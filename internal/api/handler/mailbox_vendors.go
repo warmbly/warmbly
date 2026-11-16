@@ -35,6 +35,20 @@ func (h *Handler) vendorID(c *gin.Context) (uuid.UUID, uuid.UUID, uuid.UUID, boo
 	return orgID, userID, id, true
 }
 
+// vendorIDGuarded is vendorID for a route that browses or changes one connection. A connection made from
+// an agency's account answers only that agency's staff, and its key is changed at the agency, not here.
+func (h *Handler) vendorIDGuarded(c *gin.Context, changesKey bool) (uuid.UUID, uuid.UUID, uuid.UUID, bool) {
+	orgID, userID, id, ok := h.vendorID(c)
+	if !ok {
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	if xerr := h.VendorConnService.GuardAgencyAccount(c.Request.Context(), orgID, id, userID, changesKey); xerr != nil {
+		errx.Handle(c, xerr)
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	return orgID, userID, id, true
+}
+
 // ListMailboxVendorCatalog is GET /emails/vendors/catalog: the supported vendors and what each asks for.
 func (h *Handler) ListMailboxVendorCatalog(c *gin.Context) {
 	if _, _, ok := h.vendorsReady(c); !ok {
@@ -79,7 +93,7 @@ func (h *Handler) CreateMailboxVendor(c *gin.Context) {
 
 // UpdateMailboxVendor is PATCH /emails/vendors/:id: rename, or replace the key after verifying it.
 func (h *Handler) UpdateMailboxVendor(c *gin.Context) {
-	orgID, _, id, ok := h.vendorID(c)
+	orgID, _, id, ok := h.vendorIDGuarded(c, true)
 	if !ok {
 		return
 	}
@@ -99,7 +113,7 @@ func (h *Handler) UpdateMailboxVendor(c *gin.Context) {
 
 // DeleteMailboxVendor is DELETE /emails/vendors/:id. Mailboxes it brought in stay connected.
 func (h *Handler) DeleteMailboxVendor(c *gin.Context) {
-	orgID, _, id, ok := h.vendorID(c)
+	orgID, _, id, ok := h.vendorIDGuarded(c, false)
 	if !ok {
 		return
 	}
@@ -113,7 +127,7 @@ func (h *Handler) DeleteMailboxVendor(c *gin.Context) {
 
 // ListMailboxVendorMailboxes is GET /emails/vendors/:id/mailboxes.
 func (h *Handler) ListMailboxVendorMailboxes(c *gin.Context) {
-	orgID, _, id, ok := h.vendorID(c)
+	orgID, _, id, ok := h.vendorIDGuarded(c, false)
 	if !ok {
 		return
 	}
@@ -128,7 +142,7 @@ func (h *Handler) ListMailboxVendorMailboxes(c *gin.Context) {
 // ImportMailboxVendorMailboxes is POST /emails/vendors/:id/import: a background
 // import of the picked mailboxes. Repeating it updates what the first connected.
 func (h *Handler) ImportMailboxVendorMailboxes(c *gin.Context) {
-	orgID, userID, id, ok := h.vendorID(c)
+	orgID, userID, id, ok := h.vendorIDGuarded(c, false)
 	if !ok {
 		return
 	}
@@ -153,7 +167,7 @@ type vendorReconnectRequest struct {
 
 // ReconnectMailboxVendorMailboxes is POST /emails/vendors/:id/reconnect: the vendor signs in again as its Google mailboxes, renewing each in place.
 func (h *Handler) ReconnectMailboxVendorMailboxes(c *gin.Context) {
-	orgID, userID, id, ok := h.vendorID(c)
+	orgID, userID, id, ok := h.vendorIDGuarded(c, false)
 	if !ok {
 		return
 	}
@@ -185,7 +199,7 @@ func (h *Handler) ReconnectMailboxVendorMailboxes(c *gin.Context) {
 
 // MailboxVendorReconnectStatus is GET /emails/vendors/:id/reconnect: where the last reconnect stands, mailbox by mailbox.
 func (h *Handler) MailboxVendorReconnectStatus(c *gin.Context) {
-	orgID, _, id, ok := h.vendorID(c)
+	orgID, _, id, ok := h.vendorIDGuarded(c, false)
 	if !ok {
 		return
 	}

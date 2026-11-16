@@ -107,10 +107,12 @@ type AgencyClientAdvisor struct {
 
 // AgencyOverviewClient is one row of the agency home. A section is nil when the caller lacks its permission.
 type AgencyOverviewClient struct {
-	OrganizationID   uuid.UUID              `json:"organization_id"`
-	Name             string                 `json:"name"`
-	AvatarURL        *string                `json:"avatar_url,omitempty"`
-	Access           AgencyClientAccess     `json:"access"`
+	OrganizationID uuid.UUID          `json:"organization_id"`
+	Name           string             `json:"name"`
+	AvatarURL      *string            `json:"avatar_url,omitempty"`
+	Access         AgencyClientAccess `json:"access"`
+	// ManageMailboxes reports whether the caller can connect and change mailboxes in the workspace.
+	ManageMailboxes  bool                   `json:"manage_mailboxes"`
 	PoolUsed         int64                  `json:"pool_used"`
 	MonthlySendLimit *int                   `json:"monthly_send_limit,omitempty"`
 	Campaigns        *AgencyClientCampaigns `json:"campaigns,omitempty"`

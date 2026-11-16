@@ -1,0 +1,1 @@
+{"user": {"object": "user", "id": 1, "teamID": 1, "teamName": "My Team", "isTeamAdmin": true, "isDisabled": false, "emailAddress": "me@example.com", "fullName": "Jane Doe", "first": "Jane", "last": "Doe", "teamBlockedDate": null}}

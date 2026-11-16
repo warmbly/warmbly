@@ -1,3 +1,4 @@
+import type { Acquisition } from "@/lib/acquisition";
 import Request from "../Request";
 
 /** Where the binding secret waits while the browser is away at the provider. */
@@ -11,11 +12,14 @@ export const SSO_BINDING_KEY = "sso_binding";
  * nonce and the PKCE verifier are minted and held server-side; the binding is
  * the one value the client keeps, and the session cannot be collected without
  * it, so a forwarded callback link cannot sign anyone in.
+ *
+ * acquisition is applied only if this sign-in creates a new workspace.
  */
-export default async function beginSSO(provider: string): Promise<{ url: string }> {
+export default async function beginSSO(provider: string, acquisition?: Acquisition): Promise<{ url: string }> {
     const res = await Request<{ url: string; binding: string }>({
         method: "POST",
         url: `/auth/${provider}/begin`,
+        data: acquisition ? { acquisition } : undefined,
     });
 
     // sessionStorage, not localStorage: it belongs to this tab and this sign-in

@@ -229,11 +229,16 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 		maxTokens = defaultAgentTokens
 	}
 
-	byName := make(map[string]ToolDef, len(req.Tools))
-	for _, t := range req.Tools {
+	catalog := newToolCatalog(req.Tools, req.Messages)
+	allTools, baseSystem := req.Tools, req.System
+	if catalog != nil {
+		allTools = append(append([]ToolDef(nil), allTools...), catalog.search)
+		baseSystem += catalog.instructions()
+	}
+	byName := make(map[string]ToolDef, len(allTools))
+	for _, t := range allTools {
 		byName[t.Name] = t
 	}
-	tools := antToolsFromDefs(req.Tools, false)
 
 	messages := append([]AgentMessage(nil), req.Messages...)
 	result := &AgentResult{Model: model, StopReason: "error"}
@@ -252,7 +257,11 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 			req.OnEvent(AgentEvent{Type: EventIteration, Iteration: result.Iterations})
 		}
 
-		iterationTools, system := tools, req.System
+		available := req.Tools
+		if catalog != nil {
+			available = catalog.definitions()
+		}
+		iterationTools, system := antToolsFromDefs(available, false), baseSystem
 		finalTurn := req.ReserveFinalResponse && iter == maxIter-1
 		if finalTurn {
 			iterationTools = nil

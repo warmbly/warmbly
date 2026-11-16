@@ -1,0 +1,80 @@
+{
+  "breadcrumbs": [],
+  "pagination": {"page": 1, "per_page": 3, "total_entries": 7, "total_pages": 2},
+  "contacts": [
+    {
+      "id": "66e3726977d36c03f2c30afc",
+      "first_name": "Walt",
+      "last_name": "Whitman",
+      "name": "Walt Whitman",
+      "linkedin_url": "http://www.linkedin.com/in/waltwhitman",
+      "title": "Associate Writer",
+      "organization_name": "Apollo.io",
+      "headline": null,
+      "present_raw_address": "Dublin, Ireland",
+      "city": null,
+      "state": null,
+      "country": null,
+      "time_zone": "Europe/Dublin",
+      "created_at": "2024-09-12T22:59:53.423Z",
+      "emailer_campaign_ids": ["66e9e215ece19801b219997f"],
+      "email_status": "verified",
+      "sanitized_phone": "+12025550114",
+      "email_unsubscribed": null,
+      "email": "WWhitman@apollo.io",
+      "typed_custom_fields": {
+        "60c39ed82bd02f01154c470a": "2025-01-15T00:00:00.000+00:00",
+        "617ff4041e711500a401c25f": null,
+        "617ff4041e711500a401c25e": "617ff4041e711500a401c260",
+        "ffffffffffffffffffffffff": 42
+      },
+      "contact_campaign_statuses": [
+        {
+          "id": "68782af181c7f0002159df25",
+          "emailer_campaign_id": "66e9e215ece19801b219997f",
+          "send_email_from_user_id": "66302798d03b9601c7934ebf",
+          "inactive_reason": "replied",
+          "status": "finished",
+          "added_at": "2025-07-16T22:42:57.372+00:00",
+          "finished_at": "2025-07-20T10:00:00.000+00:00",
+          "send_email_from_email_address": "test.liam@apollomail.io",
+          "current_step_id": "66a97236a8759801b541767d",
+          "current_step_position": 2
+        }
+      ],
+      "account": {"id": "63f53afe4ceeca00016bdd2f", "name": "Apollo.io", "website_url": "http://www.apollo.io", "primary_domain": "apollo.io"},
+      "organization": {"id": "5e66b6381e05b4008c8331b8", "name": "Apollo.io", "website_url": "http://www.apollo.io", "primary_domain": "apollo.io"},
+      "phone_numbers": []
+    },
+    {
+      "id": "c2",
+      "first_name": "Ada",
+      "last_name": "Byron",
+      "title": "CTO",
+      "organization_name": null,
+      "city": "London",
+      "state": null,
+      "country": "United Kingdom",
+      "emailer_campaign_ids": ["66e9e215ece19801b219997f"],
+      "email": "ada@example.com",
+      "sanitized_phone": null,
+      "phone_numbers": [{"raw_number": "+44 20 7946 0000", "sanitized_number": "+442079460000", "type": "work_hq"}],
+      "typed_custom_fields": {},
+      "contact_campaign_statuses": [
+        {"emailer_campaign_id": "66e9e215ece19801b219997f", "inactive_reason": null, "status": "active", "current_step_position": 3}
+      ],
+      "account": null,
+      "organization": {"name": "Analytical Engines", "website_url": "https://engines.example", "primary_domain": "engines.example"}
+    },
+    {
+      "id": "c3",
+      "first_name": "Opt",
+      "last_name": "Out",
+      "emailer_campaign_ids": [],
+      "contact_campaign_statuses": [],
+      "email_unsubscribed": true,
+      "email": "optout@example.com",
+      "typed_custom_fields": {}
+    }
+  ]
+}

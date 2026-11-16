@@ -155,7 +155,6 @@ jobs:
           WORK: ${{ runner.temp }}/terraform
         run: |
           set -euo pipefail
-          redeploy=false
           for stack in foundation runtime workers; do
             class=$(.github/scripts/terraform-stack.sh plan "$stack")
             case "$class" in none|safe|gated) ;; *) echo "::error::unexpected plan class for $stack" >&2; exit 1 ;; esac
@@ -172,10 +171,10 @@ jobs:
             fi
             if [ "$class" = safe ]; then
               .github/scripts/terraform-stack.sh apply "$stack"
-              if [ "$stack" = runtime ] && grep -q 'aws_ecs_task_definition\.service\[' "$WORK/$stack.summary"; then redeploy=true; fi
+              # Written at once, so a later stack failing still rolls out the runtime that applied.
+              if [ "$stack" = runtime ] && grep -q 'aws_ecs_task_definition\.service\[' "$WORK/$stack.summary"; then echo "redeploy=true" >> "$GITHUB_OUTPUT"; fi
             fi
           done
-          echo "redeploy=$redeploy" >> "$GITHUB_OUTPUT"
 
   apply-gated:
     name: Apply after approval
@@ -212,7 +211,6 @@ jobs:
           APPROVED: ${{ needs.apply.outputs.gated_summary }}
         run: |
           set -euo pipefail
-          redeploy=false
           started=false
           for stack in foundation runtime workers; do
             [ "$stack" = "$GATED" ] && started=true
@@ -231,9 +229,9 @@ jobs:
             [ "$class" = none ] && continue
             { echo '```'; cat "$WORK/$stack.summary"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
             .github/scripts/terraform-stack.sh apply "$stack"
-            if [ "$stack" = runtime ] && grep -q 'aws_ecs_task_definition\.service\[' "$WORK/$stack.summary"; then redeploy=true; fi
+            # Written at once, so a later stack failing still rolls out the runtime that applied.
+            if [ "$stack" = runtime ] && grep -q 'aws_ecs_task_definition\.service\[' "$WORK/$stack.summary"; then echo "redeploy=true" >> "$GITHUB_OUTPUT"; fi
           done
-          echo "redeploy=$redeploy" >> "$GITHUB_OUTPUT"
 
   live-release:
     name: Find the live release

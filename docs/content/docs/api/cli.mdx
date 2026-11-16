@@ -260,6 +260,8 @@ Run `warmbly <command> --help` for the flags, and `warmbly <command> <subcommand
 | `team` | named groups of members, for CRM ownership and routing |
 | `settings` | workspace-wide outreach and suppression settings |
 | `warmup-routing` | which mailboxes warm with which |
+| `migration` | migrate in from another outreach tool: providers, list, view, create, start, cancel, link-senders, delete |
+| `agency` | an agency's clients, overview, usage and mailboxes, and `agency migration` into client workspaces |
 | `tool` | the AI tool registry, listed and called |
 | `events` | the live event stream |
 | `api` | any endpoint at all |
@@ -300,6 +302,37 @@ warmbly inbox thread --email-id EMAIL_ID
 # Contacts in and out
 warmbly contact create --email jane@example.com --first-name Jane --company Acme
 warmbly contact list --all --json > contacts.json
+
+# Migrate from Smartlead: check the key, look at the scan, then start
+printf '{"provider":"smartlead","credentials":[{"api_key":"%s"}]}' "$SMARTLEAD_API_KEY" \
+  | warmbly migration create --input -
+warmbly migration view MIGRATION_ID
+warmbly migration start MIGRATION_ID --kinds blocklist,campaigns,leads --in-flight skip
+```
+
+`migration create` reads its body from stdin or a file so the source tool's key stays out of your shell history. Imported campaigns arrive as drafts and never launch on their own.
+
+## Agencies
+
+An [agency API key](/guides/agencies/#api) (`wmagency_...`) works with the CLI through `WARMBLY_TOKEN`. `warmbly auth login` takes workspace keys only.
+
+```bash
+export WARMBLY_TOKEN=wmagency_...
+warmbly agency list
+warmbly agency clients list AGENCY_ID
+warmbly agency clients create AGENCY_ID --name "Acme" --timezone Europe/London
+warmbly agency overview AGENCY_ID
+warmbly agency migration create AGENCY_ID --input @smartlead.json
+warmbly agency migration start AGENCY_ID MIGRATION_ID --input @targets.json
+```
+
+`agency migration start` maps each scanned source workspace onto a client in `targets`: an existing one (`organization_id`), a new one (`create_name`, which needs `AGENCY_MANAGE_CLIENTS`), or `skip`.
+
+Every other command acts in one client when you name it with `--organization`, or `WARMBLY_ORGANIZATION` for a whole session. The CLI sends it as the `Warmbly-Organization` header:
+
+```bash
+warmbly campaign list --organization CLIENT_ID
+WARMBLY_ORGANIZATION=CLIENT_ID warmbly mailbox list
 ```
 
 ## What needs the dashboard
@@ -372,6 +405,7 @@ Anything you type after the alias is appended, so an alias is a starting point r
 | `WARMBLY_API_KEY` | The same thing under the name `warmblyctl` uses |
 | `WARMBLY_HOST` | Which signed-in host to use |
 | `WARMBLY_API_URL` | The API base URL, when it is not derivable from the host |
+| `WARMBLY_ORGANIZATION` | The client workspace an agency key acts in, sent as `Warmbly-Organization`. `--organization` overrides it |
 | `WARMBLY_CONFIG_DIR` | Where the two files live |
 | `WARMBLY_NO_UPDATE_CHECK` | Never check for a newer release |
 | `NO_COLOR` | Turns colour off, as everywhere else |

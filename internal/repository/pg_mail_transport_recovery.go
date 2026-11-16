@@ -146,3 +146,61 @@ func mailTransientBlipSQL(alias string) string {
 			  AND blip_rec.recovered_at >= NOW() - INTERVAL '%[3]d seconds')))`,
 		alias, strings.Join(models.MailTransientErrorCodes, "', '"), int(models.MailTransientErrorGrace/time.Second))
 }
+
+// UnreachableMailbox is a mailbox SwitchOffUnreachable switched off.
+type UnreachableMailbox struct {
+	ID, UserID uuid.UUID
+	WorkerID   *uuid.UUID
+}
+
+// SwitchOffUnreachable takes a custom-server mailbox out of the retry loop once nothing it did since it was last
+// switched on has succeeded for silentFor and its IMAP connection still fails before the server answers. A reply we
+// cannot parse fails after the server answered, and a worker with no network has no other mailbox syncing, so
+// neither switches anything off.
+func (r *emailAccountErrorRepository) SwitchOffUnreachable(ctx context.Context, silentFor time.Duration, limit int) ([]UnreachableMailbox, *errx.Error) {
+	notice := errx.ErrMailMailboxUnreachable(silentFor)
+	info := notice.GetUserErrorInfo()
+	query := `WITH candidate AS (
+	    SELECT ea.id FROM email_accounts ea
+	    WHERE ea.status = 'active' AND ea.provider = 'smtp_imap' AND NOT ` + managedExpr + `
+	        AND ea.activated_at < NOW() - make_interval(secs => $1)
+	        AND NOT EXISTS (SELECT 1 FROM email_account_transport_recovery ok
+	            WHERE ok.email_account_id = ea.id AND ok.recovered_at >= NOW() - make_interval(secs => $1))
+	        AND EXISTS (SELECT 1 FROM email_account_errors failing
+	            WHERE failing.email_account_id = ea.id AND failing.resolved_at IS NULL AND failing.error_code = 'SERVER_UNREACHABLE'
+	                AND failing.created_at >= NOW() - INTERVAL '1 day' AND failing.message = ANY($2))
+	        AND EXISTS (SELECT 1 FROM email_accounts peer
+	            JOIN email_account_transport_recovery peer_ok ON peer_ok.email_account_id = peer.id AND peer_ok.operation = 'sync'
+	            WHERE peer.worker_id = ea.worker_id AND peer.id <> ea.id AND peer_ok.recovered_at >= NOW() - INTERVAL '1 hour')
+	    ORDER BY ea.activated_at
+	    LIMIT $3
+	    FOR UPDATE OF ea SKIP LOCKED
+	), off AS (
+	    UPDATE email_accounts ea SET status = 'inactive', updated_at = NOW()
+	    FROM candidate WHERE ea.id = candidate.id AND ea.status = 'active'
+	    RETURNING ea.id, ea.user_id, ea.worker_id
+	), noted AS (
+	    INSERT INTO email_account_errors (email_account_id, user_id, error_code, severity, resolve_method, title, message, user_message, action_required)
+	    SELECT id, user_id, $4, 'CRITICAL', $5, $6, $7, $7, $8 FROM off
+	)
+	SELECT id, user_id, worker_id FROM off`
+	rows, err := r.DB.Query(ctx, query, silentFor.Seconds(), errx.IMAPConnectionMessages(errx.IMAPServerSilentReasons...), limit,
+		string(notice.Code), MapResolveMethod(notice.ResolveMethod), info.Title, notice.Message, info.ActionRequired)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+	var out []UnreachableMailbox
+	for rows.Next() {
+		var m UnreachableMailbox
+		if err := rows.Scan(&m.ID, &m.UserID, &m.WorkerID); err != nil {
+			return nil, errx.InternalError()
+		}
+		out = append(out, m)
+	}
+	if rows.Err() != nil {
+		return nil, errx.InternalError()
+	}
+	return out, nil
+}

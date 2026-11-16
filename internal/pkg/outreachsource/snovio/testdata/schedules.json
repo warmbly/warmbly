@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "id": 1074,
+      "name": "UA Monday & Saturday",
+      "timezone": "Europe/Kyiv",
+      "days": [
+        {"day": "sunday", "enabled": false, "start_time": "09:00", "end_time": "18:00"},
+        {"day": "monday", "enabled": true, "start_time": "09:00", "end_time": "17:00"},
+        {"day": "tuesday", "enabled": false, "start_time": "09:00", "end_time": "18:00"},
+        {"day": "wednesday", "enabled": false, "start_time": "09:00", "end_time": "18:00"},
+        {"day": "thursday", "enabled": false, "start_time": "09:00", "end_time": "18:00"},
+        {"day": "friday", "enabled": false, "start_time": "09:00", "end_time": "18:00"},
+        {"day": "saturday", "enabled": true, "start_time": "11:00", "end_time": "16:30"}
+      ]
+    }
+  ]
+}

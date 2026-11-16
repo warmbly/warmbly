@@ -212,3 +212,18 @@ func TestReadCacheGetOrComputeCanceledWaiterDoesNotAffectFlight(t *testing.T) {
 		t.Fatalf("flight result should be cached for other callers: v=%d ok=%v", v, ok)
 	}
 }
+
+// A read that began before a forget does not store what it read.
+func TestReadCacheForgetOutranksAnEarlierRead(t *testing.T) {
+	c := newReadCache[int](time.Minute)
+	gen := c.generation("org")
+	c.forget("org")
+	c.putAt("org", 1, gen)
+	if _, ok := c.get("org"); ok {
+		t.Fatal("a read from before the forget was stored")
+	}
+	c.putAt("org", 2, c.generation("org"))
+	if v, ok := c.get("org"); !ok || v != 2 {
+		t.Fatalf("got %d %v, want the read taken after the forget", v, ok)
+	}
+}

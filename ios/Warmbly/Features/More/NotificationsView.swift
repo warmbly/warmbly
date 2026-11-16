@@ -227,10 +227,10 @@ struct NotificationsView: View {
     var body: some View {
         content
             .safeAreaInset(edge: .top, spacing: 0) { tabSwitcher }
-            .background(WTheme.groupedPage)
+            .background(GroupedSurface.page)
             .navigationTitle("Notifications")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(WTheme.groupedPage, for: .navigationBar)
+            .surfaceTitleDisplayMode()
+            .toolbarBackground(GroupedSurface.page, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if tab == .feed, store.unread > 0 {
@@ -289,7 +289,7 @@ struct NotificationsView: View {
                     .background {
                         if tab == option {
                             Capsule()
-                                .fill(WTheme.groupedCard)
+                                .fill(GroupedSurface.card)
                                 .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
                                 .matchedGeometryEffect(id: "tab", in: tabSpace)
                         }
@@ -303,7 +303,7 @@ struct NotificationsView: View {
         .background(WTheme.fill, in: Capsule())
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
         .sensoryFeedback(.selection, trigger: tab)
     }
 

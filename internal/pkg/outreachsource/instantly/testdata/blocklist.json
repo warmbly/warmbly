@@ -1,0 +1,7 @@
+{
+  "items": [
+    {"id": "01956fbd-0eb1-72db-a565-000000000001", "timestamp_created": "2025-05-01T10:00:00.000Z", "organization_id": "01a1d05a-877c-70a5-842d-eb707afa9498", "bl_value": "Competitor.com", "is_domain": true},
+    {"id": "01956fbd-0eb1-72db-a565-000000000002", "timestamp_created": "2025-05-02T10:00:00.000Z", "organization_id": "01a1d05a-877c-70a5-842d-eb707afa9498", "bl_value": "ceo@bigco.com", "is_domain": false}
+  ],
+  "next_starting_after": "01956fbd-0eb1-72db-a565-000000000002"
+}

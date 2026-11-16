@@ -49,6 +49,8 @@ type AdvisorMailbox struct {
 	WarmupIncrease  int
 	WarmupReplyRate int
 	WarmupPoolType  string
+	// CloudOwnsWarmup is true while the mailbox is enrolled in Warmbly Cloud, whose warmup may still be paused or held there; the local warmup columns say nothing about it.
+	CloudOwnsWarmup bool
 
 	RiskBand string
 
@@ -83,11 +85,15 @@ type AdvisorMailbox struct {
 	WarmupDelivered7d int
 	WarmupArrived7d   int
 	WarmupLostBy7d    int
+	// WarmupBouncedBy7d is how many sender workspaces' warmup mail to this
+	// address bounced as unknown with nothing arriving since.
+	WarmupBouncedBy7d int
 }
 
 // WarmupUnreachable reports a mailbox the pool has stopped drawing as a recipient.
 func (m AdvisorMailbox) WarmupUnreachable() bool {
-	return models.WarmupRecipientUnreachable(m.WarmupDelivered7d, m.WarmupArrived7d, m.WarmupLostBy7d)
+	return models.WarmupRecipientUnreachable(m.WarmupDelivered7d, m.WarmupArrived7d, m.WarmupLostBy7d) ||
+		models.WarmupRecipientBouncedOut(m.WarmupBouncedBy7d)
 }
 
 // SendingCold is true when campaigns can actually pick this mailbox right now.
@@ -226,6 +232,8 @@ type AdvisorSnapshot struct {
 	// WarmupUnavailable is set by the service when the plan does not include
 	// warmup, so no finding asks to turn it on or resume it.
 	WarmupUnavailable bool
+	// SelfHosted is set by the service on a self-hosted instance, where a mailbox outside Warmbly Cloud warms only among the instance's own mailboxes and the tracking host is the operator's own.
+	SelfHosted bool
 	// Failed holds each section that did not load this run, with its error.
 	Failed map[AdvisorSection]error
 }

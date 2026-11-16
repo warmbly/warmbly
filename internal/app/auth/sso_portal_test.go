@@ -25,7 +25,7 @@ func TestSSOReturnsOnlyToTheVerifiedPortalItBeganOn(t *testing.T) {
 		"https://attacker.test":      "",
 	} {
 		ctx := config.WithDashboardOrigin(context.Background(), origin)
-		redirect, err := s.SSOBegin(ctx, models.IdentityProviderGoogle)
+		redirect, err := s.SSOBegin(ctx, models.IdentityProviderGoogle, models.OrgAcquisition{})
 		if err != nil {
 			t.Fatalf("begin: %v", err)
 		}
@@ -36,7 +36,7 @@ func TestSSOReturnsOnlyToTheVerifiedPortalItBeganOn(t *testing.T) {
 	}
 	// A portal that stops verifying no longer receives the sign-in.
 	ctx := config.WithDashboardOrigin(context.Background(), "https://portal.agency.test")
-	redirect, _ := s.SSOBegin(ctx, models.IdentityProviderGoogle)
+	redirect, _ := s.SSOBegin(ctx, models.IdentityProviderGoogle, models.OrgAcquisition{})
 	config.SetPortalHosts(func(string) bool { return false })
 	if got := s.SSOReturnOrigin(context.Background(), pathState(redirect.URL)); got != "" {
 		t.Fatalf("unverified portal still returned to: %q", got)

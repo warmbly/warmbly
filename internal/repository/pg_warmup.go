@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -203,7 +204,7 @@ type WarmupRepository interface {
 	ListMailboxLoadingIncidents(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error)
 	GetWarmupStatistics(ctx context.Context, accountID uuid.UUID, from, to time.Time) ([]WarmupStatistic, error)
 	GetWarmupSummaries(ctx context.Context, accountIDs []uuid.UUID, from, to time.Time) (map[uuid.UUID]WarmupSummary, error)
-	GetOrCreateDailyStats(ctx context.Context, accountID uuid.UUID, date time.Time, targetVolume int) (*WarmupStatistic, error)
+	RecordDailyTarget(ctx context.Context, accountID uuid.UUID, localDay time.Time, targetVolume int) error
 
 	// Pool-wide placement analytics (admin overview)
 	PoolSpamPlacementRate(ctx context.Context, since time.Time) (float64, error)
@@ -1450,7 +1451,12 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 		}
 		cands = append(cands, returns...)
 	}
-	return r.capPartnerCandidates(ctx, poolType, cands)
+	cands, err = r.capPartnerCandidates(ctx, poolType, cands)
+	if err != nil {
+		return nil, err
+	}
+	// An address that bounced this workspace's warmup is not mailed by it again.
+	return slices.DeleteFunc(cands, func(c models.WarmupPartnerCandidate) bool { return c.BouncedFrom(senderOrg) }), nil
 }
 
 type warmupExecutionExclusion struct{}
@@ -1551,26 +1557,16 @@ func (r *warmupRepository) GetWarmupStatistics(ctx context.Context, accountID uu
 	return stats, rows.Err()
 }
 
-// GetOrCreateDailyStats retrieves or creates daily warmup statistics
-func (r *warmupRepository) GetOrCreateDailyStats(ctx context.Context, accountID uuid.UUID, date time.Time, targetVolume int) (*WarmupStatistic, error) {
-	query := `
+// RecordDailyTarget stores a mailbox's local day's planned warmup volume on the row with that calendar date,
+// so each date carries exactly one day's plan however the local day straddles UTC midnight.
+func (r *warmupRepository) RecordDailyTarget(ctx context.Context, accountID uuid.UUID, localDay time.Time, targetVolume int) error {
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
-		VALUES ($1, DATE($2), 0, 0, $3)
+		VALUES ($1, $2::date, 0, 0, $3)
 		ON CONFLICT (email_account_id, date)
 		DO UPDATE SET target_volume = EXCLUDED.target_volume
-		RETURNING email_account_id, date, emails_sent, emails_replied, target_volume
-	`
-
-	stat := &WarmupStatistic{}
-	err := resultDB(ctx, r.db).QueryRow(ctx, query, accountID, date, targetVolume).Scan(
-		&stat.EmailAccountID,
-		&stat.Date,
-		&stat.EmailsSent,
-		&stat.EmailsReplied,
-		&stat.TargetVolume,
-	)
-
-	return stat, err
+		WHERE warmup_statistics.target_volume IS DISTINCT FROM EXCLUDED.target_volume`, accountID, localDay.Format(time.DateOnly), targetVolume)
+	return err
 }
 
 // CreateWarmupToken creates a warmup verification token

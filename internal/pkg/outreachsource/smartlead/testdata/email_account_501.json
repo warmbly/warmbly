@@ -1,0 +1,19 @@
+{
+  "id": 501,
+  "from_name": "Sarah Lee",
+  "from_email": "Sarah@acme-mail.com",
+  "username": "sarah@acme-mail.com",
+  "password": "smtp-secret",
+  "smtp_host": "smtp.acme-mail.com",
+  "smtp_port": 587,
+  "smtp_port_type": "TLS",
+  "is_different_imap_account": false,
+  "imap_username": "",
+  "imap_password": "",
+  "imap_host": "imap.acme-mail.com",
+  "imap_port": 993,
+  "imap_port_type": "SSL",
+  "type": "SMTP",
+  "client_id": 301,
+  "warmup_details": {"id": 789, "status": "ACTIVE", "warmup_reputation": 95}
+}

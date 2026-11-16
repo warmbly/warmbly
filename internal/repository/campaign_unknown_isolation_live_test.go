@@ -32,7 +32,9 @@ func newCampaignIsolationFixture(t *testing.T) *campaignIsolationFixture {
 		t.Fatalf("begin: %+v %v", state, err)
 	}
 	f := &campaignIsolationFixture{base, request, contact, nonce}
-	f.exec(t, `UPDATE tasks SET send_reserved_at=NOW()-INTERVAL '1 hour',send_executor_started_at=NOW()-INTERVAL '1 hour',send_executor_result=jsonb_build_object('task_id',id,'success',false) WHERE id=$1`, request.TaskID)
+	f.exec(t, `UPDATE tasks SET send_reserved_at=NOW()-INTERVAL '1 hour',send_executor_started_at=NOW()-INTERVAL '1 hour',send_executor_result=jsonb_build_object('task_id',id,'success',false,'sent_at',NOW()-INTERVAL '1 hour',
+		'error',jsonb_build_object('code','SERVER_UNREACHABLE','failure',jsonb_build_object('disposition','ambiguous'))),
+		send_result_evidence=jsonb_build_object('disposition','ambiguous') WHERE id=$1`, request.TaskID)
 	f.exec(t, `UPDATE outbound_attempts SET attempted_at=NOW()-INTERVAL '1 hour' WHERE task_id=$1`, request.TaskID)
 	return f
 }
@@ -71,6 +73,10 @@ func TestLiveCampaignUnknownIsolationPreservesChargeAndFencesCommand(t *testing.
 	if charged, err := f.r.CountCampaignEmailsSentToday(t.Context(), f.sender); err != nil || charged != 1 {
 		t.Fatalf("isolated send lost its daily capacity charge: count=%d err=%v", charged, err)
 	}
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+	if charged, err := NewBehaviorRepository(f.pool).CountSendsBetween(t.Context(), f.sender, "campaign", day, day.Add(24*time.Hour)); err != nil || charged != 1 {
+		t.Fatalf("isolated send lost its sending-profile charge: count=%d err=%v", charged, err)
+	}
 	f.assertSQL(t, `SELECT t.status='cancelled' AND t.campaign_send_isolated_at IS NOT NULL AND t.send_result_state='unknown' AND t.send_result_applied_at IS NULL AND t.send_released_at IS NULL AND NOT ea.send_recovery_hold FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1`, f.request.TaskID)
 	f.assertSQL(t, `SELECT cl.send_outcome_pending_at IS NOT NULL AND p.dispatched_at IS NOT NULL AND p.sent_at IS NULL FROM campaign_contact_progress p JOIN campaign_leads cl ON cl.campaign_id=p.campaign_id AND cl.contact_id=p.contact_id WHERE dispatch_task_id=$1`, f.request.TaskID)
 	state, err := f.r.BeginOutbound(t.Context(), f.request.TaskID, f.sender, f.worker, f.nonce)
@@ -101,6 +107,7 @@ func TestLiveCampaignUnknownIsolationProtectsUnverifiedBoundaries(t *testing.T) 
 		{"malformed evidence", `UPDATE tasks SET send_executor_result='[]' WHERE id=$1`},
 		{"other task evidence", `UPDATE tasks SET send_executor_result=jsonb_build_object('task_id',gen_random_uuid()) WHERE id=$1`},
 		{"definitive result", `UPDATE tasks SET send_executor_result=jsonb_build_object('task_id',id,'success',true) WHERE id=$1`},
+		{"provider message id", `UPDATE tasks SET send_executor_result=send_executor_result||jsonb_build_object('provider_msg_id','AAMk1') WHERE id=$1`},
 		{"authentication hold", `UPDATE email_accounts SET send_recovery_reason='authentication' WHERE id=(SELECT email_account_id FROM tasks WHERE id=$1)`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -175,7 +182,7 @@ func TestLiveCampaignUnknownIsolationPortablePauseAndDatabaseFence(t *testing.T)
 	nextStep := uuid.New()
 	f.exec(t, `INSERT INTO sequences(id,campaign_id,organization_id,name,subject,body_plain,body_html,wait_after,position) VALUES($1,$2,$3,'Next','Test','Text','',0,2)`, nextStep, f.campaign, f.org)
 	f.exec(t, `INSERT INTO tasks(id,task_type,email_account_id,status,message_id) VALUES($1,'campaign',$2,'active','')`, replacement, f.sender)
-	claimed, err := NewCampaignProgressRepository(f.pool).ReserveSend(t.Context(), f.campaign, f.contactID, nextStep, replacement, f.sender, false, nil)
+	claimed, err := NewCampaignProgressRepository(f.pool).ReserveSend(t.Context(), f.campaign, f.contactID, nextStep, replacement, f.sender, false, nil, models.SendTracking{})
 	if err != nil || claimed {
 		t.Fatalf("portable recovery pause lost: claimed=%t err=%v", claimed, err)
 	}

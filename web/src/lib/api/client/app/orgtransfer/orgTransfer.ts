@@ -60,12 +60,26 @@ export async function preflightOrgImport(
     const form = new FormData();
     form.append("file", file);
     if (passphrase) form.append("passphrase", passphrase);
-    return await Request<OrgImportPreflight>({
+    const res = await Request<OrgImportPreflight>({
         method: "POST",
         url: `/organization/current/import/preflight`,
         data: form,
         authorization: true,
     });
+    // Older backends send null for an empty list; the panel reads every one of these.
+    return {
+        ...res,
+        archive: {
+            ...res.archive,
+            groups: res.archive?.groups ?? [],
+            members: res.archive?.members ?? [],
+            row_counts: res.archive?.row_counts ?? {},
+        },
+        conflicts: res.conflicts ?? {},
+        unknown_members: res.unknown_members ?? [],
+        skipped_tables: res.skipped_tables ?? [],
+        warnings: res.warnings ?? [],
+    };
 }
 
 export async function createOrgImport(

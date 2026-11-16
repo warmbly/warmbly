@@ -18,7 +18,7 @@ func buildView(rep *models.ClientReport, rng models.ClientReportRange, from, to,
 	if sec.Overview {
 		o := a.Overall
 		v.Overview = &models.ClientReportOverview{
-			Sent: o.TotalEmailsSent, Opened: o.TotalOpens, OpenRate: o.OpenRate, Clicked: o.TotalClicks,
+			Sent: o.TotalEmailsSent, Opened: o.TotalOpens, OpenTrackedSent: o.OpenTrackedSent, OpenRate: o.OpenRate, Clicked: o.TotalClicks,
 			Replied: o.TotalReplies, ReplyRate: o.ReplyRate, Bounced: o.TotalBounces, BounceRate: o.BounceRate,
 		}
 		if sec.PositiveReplies {

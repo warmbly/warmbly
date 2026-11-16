@@ -1,0 +1,26 @@
+{
+  "message": "Successfully fetched all sequences and their associated steps",
+  "payload": [
+    {
+      "id": "JA5YdAr9wy",
+      "title": "Founders Q3",
+      "active": true,
+      "createdAt": "2025-03-01T10:00:00.000Z",
+      "steps": [
+        {"id": "bwOLEx4l8G", "name": "Step 1"},
+        {"id": "k9LmP2qRsT", "name": "Step 2"},
+        {"id": "Zx8Wv7Ut6S", "name": "Step 3"}
+      ],
+      "client": null,
+      "user": {"id": 1, "firstName": "John", "lastName": "Doe", "email": "john@example.com"}
+    },
+    {
+      "id": "Q2wE3rT4yU",
+      "title": "Acme outbound",
+      "active": false,
+      "steps": [{"id": "aaaa111111", "name": "Step 1"}],
+      "client": {"id": "g9bzZq4aMd", "companyName": "Acme", "firstName": "Maya", "lastName": "Client"},
+      "user": {"id": 1, "firstName": "John", "lastName": "Doe", "email": "john@example.com"}
+    }
+  ]
+}

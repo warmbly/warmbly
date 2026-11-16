@@ -1607,7 +1607,7 @@ func (r *organizationRepository) RecordOrganizationAcquisition(ctx context.Conte
 	if acq == nil {
 		return nil
 	}
-	n := acq.Normalize()
+	n := acq.Normalize().Channel()
 	if n.Empty() {
 		return nil
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -85,6 +86,12 @@ type Service struct {
 	audit         Auditor
 	// automatic reports whether the instance switches vendor mailboxes without a click; nil is off.
 	automatic func(ctx context.Context) bool
+
+	// Agency-held accounts; nil leaves them off.
+	agencyRepo    repository.AgencyVendorRepository
+	agencies      Agencies
+	agencyClients AgencyClients
+	instance      *encrypt.Encrypter
 }
 
 type cachedClient struct {
@@ -319,9 +326,44 @@ func (s *Service) Delete(ctx context.Context, orgID, id uuid.UUID) *errx.Error {
 	return nil
 }
 
+// keyOf is the sealed key a connection uses and how to open it. A connection made from an agency's
+// account holds none of its own: the agency's is read each time, and only while the workspace is its client.
+func (s *Service) keyOf(ctx context.Context, c *models.VendorConnection) (string, func() (string, error), *errx.Error) {
+	if c.AgencyConnectionID != nil {
+		if s.agencyRepo == nil || s.instance == nil {
+			return "", nil, errAgencyVendorGone
+		}
+		sealed, ok, err := s.agencyRepo.CredentialsFor(ctx, c.OrganizationID, *c.AgencyConnectionID)
+		if err != nil {
+			return "", nil, errx.InternalError()
+		}
+		if !ok {
+			return "", nil, errAgencyVendorGone
+		}
+		return sealed, func() (string, error) { return s.instance.Decrypt(sealed) }, nil
+	}
+	// An archive imported without credentials brings the connection but not its key.
+	if c.Credentials == "" {
+		_ = s.repo.SetStatus(ctx, c.ID, "invalid", models.VendorConnectionNoKey)
+		return "", nil, errx.NewWithIdentifier(errx.BadRequest, mailboximport.ErrIDVendorUnauthorized,
+			"This "+labelOf(c.Vendor)+" connection has no API key on this instance. Update the key to use it.")
+	}
+	return c.Credentials, func() (string, error) {
+		ciph, err := s.cipher.Cipher(ctx, c.OrganizationID)
+		if err != nil {
+			return "", err
+		}
+		return ciph.Decrypt(ctx, c.Credentials)
+	}, nil
+}
+
 // client is the connection's vendor client, reused for a while so one list serves many rows.
 func (s *Service) client(ctx context.Context, c *models.VendorConnection) (mailvendor.Client, *errx.Error) {
-	sum := sha256.Sum256([]byte(c.Credentials))
+	sealed, open, xerr := s.keyOf(ctx, c)
+	if xerr != nil {
+		return nil, xerr
+	}
+	sum := sha256.Sum256([]byte(sealed))
 	key := c.ID.String() + ":" + hex.EncodeToString(sum[:8])
 	if v, ok := s.clients.Load(key); ok {
 		cc := v.(*cachedClient)
@@ -330,18 +372,7 @@ func (s *Service) client(ctx context.Context, c *models.VendorConnection) (mailv
 		}
 		s.clients.Delete(key)
 	}
-	// An archive imported without credentials brings the connection but not its key.
-	if c.Credentials == "" {
-		_ = s.repo.SetStatus(ctx, c.ID, "invalid", "This connection has no API key on this instance. Update the key.")
-		return nil, errx.NewWithIdentifier(errx.BadRequest, mailboximport.ErrIDVendorUnauthorized,
-			"This "+labelOf(c.Vendor)+" connection has no API key on this instance. Update the key to use it.")
-	}
-	ciph, err := s.cipher.Cipher(ctx, c.OrganizationID)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil, errx.InternalError()
-	}
-	raw, err := ciph.Decrypt(ctx, c.Credentials)
+	raw, err := open()
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
@@ -449,39 +480,61 @@ type ImportInput struct {
 	MailboxIDs []string                    `json:"mailbox_ids"`
 	All        bool                        `json:"all"`
 	Options    models.MailboxImportOptions `json:"options"`
+	// SkipConnected leaves out a mailbox already in the workspace even when it is named; set by a caller
+	// acting for someone who is not a member, never from a request body.
+	SkipConnected bool `json:"-"`
 }
 
 // Import starts a background import of the picked vendor mailboxes. Their
 // credentials are read from the vendor as each row is worked, never earlier.
 func (s *Service) Import(ctx context.Context, orgID, userID, id uuid.UUID, in ImportInput) (*models.MailboxImport, *errx.Error) {
+	imp, _, xerr := s.ImportPicked(ctx, orgID, userID, id, in)
+	return imp, xerr
+}
+
+// ImportPicked is Import that also names the addresses it took, at most limit of them when limit is above zero.
+func (s *Service) ImportPicked(ctx context.Context, orgID, userID, id uuid.UUID, in ImportInput, limit ...int) (*models.MailboxImport, []string, *errx.Error) {
 	if s.importer == nil {
-		return nil, errx.InternalError()
+		return nil, nil, errx.InternalError()
 	}
 	c, xerr := s.get(ctx, orgID, id)
 	if xerr != nil {
-		return nil, xerr
+		return nil, nil, xerr
 	}
 	boxes, xerr := s.Mailboxes(ctx, orgID, id)
 	if xerr != nil {
-		return nil, xerr
+		return nil, nil, xerr
+	}
+	max := 0
+	if len(limit) > 0 {
+		max = limit[0]
 	}
 	want := map[string]bool{}
 	for _, m := range in.MailboxIDs {
 		want[m] = true
 	}
 	rows := make([]mailboximport.ListRow, 0)
+	emails := make([]string, 0)
 	for _, m := range boxes {
 		if !want[m.ID] && !(in.All && !m.Connected) {
 			continue
 		}
+		if in.SkipConnected && m.Connected {
+			continue
+		}
+		if max > 0 && len(rows) >= max {
+			break
+		}
+		emails = append(emails, m.Email)
 		cid := c.ID
 		rows = append(rows, mailboximport.ListRow{
 			Email: m.Email, Name: m.Name, VendorConnectionID: &cid, VendorMailboxID: m.ID, VendorProvider: m.Provider,
 		})
 	}
-	return s.importer.CreateFromList(ctx, mailboximport.ListInput{
+	imp, xerr := s.importer.CreateFromList(ctx, mailboximport.ListInput{
 		OrgID: orgID, UserID: userID, Source: "vendor", Vendor: c.Vendor, Label: c.Label, Rows: rows, Options: in.Options,
 	})
+	return imp, emails, xerr
 }
 
 // credentials reads one vendor mailbox's credentials.
@@ -545,6 +598,7 @@ func (s *Service) StartReconnect(ctx context.Context) {
 	go s.startReconnectDriver(ctx)
 	go s.startAutoSwitch(ctx)
 	jobrun.Loop(ctx, "mailbox_vendor_reconnect", 15*time.Minute, false, func(ctx context.Context) error {
+		s.healAgencyLinks(ctx)
 		cands, err := s.repo.ReconnectCandidates(ctx, 50)
 		if err != nil {
 			return err

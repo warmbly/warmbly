@@ -23,7 +23,7 @@ func TestMailboxNotLoadedIsNotRecipientEvidence(t *testing.T) {
 func TestMissingMailboxRequestsReloadBeforeRedelivery(t *testing.T) {
 	w := newLoadingWorker(&capturedEvents{})
 	reloads := 0
-	w.OnMailboxMissing = func() { reloads++ }
+	w.OnMailboxMissing = func(uuid.UUID) { reloads++ }
 	ctx := context.WithValue(t.Context(), deliveryKey{}, delivery{attempt: 1, redelivers: true})
 	if err := w.HandleSendEmail(ctx, models.SendEmail{TaskID: uuid.New(), EmailID: uuid.New()}); err == nil {
 		t.Fatal("missing mailbox was not left for redelivery")

@@ -1,0 +1,14 @@
+{"nextToken": null, "results": [
+  {
+    "object": "campaign", "id": 1, "title": "My campaign", "created": "2017-08-19T02:31:22.218Z", "isArchived": false, "isPaused": false,
+    "messages": [
+      {"object": "message", "id": 1, "type": "initial", "subject": "Quick question for {{first}} at {{account|your team}}", "replyToID": null, "isPaused": false},
+      {"object": "message", "id": 2, "type": "follow-up", "subject": "null", "replyToID": 1, "isPaused": false},
+      {"object": "message", "id": 4, "type": "drip", "subject": "Here's a drip email", "replyToID": null, "isPaused": false},
+      {"object": "message", "id": 5, "type": "on-click", "subject": "You clicked my link", "replyToID": null, "isPaused": false}
+    ],
+    "sender": {"object": "sender", "id": "abc", "emailAddress": "mysender@company.com", "fromName": "Firm ABC", "created": "2017-08-19T02:31:22.218Z"},
+    "url": "https://mailshake.com/app/#/..."
+  },
+  {"object": "campaign", "id": 2, "title": "Archived outreach", "created": "2017-09-01T10:00:00.000Z", "isArchived": true, "isPaused": false}
+]}

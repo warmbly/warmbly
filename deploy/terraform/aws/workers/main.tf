@@ -96,7 +96,8 @@ resource "aws_instance" "worker" {
     http_put_response_hop_limit = 1
     instance_metadata_tags      = "disabled"
   }
-  credit_specification { cpu_credits = "standard" }
+  # A fixed worker cannot scale out, so running above baseline bills instead of throttling sync and sends.
+  credit_specification { cpu_credits = "unlimited" }
   root_block_device {
     volume_size           = 16
     volume_type           = "gp3"

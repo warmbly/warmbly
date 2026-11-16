@@ -234,7 +234,7 @@ The transport is meant to deliver, and the relay did not accept a connection. Th
 
 ### mail_from_domain_mismatch
 
-Platform mail is sent from a domain that differs from the dashboard's. Mailbox providers may treat that as a mismatch. Only a problem if you did not intend them to differ.
+Platform mail is sent from a registered domain that differs from the dashboard's. Mailbox providers may treat that as a mismatch. Only a problem if you did not intend them to differ.
 
 ### login_code_demoted
 
@@ -294,7 +294,7 @@ Check the worker process is running, then check `ENCRYPTED_KEYS_BACKEND_URL` and
 
 ### tracking_domain_shares_brand
 
-`TRACKING_DOMAIN` is on the same registered domain as `APP_URL` or `API_PUBLIC_URL`. Every campaign's links and unsubscribe pages carry that host, so complaints against any one workspace can get it listed on a URL blocklist, and the listing reaches the domain that also serves your marketing site and your platform mail.
+`TRACKING_DOMAIN` is on the same registered domain as `APP_URL` or `API_PUBLIC_URL`. The registered domain is the name you bought plus its public suffix, so `track.example.co.uk` and `app.other.co.uk` are separate domains and pass. Every campaign's links and unsubscribe pages carry that host, so complaints against any one workspace can get it listed on a URL blocklist, and the listing reaches the domain that also serves your marketing site and your platform mail.
 
 Use a separate registered domain for tracking, and move workspaces onto their own verified tracking domains so their link reputation is theirs rather than shared.
 

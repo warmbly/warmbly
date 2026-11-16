@@ -1,0 +1,6 @@
+{"data":{"campaignId":"cam_launch","senderStrategy":"random","requiredChannelTypes":["email","linkedin"],"senders":[
+  {"userId":"usr_john","name":"John Doe","email":"john@example.com","inPool":true,"channels":[
+    {"type":"email","id":"usm_google","label":"John@Example.com","esp":"google","inPool":true,"diagnostics":[]}],"diagnostics":[]},
+  {"userId":"usr_jane","name":"Jane Smith","email":"jane@example.com","inPool":false,"channels":[
+    {"type":"email","id":"usm_smtp","label":"jane@example.org","esp":"smtp","inPool":false,"diagnostics":[]}],"diagnostics":[]}
+]}}

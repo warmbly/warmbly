@@ -85,7 +85,10 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			-- Stop also stamps warmup_paused_at; a stopped mailbox is off, not paused.
 			(ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NOT NULL AND ea.warmup_stopped_at IS NULL) AS warmup_paused,
 			ea.warmup_base, ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate,
-			COALESCE(ea.warmup_pool_type, 'free'),
+			-- Cloud reports the pool it warms a mailbox in; the local column is only the local pool's.
+			COALESCE(enr.health_pool_type, ea.warmup_pool_type, 'free'),
+			-- Any enrollment row hands warmup to Cloud, as the local scheduler's stand-down reads it.
+			enr.email_account_id IS NOT NULL AS cloud_owns_warmup,
 			ea.risk_band::text,
 			COALESCE(sent.d7, 0), COALESCE(sent.d1, 0), COALESCE(sent.d30, 0),
 			COALESCE(dl.bounces, 0), COALESCE(dl.complaints, 0),
@@ -97,8 +100,9 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			COALESCE(err.n, 0),
 			COALESCE(camp.active, false), COALESCE(camp.tracked, false),
 			ea.send_lifecycle,
-			inb.delivered, inb.arrived, inb.lost_by
+			inb.delivered, inb.arrived, inb.lost_by, bnc.orgs
 		FROM email_accounts ea
+		LEFT JOIN cloud_link_mailboxes enr ON enr.email_account_id = ea.id
 		LEFT JOIN LATERAL (
 			SELECT
 				COUNT(*) FILTER (WHERE t.completed_at > NOW() - INTERVAL '7 days')  AS d7,
@@ -151,6 +155,9 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			  AND wt.recipient_account_id = ea.id
 		) inb ON true
 		LEFT JOIN LATERAL (
+			SELECT COUNT(DISTINCT s.organization_id) AS orgs` + warmupBouncedFromSQL("wt.recipient_account_id = ea.id") + `
+		) bnc ON true
+		LEFT JOIN LATERAL (
 			-- A mailbox counts as "in an active campaign" on ResolveCampaignSenderPool's terms:
 			-- an enabled sender, a tag match, or the all-active fallback, and never a seed mailbox.
 			-- tracked: one of them puts a pixel or wrapped links on the mailbox's host (UTM tags alone do not).
@@ -201,6 +208,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			&m.AuthState, &m.AuthSPF, &m.AuthDKIM, &m.AuthDMARC, &m.AuthDMARCPolicy, &m.AuthFailingSince,
 			&m.WarmupActive, &m.WarmupPaused,
 			&m.WarmupBase, &m.WarmupMax, &m.WarmupIncrease, &m.WarmupReplyRate, &m.WarmupPoolType,
+			&m.CloudOwnsWarmup,
 			&m.RiskBand,
 			&m.ColdSent7d, &m.ColdSent1d, &m.ColdSent30d,
 			&m.Bounces30d, &m.Complaints30d,
@@ -210,7 +218,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			&m.PoolHealth, &m.PoolHealthScore, &m.PoolHealthReason, &m.PoolBlocked,
 			&m.UnresolvedErrs, &m.InActiveCampaign, &m.TrackedOnMailboxHost,
 			&m.SendLifecycle,
-			&m.WarmupDelivered7d, &m.WarmupArrived7d, &m.WarmupLostBy7d,
+			&m.WarmupDelivered7d, &m.WarmupArrived7d, &m.WarmupLostBy7d, &m.WarmupBouncedBy7d,
 		); err != nil {
 			return nil, err
 		}

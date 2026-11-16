@@ -44,7 +44,7 @@ func (c *Client) CreateSubscription(ctx context.Context, notificationURL, client
 	}
 	var out Subscription
 	if err := c.doJSON(ctx, http.MethodPost, graphBase+"/subscriptions", in, &out); err != nil {
-		return nil, err
+		return nil, errx.ProviderCall("graph subscription create", "", err)
 	}
 	return &out, nil
 }
@@ -54,7 +54,7 @@ func (c *Client) RenewSubscription(ctx context.Context, id string, now time.Time
 	in := map[string]any{"expirationDateTime": now.Add(SubscriptionLifetime).UTC().Format(time.RFC3339)}
 	var out Subscription
 	if err := c.doJSON(ctx, http.MethodPatch, graphBase+"/subscriptions/"+url.PathEscape(id), in, &out); err != nil {
-		return nil, err
+		return nil, errx.ProviderCall("graph subscription renew", "", err)
 	}
 	return &out, nil
 }
@@ -65,7 +65,7 @@ func (c *Client) DeleteSubscription(ctx context.Context, id string) error {
 	if SubscriptionGone(err) {
 		return nil
 	}
-	return err
+	return errx.ProviderCall("graph subscription delete", "", err)
 }
 
 // subscriptionListMaxPages bounds how many continuations ListSubscriptions follows.
@@ -81,7 +81,7 @@ func (c *Client) ListSubscriptions(ctx context.Context) ([]Subscription, error) 
 			NextLink json.RawMessage `json:"@odata.nextLink"`
 		}
 		if err := c.doJSON(ctx, http.MethodGet, next, nil, &page); err != nil {
-			return nil, err
+			return nil, errx.ProviderCall("graph subscription list", "", err)
 		}
 		subs = append(subs, page.Value...)
 		if page.NextLink == nil {

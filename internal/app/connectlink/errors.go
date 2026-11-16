@@ -30,11 +30,15 @@ var (
 	ErrUnavailable = errx.NewWithIdentifier(errx.ServiceUnavailable, "client_links_unavailable",
 		"Client connect links need the portal service. Set PORTAL_DOMAIN on this instance and run the portal service.")
 	ErrInvalidProviders = errx.NewWithIdentifier(errx.BadRequest, "client_link_invalid_providers",
-		"Choose at least one of gmail, outlook and smtp_imap.")
+		"Choose at least one of gmail, outlook, smtp_imap and vendor.")
 	ErrInvalidMax = errx.NewWithIdentifier(errx.BadRequest, "client_link_invalid_max_mailboxes",
 		"max_mailboxes must be between 1 and 500.")
 	ErrInvalidExpiry = errx.NewWithIdentifier(errx.BadRequest, "client_link_invalid_expiry",
 		"expires_in_days must be between 1 and 90.")
+	ErrNoMailboxes = errx.NewWithIdentifier(errx.BadRequest, "client_link_no_mailboxes",
+		"Pick at least one mailbox to connect.")
+	ErrTooManyMailboxes = errx.NewWithIdentifier(errx.Conflict, "client_link_too_many_mailboxes",
+		"This link cannot connect that many mailboxes. Pick fewer, or ask whoever sent it for a link that takes more.")
 	ErrTooManyTags = errx.NewWithIdentifier(errx.BadRequest, "client_link_invalid_tags",
 		"A link can apply at most 20 tags.")
 )

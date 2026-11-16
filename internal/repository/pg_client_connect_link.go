@@ -26,6 +26,9 @@ type ClientConnectLinkRepository interface {
 	Reserve(ctx context.Context, orgID, id uuid.UUID) (bool, *errx.Error)
 	// Release gives back a slot whose connect failed.
 	Release(ctx context.Context, orgID, id uuid.UUID) *errx.Error
+	// ReserveMany takes n slots at once, all or none; ReleaseMany gives n back.
+	ReserveMany(ctx context.Context, orgID, id uuid.UUID, n int) (bool, *errx.Error)
+	ReleaseMany(ctx context.Context, orgID, id uuid.UUID, n int) *errx.Error
 	RecordUse(ctx context.Context, use *models.ClientConnectLinkUse, orgID uuid.UUID, ipHash string) *errx.Error
 	ListUses(ctx context.Context, orgID, linkID uuid.UUID, limit int) ([]models.ClientConnectLinkUse, *errx.Error)
 }
@@ -154,6 +157,32 @@ func (r *clientConnectLinkRepository) Release(ctx context.Context, orgID, id uui
 	if _, err := r.DB.Exec(ctx, `UPDATE client_connect_links SET mailboxes_connected = mailboxes_connected - 1
 		WHERE organization_id = $1 AND id = $2 AND mailboxes_connected > 0`, orgID, id); err != nil {
 		db.CaptureError(err, "connect links release", []any{orgID}, "exec")
+		return errx.InternalError()
+	}
+	return nil
+}
+
+func (r *clientConnectLinkRepository) ReserveMany(ctx context.Context, orgID, id uuid.UUID, n int) (bool, *errx.Error) {
+	if n < 1 {
+		return false, nil
+	}
+	tag, err := r.DB.Exec(ctx, `UPDATE client_connect_links SET mailboxes_connected = mailboxes_connected + $3
+		WHERE organization_id = $1 AND id = $2 AND revoked_at IS NULL AND created_by IS NOT NULL
+		  AND expires_at > now() AND mailboxes_connected + $3 <= max_mailboxes`, orgID, id, n)
+	if err != nil {
+		db.CaptureError(err, "connect links reserve many", []any{orgID}, "exec")
+		return false, errx.InternalError()
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+func (r *clientConnectLinkRepository) ReleaseMany(ctx context.Context, orgID, id uuid.UUID, n int) *errx.Error {
+	if n < 1 {
+		return nil
+	}
+	if _, err := r.DB.Exec(ctx, `UPDATE client_connect_links SET mailboxes_connected = GREATEST(mailboxes_connected - $3, 0)
+		WHERE organization_id = $1 AND id = $2`, orgID, id, n); err != nil {
+		db.CaptureError(err, "connect links release many", []any{orgID}, "exec")
 		return errx.InternalError()
 	}
 	return nil
