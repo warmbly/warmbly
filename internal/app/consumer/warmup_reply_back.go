@@ -41,9 +41,9 @@ func (s *JobsService) scheduleWarmupReplyBack(ctx context.Context, token *models
 	if !recipient.IsWarmingActive() {
 		return nil
 	}
-	// Arrivals only spend the reply share the mailbox has left; a send it owes is repaid when its next plain send goes out.
+	// Arrivals only answer while a reply is due, the same rule a plain send applies.
 	if share, ok := s.TaskRepo.(repository.WarmupReplyShareRepository); ok {
-		if sent, replied, err := share.WarmupReplyShare(ctx, recipientAccountID); err == nil && warmupramp.ReplyDeficit(recipient.WarmupReplyRate, sent, replied) <= 0 {
+		if sent, replied, err := share.WarmupReplyShare(ctx, recipientAccountID); err == nil && !warmupramp.ReplyDue(recipient.WarmupReplyRate, sent, replied) {
 			return nil
 		}
 	}
