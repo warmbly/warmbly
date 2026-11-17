@@ -108,7 +108,7 @@ Recovery does not bypass paused participation, provider limits or deliverability
 
 ### Where the content comes from
 
-Warmup mail reads like ordinary correspondence: a short, specific subject, an opening and up to five alternating replies between two people who know each other loosely. It never says it is automated, generated or a warmup, and any turn that does is refused before it sends. Topics, tone, structure and length vary from thread to thread, and replies keep the same subject and the real sender names.
+Warmup mail reads like ordinary correspondence: a short, specific subject, an opening and up to five alternating replies between two people who know each other loosely. It never says it is automated, generated or a warmup, and any turn that does is refused before it sends. Topics, tone, structure and length vary from thread to thread, and replies answer under the thread's subject with "Re:" in front, as a mail client would, with the real sender names.
 
 Every instance ships with a hand-written library of about seventy threads, so warmup works with no AI provider at all. With an OpenAI key configured and `AI_PROVIDER` unset or set to `openai`, background batches add generated threads. Each passes structural and wording checks, then a separate review of the complete thread (TypeSafe when configured, otherwise OpenAI) before it can be used. An unavailable, incomplete or uncertain review never approves content.
 

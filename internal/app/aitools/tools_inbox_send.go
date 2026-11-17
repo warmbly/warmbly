@@ -90,7 +90,7 @@ func (d Deps) replyTarget(ctx context.Context, inv Invocation, threadID string) 
 	if to == "" {
 		return "", "", uuid.Nil, ErrInvalidArgs
 	}
-	return to, replySubject(latest.Subject), latest.ID, nil
+	return to, mailhdr.ReplySubject(latest.Subject), latest.ID, nil
 }
 
 // previewSendReply resolves the reply's recipient and sender, and pins both in the args the member approves.
