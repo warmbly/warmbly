@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -227,7 +228,7 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 		ThreadID:        r.ThreadID,
 		SourceMessageID: src,
 		ToAddr:          r.Counterpart,
-		Subject:         replySubject(r.Subject),
+		Subject:         mailhdr.ReplySubject(r.Subject),
 		InReplyTo:       r.InReplyTo,
 		Body:            strings.TrimSpace(res.Text),
 		IntentClass:     r.IntentClass,
@@ -330,16 +331,4 @@ func (s *service) contactGrounding(ctx context.Context, contactID uuid.UUID) str
 		}
 	}
 	return strings.TrimSpace(b.String())
-}
-
-// replySubject prefixes "Re: " once, mirroring a normal reply subject.
-func replySubject(subject string) string {
-	s := strings.TrimSpace(subject)
-	if s == "" {
-		return "Re:"
-	}
-	if strings.HasPrefix(strings.ToLower(s), "re:") {
-		return s
-	}
-	return "Re: " + s
 }

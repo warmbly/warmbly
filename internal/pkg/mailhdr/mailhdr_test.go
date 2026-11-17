@@ -108,3 +108,17 @@ func TestSubjectRoundTrip(t *testing.T) {
 		t.Fatalf("round trip lost content: %q", got)
 	}
 }
+
+func TestReplySubjectPrefixesOnce(t *testing.T) {
+	for in, want := range map[string]string{
+		"Coffee or tea at work": "Re: Coffee or tea at work",
+		"  Podcast habits ":     "Re: Podcast habits",
+		"Re: Podcast habits":    "Re: Podcast habits",
+		"RE: Podcast habits":    "RE: Podcast habits",
+		"":                      "Re:",
+	} {
+		if got := ReplySubject(in); got != want {
+			t.Errorf("ReplySubject(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

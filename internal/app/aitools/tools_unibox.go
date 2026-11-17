@@ -9,6 +9,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 )
 
 func (d Deps) registerUniboxTools(r *Registry) {
@@ -213,7 +214,7 @@ func (d Deps) draftReply(ctx context.Context, inv Invocation, args json.RawMessa
 		if len(latest.FromAddr) > 0 {
 			to = latest.FromAddr[0]
 		}
-		subject = replySubject(latest.Subject)
+		subject = mailhdr.ReplySubject(latest.Subject)
 	}
 	return jsonResult(map[string]any{
 		"draft": map[string]any{
@@ -224,16 +225,4 @@ func (d Deps) draftReply(ctx context.Context, inv Invocation, args json.RawMessa
 		},
 		"note": "This is a draft only. It has not been sent; the user must review and send it.",
 	})
-}
-
-// replySubject prefixes "Re: " unless already present.
-func replySubject(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "Re:"
-	}
-	if strings.HasPrefix(strings.ToLower(s), "re:") {
-		return s
-	}
-	return "Re: " + s
 }
