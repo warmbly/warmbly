@@ -16,6 +16,7 @@ export type IntegrationProvider =
     | "cal_com"
     | "google_sheets"
     | "apollo"
+    | "companyenrich"
     | "clay"
     | "google_places"
     | "foursquare"
@@ -378,6 +379,7 @@ export const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
     cal_com: "Cal.com",
     google_sheets: "Google Sheets",
     apollo: "Apollo",
+    companyenrich: "CompanyEnrich",
     clay: "Clay",
     google_places: "Google Places",
     foursquare: "Foursquare",

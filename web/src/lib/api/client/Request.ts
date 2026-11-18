@@ -17,6 +17,8 @@ interface AuthRequestConfig extends AxiosRequestConfig {
     // Set on the re-authentication call itself, so a wrong password there
     // reaches the caller instead of reopening the prompt that made it.
     skipReauthPrompt?: boolean
+    // Provider payloads can contain date-shaped strings that must remain unchanged.
+    preserveJson?: boolean
     // Aborts the HTTP request; pass TanStack Query's queryFn signal here.
     signal?: AbortSignal
 }
@@ -151,7 +153,7 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
 
     try {
         const res = await Client.request(config)
-        return reviveDates(res.data)
+        return config.preserveJson ? res.data : reviveDates(res.data)
     } catch (error) {
         // Cancelled on purpose: no retry, no reauth prompt, no session change.
         if (isRequestCancelled(error)) throw error;
@@ -167,7 +169,7 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
                     Authorization: `Bearer ${token.access_token}`,
                 }
                 const res = await Client.request(config)
-                return reviveDates(res.data)
+                return config.preserveJson ? res.data : reviveDates(res.data)
             } catch (retryErr) {
                 // ensureValidToken has already ended the session when it had
                 // to, so its own AuthError travels untouched. Anything else
@@ -191,7 +193,7 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
         ) {
             await promptForReauth();
             const res = await Client.request(config);
-            return reviveDates(res.data);
+            return config.preserveJson ? res.data : reviveDates(res.data);
         }
 
         // The balance ran out: one app-wide dialog offers to add money in place.

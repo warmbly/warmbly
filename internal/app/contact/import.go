@@ -232,9 +232,13 @@ func (s *contactService) ValidateImportMapping(mapping []models.ContactImportCol
 
 // ImportRow is one data row of an uploaded file with its 1-based line there.
 type ImportRow struct {
-	Line  int
-	Cells []string
+	Line     int
+	Cells    []string
+	Expected *repository.ContactImportSnapshot
 }
+
+// ImportReasonContactChanged identifies an existing-contact snapshot refusal.
+const ImportReasonContactChanged = "contact changed since the supplied snapshot"
 
 // ImportSink follows an import as it runs chunk by chunk.
 type ImportSink interface {
@@ -376,6 +380,7 @@ type pendingRow struct {
 	contact    models.AddContact
 	categories []string // category titles read from the file
 	ok         bool
+	expected   *repository.ContactImportSnapshot
 	// dupOf is the line of an earlier row with the same address. Not an
 	// error: the row counts as skipped and its data was merged.
 	dupOf int
@@ -390,7 +395,7 @@ func (p *importPlan) parseRows(rows []ImportRow) []pendingRow {
 	parsed := make([]pendingRow, 0, len(rows))
 	firstByEmail := make(map[string]int, len(rows))
 	for _, row := range rows {
-		pr := pendingRow{line: row.Line, raw: row.Cells}
+		pr := pendingRow{line: row.Line, raw: row.Cells, expected: row.Expected}
 		contact, cats, err := buildAddContact(row.Cells, p.columns, p.campaignIDs, p.categoryIDs)
 		if err != "" {
 			pr.rawEmail, pr.errMsg = contact.Email, err
@@ -407,11 +412,19 @@ func (p *importPlan) parseRows(rows []ImportRow) []pendingRow {
 			continue
 		}
 		contact.Email = addr
+		if row.Expected != nil {
+			expectedEmail, valid := email.Normalize(row.Expected.Email)
+			if p.dedup != models.ContactImportDedupUpdate || row.Expected.ID == uuid.Nil || row.Expected.UpdatedAt.IsZero() || !valid || expectedEmail != addr {
+				pr.rawEmail, pr.errMsg = contact.Email, ImportReasonContactChanged
+				parsed = append(parsed, pr)
+				continue
+			}
+		}
 
 		if prev, dup := firstByEmail[addr]; dup {
 			// "skip" keeps the first row; the other strategies merge the later
 			// row onto it so no data from the file is silently dropped.
-			if p.dedup != models.ContactImportDedupSkip {
+			if p.dedup != models.ContactImportDedupSkip && pr.expected == nil && parsed[prev].expected == nil {
 				mergeAddContact(&parsed[prev].contact, contact)
 				parsed[prev].categories = appendUnique(parsed[prev].categories, cats...)
 			}
@@ -612,7 +625,7 @@ func (s *contactService) runImport(ctx context.Context, plan *importPlan, rows [
 func countNew(parsed []pendingRow, existing map[string]uuid.UUID, elsewhere map[string]bool) int {
 	n := 0
 	for i := range parsed {
-		if !parsed[i].ok {
+		if !parsed[i].ok || parsed[i].expected != nil {
 			continue
 		}
 		addr := parsed[i].contact.Email
@@ -645,6 +658,8 @@ func (s *contactService) applyImportChunk(
 			rec.settle(p.line, models.ContactImportRowSkipped, addr, nil, fmt.Sprintf("same address as line %d", p.dupOf), nil)
 		case !p.ok:
 			rec.settle(p.line, models.ContactImportRowFailed, p.rawEmail, p.raw, p.errMsg, nil)
+		case p.expected != nil && (!have || id != p.expected.ID):
+			rec.settle(p.line, models.ContactImportRowFailed, addr, p.raw, ImportReasonContactChanged, nil)
 		case !have && elsewhere[addr]:
 			rec.settle(p.line, models.ContactImportRowFailed, addr, p.raw, reasonElsewhere, nil)
 		case !have:
@@ -694,7 +709,7 @@ func (s *contactService) applyImportChunk(
 	if len(updates) > 0 {
 		batch := make([]repository.ContactImportUpdate, len(updates))
 		for i, p := range updates {
-			batch[i] = repository.ContactImportUpdate{ID: existing[p.contact.Email], Contact: p.contact}
+			batch[i] = repository.ContactImportUpdate{ID: existing[p.contact.Email], Contact: p.contact, Expected: p.expected}
 		}
 		found, xerr := s.contactRepository.ImportUpdate(ctx, plan.orgID, batch)
 		for i, p := range updates {
@@ -710,7 +725,11 @@ func (s *contactService) applyImportChunk(
 			case rowErr != nil:
 				rec.settle(p.line, models.ContactImportRowFailed, p.contact.Email, p.raw, rowErr.Message, nil)
 			case !ok:
-				rec.settle(p.line, models.ContactImportRowFailed, p.contact.Email, p.raw, reasonDeleted, nil)
+				reason := reasonDeleted
+				if p.expected != nil {
+					reason = ImportReasonContactChanged
+				}
+				rec.settle(p.line, models.ContactImportRowFailed, p.contact.Email, p.raw, reason, nil)
 			default:
 				links = append(links, linkTarget{row: p, contactID: batch[i].ID, status: models.ContactImportRowUpdated})
 			}
