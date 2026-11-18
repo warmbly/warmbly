@@ -9,6 +9,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/warmbly/warmbly/internal/pkg/textcontent"
 	"github.com/xuri/excelize/v2"
@@ -116,27 +117,33 @@ func parse(r io.Reader, filename string, maxRows int) ([][]string, string, error
 	return nil, "", errors.New("unsupported file type: " + ext)
 }
 
-// Delimiter is the separator a delimited file uses, read off its first line:
-// a comma, or the semicolon spreadsheet apps write where the comma is the
-// decimal mark, or a tab. Separators inside quotes do not count.
+// Delimiter is the separator a delimited file uses, read off its first line
+// with anything in it: a comma, or the semicolon spreadsheet apps write where
+// the comma is the decimal mark, or a tab. Separators inside quotes do not count.
 func Delimiter(data []byte) rune {
 	counts := map[rune]int{}
-	quoted := false
+	quoted, content := false, false
 	for _, r := range string(bytes.TrimPrefix(data, []byte("\ufeff"))) {
-		if r == '"' {
+		switch {
+		case r == '"':
 			quoted = !quoted
-			continue
-		}
-		if !quoted && (r == '\n' || r == '\r') {
-			if counts[','] > 0 || counts[';'] > 0 || counts['\t'] > 0 {
-				break
+		case !quoted && (r == '\n' || r == '\r'):
+			if !content {
+				clear(counts)
+			} else if counts[','] > 0 || counts[';'] > 0 || counts['\t'] > 0 {
+				return pick(counts)
 			}
-			continue
-		}
-		if !quoted && (r == ',' || r == ';' || r == '\t') {
+			content = false
+		case !quoted && (r == ',' || r == ';' || r == '\t'):
 			counts[r]++
+		case !blankRune(r):
+			content = true
 		}
 	}
+	return pick(counts)
+}
+
+func pick(counts map[rune]int) rune {
 	best := ','
 	for _, r := range []rune{';', '\t'} {
 		if counts[r] > counts[best] {
@@ -150,9 +157,13 @@ func Delimiter(data []byte) rune {
 // the first row that says something.
 func blank(row []string) bool {
 	for _, c := range row {
-		if strings.TrimSpace(strings.TrimPrefix(c, "\ufeff")) != "" {
+		if strings.TrimFunc(c, blankRune) != "" {
 			return false
 		}
 	}
 	return true
+}
+
+func blankRune(r rune) bool {
+	return unicode.IsSpace(r) || r == '\ufeff'
 }
