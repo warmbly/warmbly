@@ -305,6 +305,13 @@ resource "aws_iam_role_policy" "fleet" {
   policy = data.aws_iam_policy_document.fleet.json
 }
 
+# Session Manager is the only way onto a fleet host: no SSH, no open port. The worker container cannot reach the role (metadata is root-only).
+resource "aws_iam_role_policy_attachment" "fleet_ssm" {
+  count      = local.fleet ? 1 : 0
+  role       = aws_iam_role.fleet[0].name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "fleet" {
   count = local.fleet ? 1 : 0
   name  = "${var.name}-fleet-worker"
