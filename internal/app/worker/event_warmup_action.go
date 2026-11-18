@@ -129,6 +129,8 @@ func (w *WorkerService) handleWarmupAction(ctx context.Context, action models.Wa
 		}
 	}
 	var err error
+	// imapDown is an IMAP server we could not reach; redelivery would only wait out its connect timeout again.
+	imapDown := false
 	switch {
 	case !exists:
 		// Engagement on a mailbox this worker is not holding is dropped; it
@@ -148,6 +150,7 @@ func (w *WorkerService) handleWarmupAction(ctx context.Context, action models.Wa
 		err = w.runGraphWarmupActions(ctx, mail, action, rescue)
 	case mail.SmtpImapData != nil && mail.SmtpImapData.ImapClient != nil:
 		err = w.runImapWarmupActions(ctx, mail, action, rescue)
+		imapDown = action.FilingID == "" && mailServerUnreachable(err)
 	default:
 		if action.FilingID != "" {
 			err = errors.New("mailbox has no provider client for warmup filing")
@@ -182,7 +185,7 @@ func (w *WorkerService) handleWarmupAction(ctx context.Context, action models.Wa
 	// Engagement is best effort and never returns here. A retention delete
 	// (the row is already retired) and a removal check are redelivered, a
 	// bounded number of times.
-	if d := deliveryOf(ctx); (d.redelivers || action.FilingID != "") && d.attempt < warmupDeleteRedeliveries {
+	if d := deliveryOf(ctx); (d.redelivers || action.FilingID != "") && d.attempt < warmupDeleteRedeliveries && !imapDown {
 		return err
 	}
 	log.Error().Err(err).
@@ -207,6 +210,12 @@ func rescueFailure(err error) string {
 		return models.WarmupRescueGone
 	}
 	return models.WarmupRescueFailed
+}
+
+// mailServerUnreachable is a server we could not connect to; redelivering only spends a handler on connect timeouts.
+func mailServerUnreachable(err error) bool {
+	var mailErr *errx.MailError
+	return errors.As(err, &mailErr) && (mailErr.Code == errx.MailErrorCodeServerUnreachable || mailErr.Code == errx.MailErrorCodeConnectionLost)
 }
 
 // warmupDeleteRedeliveries bounds how many times a failed retention delete or
