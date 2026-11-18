@@ -6397,7 +6397,7 @@
       "post": {
         "operationId": "campaigns_pause_lead",
         "summary": "Pause a lead",
-        "description": "Hold one contact's flow inside one campaign until a date, or with no end. The contact stays subscribed and stays a lead. The body states an absolute hold rather than a delta, so a retry lands on the same state. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "description": "Hold one contact's flow inside one campaign until a date, or with no end. The contact stays subscribed and stays a lead. The body states an absolute hold rather than a delta, so a retry lands on the same state. On a lead waiting for review it writes the manual pause and answers with it, and the lead keeps waiting for review; approving it later leaves the pause in place. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -6504,7 +6504,7 @@
       "post": {
         "operationId": "campaigns_resume_lead",
         "summary": "Resume a lead",
-        "description": "Lift the hold now. The held time is dropped rather than carried, and the campaign's wakeup is pulled forward. Resuming a lead that is not held succeeds and changes nothing. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "description": "Lift the hold now. The held time is dropped rather than carried, and the campaign's wakeup is pulled forward. Resuming a lead that is not held succeeds and changes nothing. Resuming never approves a lead waiting for review: it lifts any other hold, and the lead goes back to waiting for review. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -47732,6 +47732,1153 @@
           }
         }
       }
+    },
+    "/campaigns/{id}/review": {
+      "get": {
+        "operationId": "campaigns_get_review",
+        "summary": "Get a campaign's readiness report",
+        "description": "How the campaign's leads split by review state, the merge fields some leads not yet emailed would leave blank, what sending will skip, template errors, and how much of the first email's AI copy is written ahead. Scope READ_CAMPAIGNS, org permission view_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignReviewSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "campaigns_set_review",
+        "summary": "Turn review mode on or off",
+        "description": "On holds every lead not yet emailed, and every lead enrolled later, until a member approves it. Off approves every waiting lead, so it also needs SEND_CAMPAIGNS and send_campaigns. Only a change moves leads; repeating the current mode changes nothing. Only an approval or turning review off releases a waiting lead; resuming another hold never does. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignReviewChange"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "enabled is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden, or turning review off without the send permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/review/leads": {
+      "get": {
+        "operationId": "campaigns_list_review_leads",
+        "summary": "List a campaign's leads by review state",
+        "description": "Pages the campaign's leads ordered by email, each with its review state, hold, how many steps carry its own copy, and the fields the campaign's emails print that it has empty. Scope READ_CAMPAIGNS and READ_CONTACTS, org permission view_campaigns and view_contacts.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "waiting",
+                "ready",
+                "held",
+                "started"
+              ]
+            }
+          },
+          {
+            "name": "missing",
+            "in": "query",
+            "required": false,
+            "description": "Only leads with this field empty.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "FirstName",
+                "LastName",
+                "Company",
+                "Phone"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Matches email, name or company.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignReviewLeadsResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown status or missing field, a limit out of range, or an invalid cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/review/approve": {
+      "post": {
+        "operationId": "campaigns_approve_review_leads",
+        "summary": "Approve waiting leads",
+        "description": "Releases leads waiting for review, so their first email goes out under the campaign's schedule and limits. Send contact_ids (up to 500) or all. Approving a lead that is not waiting changes nothing, so retrying the same contact_ids is safe. all approves whoever is waiting when it runs, so a repeated all also approves leads that started waiting since the first call; retry with the contact_ids you meant instead. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignReviewLeadsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK. released counts the leads approved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignReviewChange"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither or both of contact_ids and all, or more than 500 ids.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/review/reopen": {
+      "post": {
+        "operationId": "campaigns_reopen_review_leads",
+        "summary": "Send leads back to review",
+        "description": "Holds the listed leads for review again. The campaign must have review mode on. A lead already emailed is left as it is. A lead paused for another reason waits for review too and keeps that pause. A lead already waiting stays waiting, so a retry is safe. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "contact_ids": {
+                    "type": "array",
+                    "maxItems": 500,
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "contact_ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK. held counts the leads put back into review.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignReviewChange"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "contact_ids is missing, empty or longer than 500, all is sent, or review mode is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/review/write": {
+      "post": {
+        "operationId": "campaigns_write_review_ai",
+        "summary": "Write AI copy ahead for a pass of leads",
+        "description": "Writes the AI blocks of the first email (or step_id) for up to 10 leads not yet emailed that still miss one: the listed contact_ids, else waiting leads when waiting_only, else every lead not yet emailed. Charged to the balance exactly as at send time, and cached where the send reads it, so nothing is written or charged twice. Repeat with the returned next as after while remaining is above zero. A pass that runs out of balance or reaches a spend limit stops early and says why in stopped. Scope WRITE_CAMPAIGNS, org permission manage_campaigns and use_ai.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "step_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "contact_ids": {
+                    "type": "array",
+                    "maxItems": 500,
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "description": "Only these leads. An empty list is refused; omit it to write every lead."
+                  },
+                  "waiting_only": {
+                    "type": "boolean"
+                  },
+                  "after": {
+                    "type": "string",
+                    "description": "The previous pass's next cursor."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadAIBatchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "contact_ids is empty or longer than 500, or after is not a cursor this endpoint issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign or step is not the caller's organization's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/leads/{contactId}/emails": {
+      "get": {
+        "operationId": "campaigns_get_lead_emails",
+        "summary": "Get one lead's emails as they will be sent",
+        "description": "Every email step rendered for one lead the way the send path will: the lead's own copy or A/B arm, merge fields, spintax (fixed per lead and step), the AI copy written so far (marked with data-ai-block spans, and an unwritten block as an empty data-ai-pending span), signature and opt-out footer. Nothing is written or charged. Scope READ_CAMPAIGNS and READ_CONTACTS, org permission view_campaigns and view_contacts.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadEmails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's, or the contact is not a lead of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/leads/{contactId}/emails/{stepId}": {
+      "put": {
+        "operationId": "campaigns_put_lead_email",
+        "summary": "Personalize one email for one lead",
+        "description": "Stores this lead's own copy of one email step, checked like a step's copy. It replaces the step's copy, and any A/B variant, for this lead only; merge fields and AI blocks in it still resolve when it sends. Replaces the whole copy, so a retry is safe. Scope WRITE_CAMPAIGNS and READ_CONTACTS, org permission manage_campaigns and view_contacts.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "stepId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string",
+                    "maxLength": 998,
+                    "description": "Ignored on a follow-up that replies in the lead's thread."
+                  },
+                  "body_html": {
+                    "type": "string"
+                  },
+                  "body_plain": {
+                    "type": "string"
+                  }
+                },
+                "anyOf": [
+                  {
+                    "required": [
+                      "body_html"
+                    ],
+                    "properties": {
+                      "body_html": {
+                        "pattern": "\\S"
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "body_plain"
+                    ],
+                    "properties": {
+                      "body_plain": {
+                        "pattern": "\\S"
+                      }
+                    }
+                  }
+                ],
+                "description": "Send a nonblank body_html, body_plain, or both."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadStepOverride"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No body, too long, or a template error (invalid_template).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign, lead or email step is not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "campaigns_delete_lead_email",
+        "summary": "Reset one lead's email to the step's copy",
+        "description": "Drops this lead's own copy, so the step's copy goes out again. Deleting a copy that is not there succeeds. Scope WRITE_CAMPAIGNS and READ_CONTACTS, org permission manage_campaigns and view_contacts.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "stepId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Reset."
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign, lead or email step is not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/leads/{contactId}/emails/{stepId}/write": {
+      "post": {
+        "operationId": "campaigns_write_lead_email_ai",
+        "summary": "Write one lead's AI copy for one email now",
+        "description": "Writes the step's AI blocks for this lead now instead of at send time, so they can be read first, and answers the lead's emails. Charged to the balance as at send time and cached where the send reads it, so a retry writes and charges nothing more. Blocks are written one at a time and each is saved as it is written, so a call that fails partway keeps and charges the blocks it finished and a retry writes only the rest. rewrite: true is a new generation charged again each time, so do not retry a rewrite automatically. Scope WRITE_CAMPAIGNS and READ_CONTACTS, org permission manage_campaigns, use_ai and view_contacts.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "stepId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadEmails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "insufficient_credits: the balance is too low for the next block. Blocks written before it stay written and charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign, lead or email step is not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited, or usage_cap_exceeded past a spend limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ai_unavailable (no AI provider; nothing is charged) or ai_generation_failed (the failed block is not charged, though a web lookup it made can be; blocks written before it stay written and charged).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rewrite": {
+                    "type": "boolean",
+                    "description": "Replace copy already written with a new generation, charged again. Each repeat is another charge, so do not retry it automatically."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -49847,6 +50994,10 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "review_leads": {
+            "type": "boolean",
+            "description": "Each new lead waits for a member to approve it before its first email. Changed through PUT /campaigns/{id}/review."
           }
         }
       },
@@ -52017,6 +53168,32 @@
                 }
               }
             }
+          },
+          "ai_blocks": {
+            "type": "array",
+            "description": "The body's AI blocks; written is true when the copy for this lead is already written.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "written": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "lead": {
+            "type": "boolean",
+            "description": "The contact is a lead of campaign_id. Only reported when step_id is given; omitted otherwise, even for a lead."
+          },
+          "personalized": {
+            "type": "boolean",
+            "description": "The lead has their own copy of this step, which they get instead."
           }
         }
       },
@@ -61286,7 +62463,7 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "When it lifts. Absent for a hold with no end, which only a resume lifts."
+            "description": "When it lifts. Absent for a hold with no end, which only a resume lifts, and for a review hold, which only an approval or turning review mode off lifts."
           },
           "reason": {
             "type": "string",
@@ -61298,9 +62475,11 @@
               "manual",
               "out_of_office",
               "inbox_tagging",
+              "crm",
+              "review",
               "cc"
             ],
-            "description": "What wrote it. cc holds a contact's own lead while they are copied on another lead's emails in the campaign; its reason is that lead's address."
+            "description": "What wrote it. review marks a lead waiting for approval in a review campaign, shown ahead of any other hold; only approving the lead or turning review mode off lifts it. cc holds a contact's own lead while they are copied on another lead's emails in the campaign; its reason is that lead's address."
           }
         },
         "required": [
@@ -65639,6 +66818,473 @@
           "list_id"
         ],
         "description": "Creates an enabled source and starts its first import immediately. The list cannot be changed after creation."
+      },
+      "CampaignReviewLeadsRequest": {
+        "type": "object",
+        "description": "Send a nonempty contact_ids, or all set to true, not both.",
+        "properties": {
+          "contact_ids": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "all": {
+            "type": "boolean"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "contact_ids"
+            ],
+            "properties": {
+              "contact_ids": {
+                "minItems": 1
+              },
+              "all": {
+                "const": false
+              }
+            }
+          },
+          {
+            "required": [
+              "all"
+            ],
+            "properties": {
+              "all": {
+                "const": true
+              },
+              "contact_ids": {
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "CampaignReviewChange": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "review_leads": {
+            "type": "boolean"
+          },
+          "held": {
+            "type": "integer",
+            "description": "Leads put into review."
+          },
+          "released": {
+            "type": "integer",
+            "description": "Leads approved."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "review_leads",
+          "held",
+          "released"
+        ]
+      },
+      "CampaignReviewLeadHold": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "manual, out_of_office, inbox_tagging, cc, crm or review."
+          }
+        }
+      },
+      "CampaignReviewLead": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "ready",
+              "held",
+              "started"
+            ]
+          },
+          "hold": {
+            "$ref": "#/components/schemas/CampaignReviewLeadHold"
+          },
+          "personalized": {
+            "type": "integer",
+            "description": "Steps carrying this lead's own copy."
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "added_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contact_id",
+          "email",
+          "status",
+          "personalized"
+        ]
+      },
+      "CampaignReviewLeadsResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CampaignReviewLead"
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Opaque cursor for the next page, or null on the last page."
+              },
+              "has_more": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ]
+      },
+      "CampaignReviewSummary": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "review_leads": {
+            "type": "boolean"
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "waiting": {
+                "type": "integer"
+              },
+              "ready": {
+                "type": "integer"
+              },
+              "held": {
+                "type": "integer"
+              },
+              "started": {
+                "type": "integer"
+              },
+              "personalized": {
+                "type": "integer"
+              }
+            }
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "leads": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "undeliverable": {
+            "type": "integer"
+          },
+          "unsubscribed": {
+            "type": "integer"
+          },
+          "ai": {
+            "type": "object",
+            "properties": {
+              "step_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "blocks": {
+                "type": "integer"
+              },
+              "written": {
+                "type": "integer"
+              },
+              "pending": {
+                "type": "integer"
+              },
+              "estimated_cost_usd": {
+                "type": "number"
+              },
+              "auto": {
+                "type": "boolean"
+              }
+            }
+          },
+          "template_errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "step_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "campaign_id",
+          "review_leads",
+          "counts",
+          "missing",
+          "ai"
+        ]
+      },
+      "LeadStepOverride": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contact_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "step_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body_html": {
+            "type": "string"
+          },
+          "body_plain": {
+            "type": "string"
+          },
+          "edited_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LeadEmailStep": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body_html": {
+            "type": "string"
+          },
+          "body_plain": {
+            "type": "string"
+          },
+          "threaded": {
+            "type": "boolean",
+            "description": "A follow-up replying in the lead's thread, so its subject is the conversation's."
+          },
+          "personalized": {
+            "type": "boolean"
+          },
+          "edited_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "step_changed": {
+            "type": "boolean",
+            "description": "The step's shared copy was edited after this lead's copy."
+          },
+          "variant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ai_blocks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "written": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sent": {
+            "type": "boolean"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "object",
+            "description": "The template this lead's copy renders from: their own copy, the A/B arm drawn for them, or the step's.",
+            "properties": {
+              "subject": {
+                "type": "string"
+              },
+              "body_html": {
+                "type": "string"
+              },
+              "body_plain": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "LeadEmails": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lead": {
+            "$ref": "#/components/schemas/CampaignReviewLead"
+          },
+          "from": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeadEmailStep"
+            }
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead",
+          "steps"
+        ]
+      },
+      "LeadAIBatchResult": {
+        "type": "object",
+        "properties": {
+          "written": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "remaining": {
+            "type": "integer"
+          },
+          "stopped": {
+            "type": "string",
+            "description": "insufficient_credits or usage_cap_exceeded when the pass ended early."
+          },
+          "next": {
+            "type": "string",
+            "description": "Send as after on the next pass. It moves past every lead the pass tried, or back to where a stopped pass began."
+          }
+        },
+        "required": [
+          "written",
+          "failed",
+          "remaining"
+        ]
       }
     }
   }

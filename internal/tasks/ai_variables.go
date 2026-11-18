@@ -44,6 +44,24 @@ const (
 	aiVarResearchTimeout       = 45 * time.Second
 )
 
+type aiVarKeySuffixKey struct{}
+
+// withAIVarRewrite gives a deliberate rewrite billing keys of its own, so its charge is not deduplicated against the first.
+func withAIVarRewrite(ctx context.Context) context.Context {
+	return context.WithValue(ctx, aiVarKeySuffixKey{}, ":rewrite:"+uuid.NewString())
+}
+
+func aiVarKeySuffix(ctx context.Context) string {
+	s, _ := ctx.Value(aiVarKeySuffixKey{}).(string)
+	return s
+}
+
+// ErrAIVarBalance and ErrAIVarCap are the two refusals a caller words for the member.
+var (
+	ErrAIVarBalance = errors.New("the workspace balance is too low for this AI variable")
+	ErrAIVarCap     = errors.New("AI usage cap reached; try again later")
+)
+
 // errAIVarNoTools signals the tool registry exposed no usable web tools, so the
 // caller falls back to the single-completion path.
 var errAIVarNoTools = errors.New("no web tools available for research")
@@ -99,19 +117,40 @@ func aiVarAvailableVars(contact *models.Contact) []string {
 // blocks. A malformed block is skipped (substituted empty) rather than failing
 // the send; a provider error fails the send (so the task retries) after refunding.
 func (s *tasksService) resolveAIVariables(ctx context.Context, campaign *models.Campaign, contact *models.Contact, sequenceID uuid.UUID, subject, bodyHTML, bodyPlain string) (string, string, string, error) {
+	subject, bodyHTML, bodyPlain, _, err := s.resolveAIVariablesWith(ctx, campaign, contact, sequenceID, subject, bodyHTML, bodyPlain, aiVarWrite{})
+	return subject, bodyHTML, bodyPlain, err
+}
+
+// aiVarWrite changes how blocks are resolved: fresh ignores copy already written, save replaces the cache write.
+type aiVarWrite struct {
+	fresh bool
+	save  func(id, text string) error
+}
+
+// resolveAIVariablesWith is resolveAIVariables that also returns the copy each block got.
+func (s *tasksService) resolveAIVariablesWith(ctx context.Context, campaign *models.Campaign, contact *models.Contact, sequenceID uuid.UUID, subject, bodyHTML, bodyPlain string, w aiVarWrite) (string, string, string, map[string]string, error) {
 	refs := findAIVarRefs(bodyHTML)
 	if len(refs) == 0 {
-		return subject, bodyHTML, bodyPlain, nil // fast path: nothing to resolve
+		return subject, bodyHTML, bodyPlain, nil, nil // fast path: nothing to resolve
 	}
 	if campaign.OrganizationID == nil {
-		return subject, bodyHTML, bodyPlain, errors.New("per-recipient AI variables need an organization-owned campaign")
+		return subject, bodyHTML, bodyPlain, nil, errors.New("per-recipient AI variables need an organization-owned campaign")
 	}
 
 	// Reuse anything already generated for this (campaign, contact, step) so a
 	// task redelivery neither re-charges nor produces different copy.
-	resolved, _ := s.campaignProgressRepo.GetResolvedAIVariables(ctx, campaign.ID, contact.ID, sequenceID)
+	var resolved map[string]string
+	if !w.fresh {
+		resolved, _ = s.campaignProgressRepo.GetResolvedAIVariables(ctx, campaign.ID, contact.ID, sequenceID)
+	}
 	if resolved == nil {
 		resolved = map[string]string{}
+	}
+	save := w.save
+	if save == nil {
+		save = func(id, text string) error {
+			return s.campaignProgressRepo.SaveResolvedAIVariable(ctx, campaign.ID, contact.ID, sequenceID, id, text)
+		}
 	}
 
 	// Attribute every charge to the campaign/step/contact that ran it.
@@ -141,21 +180,21 @@ func (s *tasksService) resolveAIVariables(ctx context.Context, campaign *models.
 		// Give the model the surrounding email so the fragment flows with it.
 		before, after := aiVarSurrounding(bodyPlain, "[[ai:"+ref.id+"]]")
 		text, gerr := s.generateAIVariable(ctx, *campaign.OrganizationID, contact, cfg, rendered, before, after,
-			fmt.Sprintf("seq_ai_var:%s:%s:%s:%s", campaign.ID, contact.ID, sequenceID, ref.id))
+			fmt.Sprintf("seq_ai_var:%s:%s:%s:%s%s", campaign.ID, contact.ID, sequenceID, ref.id, aiVarKeySuffix(ctx)))
 		if gerr != nil {
 			// A provider/credit failure fails the send so the task retries (the
 			// charge was already refunded inside generateAIVariable).
-			return subject, bodyHTML, bodyPlain, gerr
+			return subject, bodyHTML, bodyPlain, nil, gerr
 		}
 		resolved[ref.id] = text
 		// Persist immediately so a mid-body failure never re-generates earlier blocks.
-		if serr := s.campaignProgressRepo.SaveResolvedAIVariable(ctx, campaign.ID, contact.ID, sequenceID, ref.id, text); serr != nil {
-			return subject, bodyHTML, bodyPlain, fmt.Errorf("persist AI variable: %w", serr)
+		if serr := save(ref.id, text); serr != nil {
+			return subject, bodyHTML, bodyPlain, nil, fmt.Errorf("persist AI variable: %w", serr)
 		}
 	}
 
 	subject, bodyHTML, bodyPlain = substituteAIVariables(subject, bodyHTML, bodyPlain, resolved)
-	return subject, bodyHTML, bodyPlain, nil
+	return subject, bodyHTML, bodyPlain, resolved, nil
 }
 
 // findAIVarRefs scans the HTML for AI-variable spans and returns the distinct
@@ -218,9 +257,9 @@ func (s *tasksService) generateAIVariable(ctx context.Context, orgID uuid.UUID, 
 		if cerr := s.aiCredits.Reserve(ctx, orgID, estimate); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				return "", errors.New("the workspace balance is too low for this AI variable")
+				return "", ErrAIVarBalance
 			case errors.Is(cerr, credits.ErrCapExceeded):
-				return "", errors.New("AI usage cap reached; try again later")
+				return "", ErrAIVarCap
 			default:
 				return "", cerr
 			}

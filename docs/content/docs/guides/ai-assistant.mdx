@@ -124,7 +124,7 @@ Remie keeps a core set of tools in view and finds the rest on demand by searchin
 
 When no dedicated tool covers a request (reply templates, A/B variants, sending domains, lead searches, imports, integration settings and so on), Remie looks up the matching [API endpoint](/api/), reads its documentation, and calls it as you. The call goes through the same checks as the dashboard: your role's permissions, your workspace, your rate limits. Reads run on their own; every change asks, and **Always allow** is never offered for it.
 
-Some things stay out of reach on purpose. Remie cannot send mail, start a campaign or run a placement test this way (each has its own tool, which shows you exactly what goes out), sign in or change account security, manage API keys, webhooks or OAuth apps, upload files, or enter a credential such as a password or API key, which belongs in the dashboard where it is sealed. Fields that hold a credential are withheld from anything Remie reads.
+Some things stay out of reach on purpose. Remie cannot send mail, start a campaign or run a placement test this way (each has its own tool, which shows you exactly what goes out), approve leads waiting for [review](/guides/campaigns/#review-before-sending) or turn review off (do that on an email step's **Review** tab under **Steps**, or, when no step sends an email, from the waiting leads' **Review** panel on **Steps**), sign in or change account security, manage API keys, webhooks or OAuth apps, upload files, or enter a credential such as a password or API key, which belongs in the dashboard where it is sealed. Fields that hold a credential are withheld from anything Remie reads.
 
 </Fold>
 

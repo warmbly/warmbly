@@ -217,6 +217,8 @@ Alternatives in single braces separated by pipes, so a batch of sends does not l
 {Hi|Hey|Hello} {{.FirstName}}, {hope you're well|hope things are good}.
 ```
 
+Each lead gets one option per group, and the same lead gets the same option every time a step renders for them: on a step's [Review tab](/guides/campaigns/#review-before-sending) and in a retried send. The HTML and plain-text parts pick alike only when both have the same groups in the same order, since each group takes the next pick in its part. Different leads can get different options.
+
 <Callout type="warn" title="Spintax rules">
 Campaign subject and body only; it does not run in automations. Use **single** braces, not the double braces of merge fields. Only groups containing a pipe count, so a brace run without one (CSS or JSON in an HTML email) is left exactly as written.
 </Callout>

@@ -50,6 +50,7 @@ On **Review**, check the finish date, then choose **Launch** or **Save as draft*
 - A lead's follow-ups normally go out from the mailbox that sent their first email. They wait for that mailbox through a provider pause that ends within 45 minutes, and move to another one only when it is held, paused for longer, or gone.
 - Launch checks your list first and refuses one that is known to be largely undeliverable.
 - Nothing sends until the campaign launches. Closing the flow with anything filled in saves a draft.
+- Each email step has a **Review** tab that shows that email exactly as each lead gets it and lets you edit one lead's copy. Every lead's AI copy is written ahead once the campaign runs, and leads can be held until you approve their first email. See [Review before sending](#review-before-sending).
 
 <Fold>
 
@@ -127,6 +128,65 @@ Follow-ups that are due go out before new leads start, and the total assumes nob
 An unresolved send from one mailbox does not stop other healthy mailboxes from sending. A follow-up normally uses the address its lead first heard from: it waits out a short provider pause on that address (45 minutes or less) and moves to another eligible mailbox when the address is held or paused for longer. A provider's rate limit, daily limit or restriction on a mailbox never costs a lead one of its send attempts; see [when a provider pauses sending](/guides/mailboxes/#when-a-provider-pauses-sending). The launch plan and day plan show the hold or cooldown separately from the normal daily limit.
 
 After ten minutes Warmbly isolates an authorized campaign send whose outcome is still unknown. The mailbox can send to other contacts again. Only the affected contact waits for confirmation, independently of any manual pause. No customer action is needed, and the uncertain email is never retried. A late confirmed result updates the contact automatically. A timeout or missing Sent copy never counts as proof of failure. A send the worker never started is handed back after 30 minutes and the step is sent fresh, because it provably never left. Legacy sends without durable execution authorization still require [provider-confirmed resolution](/development/send-safety/#resolving-an-unknown-send).
+
+</Fold>
+
+<Fold>
+
+## Review before sending
+
+Every email step has a **Review** tab next to its **Email** tab: open the step on the campaign's **Steps** tab and switch to it. It shows that email exactly as each lead gets it and says whether the campaign is ready to send. It can also hold each lead until someone approves their first email. Only email steps have one, since other steps send nothing. A link to a campaign's old Review page opens the first email's Review tab. If no step sends an email while leads wait for approval, the Steps tab shows how many wait, and **Review** opens them in a panel of their own.
+
+### The layout
+
+The step's panel widens to fit it: a line of checks on top, the leads on the left and the open lead's copy of the email on the right. The open lead's position (`3 of 40`) shows above their email, the arrows next to it move to the previous and next lead, and `J` and `K` do the same from the keyboard.
+
+The first chip on the top line says whether the campaign is ready to send. Click it to see what to fix first:
+
+- **Blank merge fields.** A field an email prints with nothing to fall back on (`{{.FirstName}}` outside an `{{if}}` and without `default`), counted over the leads not yet emailed. **Show them** lists those leads, so you can fill the field in or edit their email.
+- **Steps that will not render** as written, with a link to fix them.
+- **Unsubscribed leads**, which sending skips, and **addresses that failed verification**, which the [launch check](#the-launch-check-on-your-list) counts against the list.
+
+When the first email has [AI blocks](/guides/ai-variables/), a second chip shows how many leads not yet emailed have theirs written. Click it for the details and, before launch, **Write all now** with about what it costs.
+
+The menu next to the search picks which leads the list shows, with a count for each:
+
+| State | Meaning |
+|-------|---------|
+| Waiting | Held until someone approves their first email. Listed when approval is on, or someone still waits |
+| Ready | Not emailed yet; their first email goes out on schedule |
+| Paused | Not emailed yet, and paused for another reason, such as an away message. Listed when someone is |
+| Started | Already emailed, or an email to them is on its way |
+
+### Each lead's emails
+
+Pick a lead to read every email step as it will be sent to them: their fields filled in, the A/B variant they get, spintax resolved, the AI copy written so far, the signature of the mailbox already writing to them and the opt-out footer. A follow-up that replies in the thread shows the first email's subject, which is what the lead sees. Spintax picks the same option for one lead and step every time, so what you read is what goes out, and a retried send carries the same wording. Different leads can still get different options.
+
+Once the campaign is running, Warmbly works through the first email's [AI blocks](/guides/ai-variables/) on its own for every lead not yet emailed, and for each lead added later, so you never have to start it. It aims to have each lead's copy ready before it goes out, but a lead whose email is due before it gets to them has theirs written when it sends. A lead with their own copy of the first email is left out: their AI blocks are written when you open them or when the email sends. The AI chip at the top of the tab shows how far it has got. Before launch, a lead's AI blocks are written the moment you open them: a shimmering line holds their place in the email while Remie writes, then the text fades in. AI-written text keeps a soft highlight in the preview, so you can see what AI wrote; the recipient gets plain text. While you read one lead, the next two in the list have their first email written in the background, so moving on shows theirs already written. **Rewrite** asks for another version.
+
+Writing ahead is charged to the balance exactly as writing at send time is, and the send reuses what was written, so nothing is charged twice. A rewrite is a new generation and is charged again. Before launch, **Write all now** under the AI chip writes every lead not yet emailed, or the leads you selected, a few at a time; it stops when the balance runs out or you press **Stop**, and keeps what it wrote. Writing on its own pauses while the balance is too low and resumes when it is topped up. A lead removed or unsubscribed before their first email keeps the charge for copy already written for them. Follow-ups' AI blocks are written when they send, or when you open the lead. A member without the **Use AI** permission sees a marked slot instead, written when the email sends, and so does everyone when the balance is too low or the instance has no AI provider.
+
+### Editing one lead's email
+
+**Edit for this lead** opens the step's editor with this lead's copy. Saving keeps a copy for this lead only. It replaces the step's copy, and any A/B variant, for them. Merge fields, spintax and AI blocks in it still fill in when it sends. A follow-up that replies in the thread keeps the conversation's subject. Later edits to the step do not change a personalized copy; the email says when the step changed since, and **Use the step's copy** goes back to it. Once the lead has received an email, that email can no longer change.
+
+Personalized emails are marked with a pencil in the list and on the step's tab.
+
+### Approving leads first
+
+By default leads start on schedule without anyone approving them. To approve each lead first, turn on **Approve before sending** at the top right of any email step's Review tab. From then on, every lead not yet emailed waits for approval. So does every lead added later, whichever way they arrive: a linked list, an import, the API, a form or an automation. Follow-ups after the first email go out on their own.
+
+- Approve the lead you are reading, several from the selection bar, or **Approve all**. On the Review tab, `A` approves the open lead and `J` and `K` move between leads.
+- An approved lead starts under the campaign's schedule, daily limits, spacing and every other sending rule, exactly as without review.
+- **Back to review** holds a lead who has not been emailed yet again.
+- A waiting lead shows **Waiting for review** in the Leads list and in the contact's Activity, where **Approve** releases them.
+- A lead that was also paused for another reason, such as an away message or a pause you set, waits for both: approving it leaves that pause in place until it lifts.
+- Approving needs the **Send campaigns** permission, like starting a campaign. Turning review off approves everyone waiting, so it needs the same permission and asks first.
+- Only an approval, or turning review off, releases a waiting lead. Resuming a pause, an away message ending, a CRM rule or removing a CC copy never does.
+- While leads wait, every other tab of the campaign shows how many, with a link here.
+- A campaign's estimate counts every lead, as if you approve them all.
+
+Changes on the tab reach teammates live, and approvals appear in the activity log.
 
 </Fold>
 

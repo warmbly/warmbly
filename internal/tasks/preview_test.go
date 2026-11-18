@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 func TestPreviewEmailUsesSelectedSender(t *testing.T) {
@@ -111,5 +112,75 @@ func TestFinishBodyKeepsABodyThatRenders(t *testing.T) {
 func TestFinishBodyKeepsAnEmptyHTMLPartWhenThereIsNoPlainText(t *testing.T) {
 	if h, _ := finishBody("<div></div>", "", false, nil, nil, ""); h == "" {
 		t.Error("dropped the only part the message had")
+	}
+}
+
+type previewReviewRepo struct {
+	repository.CampaignReviewRepository
+	lead, own bool
+}
+
+func (r previewReviewRepo) GetLead(context.Context, uuid.UUID, uuid.UUID) (*models.CampaignReviewLead, error) {
+	if !r.lead {
+		return nil, repository.ErrLeadNotInCampaign
+	}
+	return &models.CampaignReviewLead{}, nil
+}
+
+func (r previewReviewRepo) GetOverride(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*models.LeadStepOverride, error) {
+	if !r.own {
+		return nil, nil
+	}
+	return &models.LeadStepOverride{}, nil
+}
+
+type previewProgressRepo struct {
+	repository.CampaignProgressRepository
+	campaign, contact, step uuid.UUID
+	written                 map[string]string
+}
+
+func (r previewProgressRepo) GetResolvedAIVariables(_ context.Context, campaignID, contactID, stepID uuid.UUID) (map[string]string, error) {
+	if campaignID != r.campaign || contactID != r.contact || stepID != r.step {
+		return map[string]string{}, nil
+	}
+	return r.written, nil
+}
+
+// The step preview never shows an AI block's raw token or config: a lead gets
+// the copy already written for them, anyone else a labelled slot.
+func TestPreviewEmailShowsAICopyForTheLead(t *testing.T) {
+	cfg := "eyJuYW1lIjoiT3BlbmVyIiwicHJvbXB0IjoiaGkifQ==" // {"name":"Opener","prompt":"hi"}
+	body := `<p>Hi</p><p><span data-ai-var="opener" data-ai-config="` + cfg + `">[[ai:opener]]</span></p>`
+	campaign := &models.Campaign{ID: uuid.New()}
+	step := uuid.New()
+	render := func(s *tasksService, contact models.Contact) *EmailPreview {
+		return s.PreviewEmail(context.Background(), uuid.Nil, EmailPreviewInput{
+			Subject: "x", BodyHTML: body, BodyPlain: "Hi\n\n[[ai:opener]]", Contact: contact, Campaign: campaign, SequenceID: step,
+		})
+	}
+	lead := models.Contact{ID: uuid.New(), FirstName: "Jonas"}
+	written := previewProgressRepo{campaign: campaign.ID, contact: lead.ID, step: step, written: map[string]string{"opener": "Loved the Acme launch."}}
+
+	p := render(&tasksService{leadReview: previewReviewRepo{}, campaignProgressRepo: written}, models.Contact{FirstName: "Alex"})
+	if strings.Contains(p.BodyHTML, "[[ai:") || strings.Contains(p.BodyHTML, "data-ai-config") || !strings.Contains(p.BodyHTML, `data-ai-pending="opener" data-ai-name="Opener"`) {
+		t.Fatalf("sample preview should show a labelled AI slot: %q", p.BodyHTML)
+	}
+	if p.Lead || len(p.AIBlocks) != 1 || p.AIBlocks[0].Written || strings.Contains(p.BodyPlain, "[[ai:") {
+		t.Fatalf("sample preview: %+v", p)
+	}
+
+	p = render(&tasksService{leadReview: previewReviewRepo{lead: true, own: true}, campaignProgressRepo: written}, lead)
+	if !strings.Contains(p.BodyHTML, `<span data-ai-block="opener">Loved the Acme launch.</span>`) || !strings.Contains(p.BodyPlain, "Loved the Acme launch.") {
+		t.Fatalf("lead preview should carry their written AI copy: %q / %q", p.BodyHTML, p.BodyPlain)
+	}
+	if !p.Lead || !p.Personalized || len(p.AIBlocks) != 1 || !p.AIBlocks[0].Written {
+		t.Fatalf("lead preview flags: %+v", p)
+	}
+
+	// A contact outside the campaign reads nothing the campaign wrote.
+	p = render(&tasksService{leadReview: previewReviewRepo{}, campaignProgressRepo: written}, lead)
+	if p.Lead || strings.Contains(p.BodyHTML, "Loved the Acme launch.") || strings.Contains(p.BodyPlain, "Loved the Acme launch.") {
+		t.Fatalf("non-lead preview read campaign copy: %+v", p)
 	}
 }

@@ -128,6 +128,10 @@ func (s *service) ImportFrom(
 	if _, err := tx.Exec(ctx, `SET LOCAL statement_timeout = 0`); err != nil {
 		return nil, fmt.Errorf("lift statement timeout: %w", err)
 	}
+	// Imported leads keep the hold they had; a review campaign does not re-hold them on insert.
+	if _, err := tx.Exec(ctx, `SELECT set_config('warmbly.org_import', 'on', true)`); err != nil {
+		return nil, fmt.Errorf("mark import transaction: %w", err)
+	}
 
 	report(6, "applying workspace settings")
 	if err := s.mergeOrganization(ctx, tx, orgID, manifest); err != nil {

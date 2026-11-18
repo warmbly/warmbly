@@ -860,6 +860,8 @@ Returned when an AI action, or a placement test paid from the balance, is reques
 
 Placement tests answer `402` too, with `placement_not_entitled` or `placement_quota_exceeded`; see [placement test refusals](#placement-test-refusals). A paid placement test past the balance answers `insufficient_credits`, and one past a spend limit answers `429` with `usage_cap_exceeded`; neither charges anything.
 
+Writing a lead's AI copy ahead ([write one lead's AI copy now](/api/reference/campaigns/#write-one-leads-ai-copy-now)) checks the balance before each AI block, so its `insufficient_credits` can follow blocks of the same email already written and charged. Those stay saved, and a retry after a top-up writes only the rest.
+
 ### 403 Forbidden
 
 Returned when authenticated but lacking necessary permissions.
@@ -1128,6 +1130,7 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `contact_email_taken` | 409 | The address given to [update a contact](/api/reference/contacts/#update-a-contact) already belongs to another contact |
 | `lead_cc_lead_is_copied` | 409 | [Set a lead's CC](/api/reference/campaigns/#set-a-leads-cc) on a lead that is itself copied on another lead in the campaign, so it sends nothing of its own to copy anyone on |
 | `lead_cc_has_copies` | 409 | [Set a lead's CC](/api/reference/campaigns/#set-a-leads-cc) names a contact that has copies of their own in the campaign |
+| `lead_step_sent` | 409 | [Personalize](/api/reference/campaigns/#personalize-one-email-for-one-lead), [reset](/api/reference/campaigns/#reset-one-leads-email) or [rewrite the AI copy of](/api/reference/campaigns/#write-one-leads-ai-copy-now) one lead's email after the lead already received it. Nothing changed |
 | `mailbox_is_seed` | 409 | Warmup was started or resumed on a placement seed inbox. See [placement test refusals](#placement-test-refusals) |
 | `mailbox_not_google_signin` | 409 | `POST /emails/onboarding/app-password/:id` on a mailbox that is not a Google mailbox on its own sign-in or an admin grant. See [app password switch refusals](#app-password-switch-refusals) |
 | `scheduled_send_not_pending` | 409 | [Cancel a scheduled send](/api/reference/unibox/#cancel-a-scheduled-send) named a send that is no longer pending: it has started sending, was sent, failed, or was already cancelled. Nothing changed |
@@ -1216,6 +1219,8 @@ Every endpoint that checks a password, an emailed or two-factor code, or a sign-
   "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
 }
 ```
+
+Writing one lead's AI copy ahead ([write one lead's AI copy now](/api/reference/campaigns/#write-one-leads-ai-copy-now)) answers `ai_unavailable` on an instance with no AI provider, which charges nothing, and `ai_generation_failed` when the provider did not answer. A step's blocks are written one at a time, so after `ai_generation_failed` the blocks written before the failure stay written and charged, as can a web lookup the failed block already made. A retry writes only the blocks still missing.
 
 Other temporary failures answer the generic form:
 

@@ -23,6 +23,7 @@ const (
 	AuditActionStop       AuditAction = "stop"
 	AuditActionPause      AuditAction = "pause"
 	AuditActionResume     AuditAction = "resume"
+	AuditActionApprove    AuditAction = "approve"
 	AuditActionSend       AuditAction = "send"
 	AuditActionDuplicate  AuditAction = "duplicate"
 	AuditActionDisconnect AuditAction = "disconnect"

@@ -54,6 +54,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/keystatus"
 	"github.com/warmbly/warmbly/internal/app/leadfinder"
+	"github.com/warmbly/warmbly/internal/app/leadreview"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboxconnect"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
@@ -170,9 +171,11 @@ type Handler struct {
 	TagService      group.GroupService
 	CategoryService group.GroupService
 
-	TzService           tz.TzService
-	SocketService       socket.SocketService
-	TasksService        tasks.TasksService
+	TzService     tz.TzService
+	SocketService socket.SocketService
+	TasksService  tasks.TasksService
+	// LeadReview is the campaign Review tab: readiness, per-lead emails and approvals.
+	LeadReview          *leadreview.Service
 	NotificationService notification.Service
 	TwoFAService        twofa.Service
 	// ViewPreferencesService keeps each member's saved list layouts.

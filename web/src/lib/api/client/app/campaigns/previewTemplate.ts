@@ -34,6 +34,12 @@ export interface TemplatePreview {
     // what CSS they ignore, and whether the message is long enough to be
     // clipped. Sized on the body as it ships, after CSS inlining.
     html_findings?: TemplateHtmlFinding[];
+    // The copy's AI blocks; written is true when this contact's copy is.
+    ai_blocks?: { id: string; name: string; written: boolean }[];
+    // The contact is a lead of the campaign, so its AI copy can be written ahead.
+    lead?: boolean;
+    // The lead has their own copy of this step, which they get instead.
+    personalized?: boolean;
 }
 
 export interface TemplatePreviewInput {

@@ -4,7 +4,7 @@
 // variants so every arm previews against the same lead and sender.
 
 import React from "react";
-import { Loader2Icon, MailCheckIcon, MailIcon, SendIcon, UserRoundIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon, MailCheckIcon, MailIcon, SendIcon, UserRoundIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
@@ -59,7 +59,14 @@ export function PreviewContactPicker({
     const contacts = search.contacts ?? [];
 
     return (
-        <PopoverMenu open={open} onOpenChange={setOpen}>
+        <PopoverMenu
+            open={open}
+            onOpenChange={(o) => {
+                setOpen(o);
+                // Each open starts a fresh search.
+                if (!o) setQuery("");
+            }}
+        >
             <PopoverMenuTrigger asChild>
                 <SelectButton
                     icon={<UserRoundIcon className="w-3.5 h-3.5" />}
@@ -100,6 +107,48 @@ export function PreviewContactPicker({
                 </div>
             </PopoverMenuContent>
         </PopoverMenu>
+    );
+}
+
+// Steps the preview through the campaign's leads, in the picker's order.
+export function PreviewLeadStepper({
+    campaignId,
+    value,
+    onChange,
+}: {
+    campaignId: string;
+    value: Contact | null;
+    onChange: (c: Contact) => void;
+}) {
+    const list = useSearchContacts({
+        options: { query: "", custom_field_filters: [], campaign_ids: [campaignId], sort_by: "updated_at", reverse: false },
+        limit: 50,
+        keepPrevious: true,
+    });
+    // While another campaign's rows stand in, none of them is this campaign's lead.
+    const leads = list.isPlaceholderData ? [] : (list.contacts ?? []);
+    const at = value ? leads.findIndex((c) => c.id === value.id) : -1;
+    const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = list;
+    const lastLoaded = at >= 0 && at === leads.length - 1;
+    // Load the next page as the last loaded lead opens, so Next keeps going; a failed page is not retried in a loop.
+    React.useEffect(() => {
+        if (lastLoaded && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+    }, [lastLoaded, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+    if (leads.length === 0) return null;
+
+    const prev = at > 0 ? leads[at - 1] : null;
+    const next = at < 0 ? leads[0] : (leads[at + 1] ?? null);
+    const btn =
+        "h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-800 disabled:opacity-40 disabled:pointer-events-none";
+    return (
+        <div className="inline-flex items-center gap-0.5">
+            <button type="button" className={btn} disabled={!prev} onClick={() => prev && onChange(prev)} title="Previous lead" aria-label="Previous lead">
+                <ChevronLeftIcon className="w-3.5 h-3.5" />
+            </button>
+            <button type="button" className={btn} disabled={!next} onClick={() => next && onChange(next)} title="Next lead" aria-label="Next lead">
+                <ChevronRightIcon className="w-3.5 h-3.5" />
+            </button>
+        </div>
     );
 }
 

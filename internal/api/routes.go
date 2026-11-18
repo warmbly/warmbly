@@ -897,6 +897,19 @@ func Run(
 				// safe.
 				campaigns.GET("/:id/leads/:contactId/cc", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetCampaignLeadCC)
 				campaigns.PUT("/:id/leads/:contactId/cc", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.SetCampaignLeadCC)
+				// Review: approving puts mail in motion, hence the send gate.
+				// Retry behavior is stated on each handler; rewrite: true is charged again by design.
+				readContacts := m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts)
+				campaigns.GET("/:id/review", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignReview)
+				campaigns.PUT("/:id/review", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.SetCampaignReview)
+				campaigns.GET("/:id/review/leads", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), readContacts, h.ListCampaignReviewLeads)
+				campaigns.POST("/:id/review/approve", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.ApproveCampaignReviewLeads)
+				campaigns.POST("/:id/review/reopen", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.ReopenCampaignReviewLeads)
+				campaigns.POST("/:id/review/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermUseAI, models.APIPermWriteCampaigns), h.WriteCampaignReviewAI)
+				campaigns.GET("/:id/leads/:contactId/emails", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), readContacts, h.GetCampaignLeadEmails)
+				campaigns.PUT("/:id/leads/:contactId/emails/:stepId", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), readContacts, h.PutCampaignLeadEmail)
+				campaigns.DELETE("/:id/leads/:contactId/emails/:stepId", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), readContacts, h.DeleteCampaignLeadEmail)
+				campaigns.POST("/:id/leads/:contactId/emails/:stepId/write", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermUseAI, models.APIPermWriteCampaigns), readContacts, h.WriteCampaignLeadEmailAI)
 				campaigns.GET("/:id/leads/:contactId/cc/suggestions", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.SuggestCampaignLeadCC)
 
 				sequences := campaigns.Group("/:id/steps")

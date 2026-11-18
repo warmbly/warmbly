@@ -155,8 +155,10 @@ type tasksService struct {
 	campaignLogRepo      repository.CampaignLogRepository
 	// orgRiskRepo bars a restricted organization from the paid warmup pool.
 	// Optional/nil-safe.
-	orgRiskRepo     repository.OrgRiskRepository
-	attachmentRepo  repository.AttachmentRepository
+	orgRiskRepo    repository.OrgRiskRepository
+	attachmentRepo repository.AttachmentRepository
+	// leadReview reads a lead's own copy of a step; nil sends every lead the step's copy.
+	leadReview      repository.CampaignReviewRepository
 	trackedLinkRepo repository.TrackedLinkRepository
 
 	// automationRunner launches automations from a campaign "run_automation" step.

@@ -8,6 +8,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/fleetjoin"
 	"github.com/warmbly/warmbly/internal/app/fleetmetrics"
 	"github.com/warmbly/warmbly/internal/app/fleetscale"
+	"github.com/warmbly/warmbly/internal/app/leadreview"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"log"
 	"net/http"
@@ -235,6 +236,7 @@ func main() {
 	var cloudLinkService cloudlink.Service
 	var cliAuthService cliauth.Service
 	var campaignService campaign.CampaignService
+	var leadReviewService *leadreview.Service
 	var analyticsService analytics.AnalyticsService
 	var rateLimitService ratelimit.RateLimitService
 	var sequenceService sequence.SequenceService
@@ -2078,6 +2080,22 @@ func main() {
 		// returning a clean "not available".
 		tasksService.SetAI(aiProvider, creditService)
 
+		// The Review tab, and the per-lead copies the send path reads.
+		campaignReviewRepository := repository.NewCampaignReviewRepository(primaryDB.Pool)
+		if aware, ok := tasksService.(tasks.LeadReviewAware); ok {
+			aware.WireLeadReview(campaignReviewRepository)
+		}
+		if emails, ok := tasksService.(tasks.LeadEmailsService); ok {
+			leadReviewService = &leadreview.Service{
+				Campaigns:     campaignService,
+				Contacts:      leadreview.RepoContacts{Repo: contactRepoForHandler},
+				Repo:          campaignReviewRepository,
+				Emails:        emails,
+				Steps:         tasksService,
+				Undeliverable: campaignProgressRepository,
+			}
+		}
+
 		// Client connect links: a client connects mailboxes into a workspace through the same connect paths.
 		connectLinkService = connectlink.New(connectlink.Deps{
 			Repo:       repository.NewClientConnectLinkRepository(primaryDB),
@@ -2377,6 +2395,11 @@ func main() {
 		// before bodies were indexed, so search covers the whole archive and not
 		// just new mail. Walks the table once, then returns.
 		elector.Go("unibox_body_backfill", uniboxService.StartBodyTextBackfill)
+
+		// Writes every active campaign's first-email AI copy ahead of its send, like a generated column.
+		if leadReviewService != nil {
+			elector.Go("lead_ai_write_ahead", leadReviewService.StartAIWriteAhead)
+		}
 
 		// Automation signing secrets live in each connection's sealed config.
 		if m, ok := integrationServiceForHandler.(interface{ StartSigningSecretMigration(context.Context) }); ok {
@@ -2962,6 +2985,9 @@ func main() {
 		// fallback (audit.NewNoOpService) remains for entrypoints without
 		// a database.
 		AuditService: auditService,
+	}
+	if leadReviewService != nil {
+		h.LeadReview = leadReviewService
 	}
 	// Agency keys on the MCP server see the agency tools, migrations included.
 	if agencyService != nil {
