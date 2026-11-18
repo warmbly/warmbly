@@ -66,6 +66,15 @@ const (
 // the worker reconciler places or moves it on this cadence.
 const workerRecheck = 5 * time.Minute
 
+// inFlightRecheck is how soon a pass looks again at a mailbox whose last send has not reported back yet.
+const inFlightRecheck = time.Minute
+
+// inFlightHold reports an outcome-pending hold young enough that automatic recovery has not given up on it.
+func inFlightHold(a *repository.SendAdmission, now time.Time) bool {
+	return a.HoldReason == "unknown" && a.HeldSince != nil &&
+		now.Sub(*a.HeldSince) < time.Duration(config.CampaignSendReclaimAfterMinutes)*time.Minute
+}
+
 // campaignPass holds everything about the mailbox pool that one scheduling pass
 // resolves once: the batch lookups, and the per-mailbox reads memoized so the
 // availability pre-pass and the placement that follows it cost one query each
@@ -335,6 +344,9 @@ func (s *schedulerService) sendGate(ctx context.Context, p *campaignPass, acct m
 	switch {
 	case err != nil || a == nil:
 		gate = mailboxGate{reason: gateAdmission, paced: true, reopensAt: now.Add(workerRecheck)}
+	case a.RecoveryHold && inFlightHold(a, now):
+		// A send still in flight clears in seconds; its leads wait rather than change address.
+		gate = mailboxGate{reason: gateRecovery, paced: true, reopensAt: now.Add(inFlightRecheck)}
 	case a.RecoveryHold:
 		gate = mailboxGate{reason: gateRecovery}
 	case a.RetryAt != nil && a.RetryAt.After(now):
