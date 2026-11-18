@@ -233,6 +233,13 @@ export function writeLeadAIOnce(qc: QueryClient, campaignId: string, contactId: 
             void qc.invalidateQueries({ queryKey: ["subscription", "credits"] });
             return data;
         })
+        .catch((err: unknown) => {
+            // Blocks written before the failure stay saved and charged, so what shows must be reread.
+            void qc.invalidateQueries({ queryKey: leadEmailsQuery(campaignId, contactId).queryKey, exact: true });
+            void qc.invalidateQueries({ queryKey: [...reviewKey(campaignId), "summary"] });
+            void qc.invalidateQueries({ queryKey: ["subscription", "credits"] });
+            throw err;
+        })
         .finally(() => {
             if (aiWrites.get(key) === p) {
                 aiWrites.delete(key);
