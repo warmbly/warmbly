@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "../lib/proof.ts";
 
 const CAMPAIGN = "44444444-0000-0000-0000-000000000001";
+const FOLLOW_UP = "55555555-0000-0000-0000-000000000002";
 
 // Report the product tour as finished, so a freshly seeded account never covers the page with it.
 async function skipTour(page: Page) {
@@ -22,7 +23,8 @@ const OPENERS: Record<string, string> = {
 const REWRITE = "Congrats on the Lyon line; doubling capacity in a year is no small thing.";
 
 async function standInForAI(page: Page) {
-  let rewrites = 0;
+  // Leads whose write has been answered, so a shot can tell a background write from one started by opening the lead.
+  const written = new Set<string>();
   await page.route(/\/v1\/campaigns\/[^/]+\/leads\/[^/]+\/emails\/[^/]+\/write$/, async (route) => {
     const url = route.request().url();
     const rewrite = (route.request().postData() ?? "").includes("rewrite");
@@ -30,21 +32,23 @@ async function standInForAI(page: Page) {
     const response = await route.fetch({ url: url.replace(/\/[^/]+\/write$/, ""), method: "GET", postData: undefined });
     const data = await response.json();
     const text = rewrite ? REWRITE : (OPENERS[data.lead.email] ?? `Loved what ${data.lead.company} has been shipping lately.`);
-    if (rewrite) rewrites++;
     for (const step of data.steps) {
       step.body_html = step.body_html.replace(/<span data-ai-pending="([^"]+)"[^>]*><\/span>/g, `<span data-ai-block="$1">${text}</span>`);
       for (const b of step.ai_blocks ?? []) b.written = true;
     }
     await route.fulfill({ status: 200, json: data });
+    written.add(data.lead.email);
   });
-  return () => rewrites;
+  return written;
 }
 
 test.skip(process.env.QA_CAMPAIGN_REVIEW_FIXTURES !== "1", "Apply qa/fixtures/campaign-review.sql to this stack's rich-seed database and set QA_CAMPAIGN_REVIEW_FIXTURES=1.");
 
 test("review every lead's emails, then approve them before they go out", async ({ page, proof }) => {
   await skipTour(page);
-  await standInForAI(page);
+  const written = await standInForAI(page);
+  // The email renders in its own frame; only the visible one is the open lead's.
+  const emailBody = page.frameLocator('iframe[title="Message body"]:visible');
 
   // Hold the first readiness read so the loading frame stays on screen for its shot.
   let release = () => {};
@@ -58,7 +62,9 @@ test("review every lead's emails, then approve them before they go out", async (
     await route.continue();
   });
   await page.goto(`/app/campaigns/${CAMPAIGN}/review`);
-  await expect(page.getByRole("status", { name: "Loading emails" })).toBeVisible();
+  // Wait for the step panel first, so the outline asserted next is the Review tab's, not the page's.
+  await expect(page.getByTitle("Read this email as each lead gets it, and approve leads")).toBeVisible();
+  await expect(page.getByRole("status", { name: "Loading", exact: true })).toBeVisible();
   await proof.chapter("Review tab", "It opens in the dashboard's own outline while the data loads");
   await proof.dwell(1600);
   await proof.shot("review-loading", { caption: "Loading: the tab's own frame in outline, lit by the shared sweep" });
@@ -87,13 +93,17 @@ test("review every lead's emails, then approve them before they go out", async (
 
   await page.getByRole("button", { name: "Rewrite" }).click();
   await expect(page.getByText(/Writing Jonas's opener|Reading about Acme Robotics/)).toBeVisible();
-  await expect(page.getByText(/Congrats on the Lyon line/)).toHaveCount(0);
+  await expect(emailBody.getByText(/Congrats on the Lyon line/)).toHaveCount(0);
   await expect(page.getByText(/AI wrote the highlighted part for Jonas/)).toBeVisible({ timeout: 15_000 });
+  await expect(emailBody.getByText(/Congrats on the Lyon line/)).toBeVisible();
   await proof.dwell(1200);
 
+  // Leila's opener was written in the background while Jonas was open, before J is pressed.
+  await expect.poll(() => written.has("leila@cedarfinance.test"), { timeout: 15_000 }).toBe(true);
   await page.keyboard.press("j");
   await expect(page.getByText("leila@cedarfinance.test").last()).toBeVisible();
-  await expect(page.getByText(/AI wrote the highlighted part for Leila/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/AI wrote the highlighted part for Leila/)).toBeVisible();
+  await expect(emailBody.getByText(/cutting month-end close to three days/)).toBeVisible();
   await proof.dwell(800);
   await proof.shot("ai-prewritten", { caption: "Press J: the next leads were written in the background, so Leila's is already there" });
 
@@ -103,16 +113,17 @@ test("review every lead's emails, then approve them before they go out", async (
   await proof.dwell(600);
   await proof.shot("missing-first-name", { caption: "Show them lists the leads whose emails would print a blank first name" });
   await page.getByRole("button", { name: "Clear filter" }).click();
-  await page.getByRole("button", { name: /^Showing:/ }).click();
-  await page.getByRole("menuitem", { name: /^Waiting/ }).click();
 
+  // Each email step has its own Review tab, so the follow-up is read on the follow-up's.
+  await page.goto(`/app/campaigns/${CAMPAIGN}/review?step=${FOLLOW_UP}`);
   await page.getByRole("button", { name: /Jonas Weber/ }).first().click();
   await expect(page.getByText("jonas@acme-robotics.test").last()).toBeVisible();
-  await page.getByRole("button", { name: /^Follow-up/ }).click();
   await expect(page.getByText("replies in the thread", { exact: true })).toBeVisible();
   await proof.dwell(600);
   await proof.shot("lead-follow-up", { caption: "The follow-up replies in the thread, so it carries the first email's subject" });
 
+  await page.goto(`/app/campaigns/${CAMPAIGN}/review`);
+  await expect(toggle).toBeVisible();
   await page.getByRole("button", { name: /Ana Ruiz/ }).first().click();
   await expect(page.getByText(/Personalized for this lead/)).toBeVisible();
   await page.getByRole("button", { name: "Edit for this lead" }).click();

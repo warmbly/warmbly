@@ -23,6 +23,9 @@ const FILTERS: { key: Filter; label: string; hint: string }[] = [
 export default function ReviewLeadList({
     leads,
     loading,
+    failed,
+    onRetry,
+    filtered,
     hasMore,
     loadingMore,
     onLoadMore,
@@ -44,6 +47,10 @@ export default function ReviewLeadList({
 }: {
     leads: ReviewLead[];
     loading: boolean;
+    failed: boolean;
+    onRetry: () => void;
+    // A search or missing-field filter, which the campaign counts do not cover.
+    filtered: boolean;
     hasMore: boolean;
     loadingMore: boolean;
     onLoadMore: () => void;
@@ -86,6 +93,8 @@ export default function ReviewLeadList({
     const current = FILTERS.find((f) => f.key === status) ?? FILTERS[4];
     const total = filterCount(counts, status);
     const at = leads.findIndex((l) => l.contact_id === activeId);
+    // Filtered results have no server total, so it is known only once every page is loaded.
+    const shown = filtered ? (hasMore ? undefined : leads.length) : total;
 
     return (
         <div className="flex flex-col min-h-0 h-full">
@@ -143,6 +152,13 @@ export default function ReviewLeadList({
             <div className="flex-1 min-h-0 overflow-y-auto">
                 {loading ? (
                     <LeadRowsSkeleton />
+                ) : failed && leads.length === 0 ? (
+                    <div className="p-8 flex flex-col items-center gap-2 text-[12.5px] text-slate-500">
+                        Could not load the leads.
+                        <button type="button" onClick={onRetry} className="text-sky-700 hover:text-sky-800 font-medium">
+                            Try again
+                        </button>
+                    </div>
                 ) : leads.length === 0 ? (
                     <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-8 text-center text-[12.5px] text-slate-500">
                         {emptyText}
@@ -170,7 +186,9 @@ export default function ReviewLeadList({
                                             title={l.email}
                                             onClick={() => onOpen(l.contact_id)}
                                             onKeyDown={(e) => {
-                                                if (e.key === "Enter") onOpen(l.contact_id);
+                                                if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                                                e.preventDefault();
+                                                onOpen(l.contact_id);
                                             }}
                                             className={cn(
                                                 "group relative h-10 pl-3 pr-3 flex items-center gap-2.5 cursor-pointer outline-none transition-colors focus-visible:bg-slate-50",
@@ -226,7 +244,11 @@ export default function ReviewLeadList({
             </div>
             <div className="shrink-0 h-8 px-3 flex items-center gap-2 border-t border-slate-200 text-[11px] text-slate-400">
                 <span className="tabular-nums">
-                    {at >= 0 ? `${(at + 1).toLocaleString()} of ${total.toLocaleString()}` : `${total.toLocaleString()} ${total === 1 ? "lead" : "leads"}`}
+                    {shown === undefined
+                        ? `${leads.length.toLocaleString()}+ matches`
+                        : at >= 0
+                          ? `${(at + 1).toLocaleString()} of ${shown.toLocaleString()}`
+                          : `${shown.toLocaleString()} ${shown === 1 ? "lead" : "leads"}`}
                 </span>
                 <span className="ml-auto hidden md:inline-flex items-center gap-1">
                     <Kbd>J</Kbd>

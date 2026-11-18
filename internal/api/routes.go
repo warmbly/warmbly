@@ -897,11 +897,8 @@ func Run(
 				// safe.
 				campaigns.GET("/:id/leads/:contactId/cc", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetCampaignLeadCC)
 				campaigns.PUT("/:id/leads/:contactId/cc", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.SetCampaignLeadCC)
-				// Review: the readiness report, each lead's emails as they will
-				// be sent, per-lead copies, and approving leads before their
-				// first email. Every write states an absolute state or is a
-				// cached write-ahead, so retries are safe without an
-				// Idempotency-Key. Approving puts mail in motion, hence the send gate.
+				// Review: approving puts mail in motion, hence the send gate.
+				// Retry behavior is stated on each handler; rewrite: true is charged again by design.
 				readContacts := m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts)
 				campaigns.GET("/:id/review", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignReview)
 				campaigns.PUT("/:id/review", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.SetCampaignReview)

@@ -6397,7 +6397,7 @@
       "post": {
         "operationId": "campaigns_pause_lead",
         "summary": "Pause a lead",
-        "description": "Hold one contact's flow inside one campaign until a date, or with no end. The contact stays subscribed and stays a lead. The body states an absolute hold rather than a delta, so a retry lands on the same state. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "description": "Hold one contact's flow inside one campaign until a date, or with no end. The contact stays subscribed and stays a lead. The body states an absolute hold rather than a delta, so a retry lands on the same state. On a lead waiting for review it writes the manual pause and answers with it, and the lead keeps waiting for review; approving it later leaves the pause in place. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -6504,7 +6504,7 @@
       "post": {
         "operationId": "campaigns_resume_lead",
         "summary": "Resume a lead",
-        "description": "Lift the hold now. The held time is dropped rather than carried, and the campaign's wakeup is pulled forward. Resuming a lead that is not held succeeds and changes nothing. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "description": "Lift the hold now. The held time is dropped rather than carried, and the campaign's wakeup is pulled forward. Resuming a lead that is not held succeeds and changes nothing. Resuming never approves a lead waiting for review: it lifts any other hold, and the lead goes back to waiting for review. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -48065,7 +48065,7 @@
       "post": {
         "operationId": "campaigns_approve_review_leads",
         "summary": "Approve waiting leads",
-        "description": "Releases leads waiting for review, so their first email goes out under the campaign's schedule and limits. Send contact_ids (up to 500) or all. Approving a lead that is not waiting changes nothing, so a retry is safe. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
+        "description": "Releases leads waiting for review, so their first email goes out under the campaign's schedule and limits. Send contact_ids (up to 500) or all. Approving a lead that is not waiting changes nothing, so retrying the same contact_ids is safe. all approves whoever is waiting when it runs, so a repeated all also approves leads that started waiting since the first call; retry with the contact_ids you meant instead. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -48163,7 +48163,7 @@
       "post": {
         "operationId": "campaigns_reopen_review_leads",
         "summary": "Send leads back to review",
-        "description": "Holds the listed leads for review again. A lead already emailed, or paused for another reason, is left as it is. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "description": "Holds the listed leads for review again. The campaign must have review mode on. A lead already emailed is left as it is. A lead paused for another reason waits for review too and keeps that pause. A lead already waiting stays waiting, so a retry is safe. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -48196,7 +48196,8 @@
                     "items": {
                       "type": "string",
                       "format": "uuid"
-                    }
+                    },
+                    "minItems": 1
                   }
                 },
                 "required": [
@@ -48218,7 +48219,7 @@
             }
           },
           "400": {
-            "description": "contact_ids is missing or longer than 500.",
+            "description": "contact_ids is missing, empty or longer than 500, all is sent, or review mode is off.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48311,7 +48312,9 @@
                     "items": {
                       "type": "string",
                       "format": "uuid"
-                    }
+                    },
+                    "minItems": 1,
+                    "description": "Only these leads. An empty list is refused; omit it to write every lead."
                   },
                   "waiting_only": {
                     "type": "boolean"
@@ -48337,7 +48340,7 @@
             }
           },
           "400": {
-            "description": "More than 500 contact ids.",
+            "description": "contact_ids is empty or longer than 500, or after is not a cursor this endpoint issued.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48536,7 +48539,30 @@
                   "body_plain": {
                     "type": "string"
                   }
-                }
+                },
+                "anyOf": [
+                  {
+                    "required": [
+                      "body_html"
+                    ],
+                    "properties": {
+                      "body_html": {
+                        "pattern": "\\S"
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "body_plain"
+                    ],
+                    "properties": {
+                      "body_plain": {
+                        "pattern": "\\S"
+                      }
+                    }
+                  }
+                ],
+                "description": "Send a nonblank body_html, body_plain, or both."
               }
             }
           }
@@ -48593,7 +48619,7 @@
             }
           },
           "409": {
-            "description": "lead_step_sent: this lead already received this email.",
+            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48690,7 +48716,7 @@
             }
           },
           "409": {
-            "description": "lead_step_sent: this lead already received this email.",
+            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48716,7 +48742,7 @@
       "post": {
         "operationId": "campaigns_write_lead_email_ai",
         "summary": "Write one lead's AI copy for one email now",
-        "description": "Writes the step's AI blocks for this lead now instead of at send time, so they can be read first, and answers the lead's emails. Charged to the balance as at send time and cached where the send reads it, so a retry writes and charges nothing more. Scope WRITE_CAMPAIGNS and READ_CONTACTS, org permission manage_campaigns, use_ai and view_contacts.",
+        "description": "Writes the step's AI blocks for this lead now instead of at send time, so they can be read first, and answers the lead's emails. Charged to the balance as at send time and cached where the send reads it, so a retry writes and charges nothing more. Blocks are written one at a time and each is saved as it is written, so a call that fails partway keeps and charges the blocks it finished and a retry writes only the rest. rewrite: true is a new generation charged again each time, so do not retry a rewrite automatically. Scope WRITE_CAMPAIGNS and READ_CONTACTS, org permission manage_campaigns, use_ai and view_contacts.",
         "tags": [
           "campaigns"
         ],
@@ -48776,7 +48802,7 @@
             }
           },
           "402": {
-            "description": "insufficient_credits: the balance is too low. Nothing is charged.",
+            "description": "insufficient_credits: the balance is too low for the next block. Blocks written before it stay written and charged.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48816,7 +48842,7 @@
             }
           },
           "503": {
-            "description": "ai_unavailable or ai_generation_failed.",
+            "description": "ai_unavailable (no AI provider; nothing is charged) or ai_generation_failed (the failed block is not charged, though a web lookup it made can be; blocks written before it stay written and charged).",
             "content": {
               "application/json": {
                 "schema": {
@@ -48826,7 +48852,7 @@
             }
           },
           "409": {
-            "description": "lead_step_sent: a rewrite of an email the lead already received.",
+            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48845,7 +48871,7 @@
                 "properties": {
                   "rewrite": {
                     "type": "boolean",
-                    "description": "Replace copy already written with a new generation, charged again."
+                    "description": "Replace copy already written with a new generation, charged again. Each repeat is another charge, so do not retry it automatically."
                   }
                 }
               }
@@ -53163,7 +53189,7 @@
           },
           "lead": {
             "type": "boolean",
-            "description": "The contact is a lead of the campaign."
+            "description": "The contact is a lead of campaign_id. Only reported when step_id is given; omitted otherwise, even for a lead."
           },
           "personalized": {
             "type": "boolean",
@@ -62437,7 +62463,7 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "When it lifts. Absent for a hold with no end, which only a resume lifts."
+            "description": "When it lifts. Absent for a hold with no end, which only a resume lifts, and for a review hold, which only an approval or turning review mode off lifts."
           },
           "reason": {
             "type": "string",
@@ -62449,9 +62475,11 @@
               "manual",
               "out_of_office",
               "inbox_tagging",
+              "crm",
+              "review",
               "cc"
             ],
-            "description": "What wrote it. cc holds a contact's own lead while they are copied on another lead's emails in the campaign; its reason is that lead's address."
+            "description": "What wrote it. review marks a lead waiting for approval in a review campaign, shown ahead of any other hold; only approving the lead or turning review mode off lifts it. cc holds a contact's own lead while they are copied on another lead's emails in the campaign; its reason is that lead's address."
           }
         },
         "required": [
@@ -66793,6 +66821,7 @@
       },
       "CampaignReviewLeadsRequest": {
         "type": "object",
+        "description": "Send a nonempty contact_ids, or all set to true, not both.",
         "properties": {
           "contact_ids": {
             "type": "array",
@@ -66805,7 +66834,35 @@
           "all": {
             "type": "boolean"
           }
-        }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "contact_ids"
+            ],
+            "properties": {
+              "contact_ids": {
+                "minItems": 1
+              },
+              "all": {
+                "const": false
+              }
+            }
+          },
+          {
+            "required": [
+              "all"
+            ],
+            "properties": {
+              "all": {
+                "const": true
+              },
+              "contact_ids": {
+                "maxItems": 0
+              }
+            }
+          }
+        ]
       },
       "CampaignReviewChange": {
         "type": "object",
@@ -66919,8 +66976,11 @@
             "type": "object",
             "properties": {
               "next_cursor": {
-                "type": "string",
-                "nullable": true
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Opaque cursor for the next page, or null on the last page."
               },
               "has_more": {
                 "type": "boolean"

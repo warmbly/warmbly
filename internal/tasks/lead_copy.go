@@ -60,7 +60,7 @@ func (s *tasksService) leadOverride(ctx context.Context, campaignID, contactID, 
 
 // spintaxRand picks spintax options the same way for one lead, step and part
 // every time, so a preview and a retried send carry the copy the send does.
-// The HTML and plain parts share a seed so they agree on each choice.
+// The HTML and plain parts share a seed, so they agree when their groups come in the same order.
 func spintaxRand(campaignID, contactID, stepID uuid.UUID, part string) *rand.Rand {
 	h := fnv.New64a()
 	_, _ = h.Write(campaignID[:])
@@ -313,6 +313,32 @@ func missingFor(values map[string]string, parts ...string) []string {
 	return out
 }
 
+// leadCopyChanged reports whether the lead's own copy or written AI copy of the
+// step differs from what this send built. Read after the send's claim, which
+// every copy write is ordered against.
+func (s *tasksService) leadCopyChanged(ctx context.Context, campaignID, contactID, stepID uuid.UUID, used *models.LeadStepOverride, usedAI map[string]string) (bool, error) {
+	now, err := s.leadOverride(ctx, campaignID, contactID, stepID)
+	if err != nil {
+		return false, err
+	}
+	if (now == nil) != (used == nil) || (now != nil && !now.UpdatedAt.Equal(used.UpdatedAt)) {
+		return true, nil
+	}
+	if len(usedAI) == 0 {
+		return false, nil
+	}
+	cached, err := s.campaignProgressRepo.GetResolvedAIVariables(ctx, campaignID, contactID, stepID)
+	if err != nil {
+		return false, err
+	}
+	for id, text := range usedAI {
+		if cached[id] != text {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ErrLeadStepNotEmail is a write-ahead asked for on a step that sends no email.
 var ErrLeadStepNotEmail = errors.New("step is not an email step")
 
@@ -343,33 +369,32 @@ func (s *tasksService) WriteLeadAI(ctx context.Context, orgID uuid.UUID, campaig
 	if serr != nil {
 		return errx.InternalError()
 	}
-	refs := findAIVarRefs(src.bodyHTML)
-	if len(refs) == 0 {
+	if len(findAIVarRefs(src.bodyHTML)) == 0 {
 		return nil
 	}
+	if s.leadReview == nil {
+		return errx.InternalError()
+	}
+	sentErr := errx.NewWithIdentifier(errx.Conflict, "lead_step_sent", "This lead already received this email, so its copy can no longer change.")
+	// Checked before any charge; the guarded save below is what holds.
+	if sentAt, err := s.campaignProgressRepo.GetStepSentAt(ctx, campaign.ID, contact.ID, step.ID); err != nil {
+		return errx.InternalError()
+	} else if sentAt != nil {
+		return sentErr
+	}
 	if rewrite {
-		// Once the email is on its way, the copy it carried is the copy.
-		if sentAt, err := s.campaignProgressRepo.GetStepSentAt(ctx, campaign.ID, contact.ID, step.ID); err != nil {
-			return errx.InternalError()
-		} else if sentAt != nil {
-			return errx.NewWithIdentifier(errx.Conflict, "lead_step_sent", "This lead already received this email, so its copy can no longer change.")
-		}
-		if s.leadReview == nil {
-			return errx.InternalError()
-		}
-		ids := make([]string, len(refs))
-		for i, r := range refs {
-			ids[i] = r.id
-		}
-		if err := s.leadReview.ClearResolvedAIVariables(ctx, campaign.ID, contact.ID, step.ID, ids); err != nil {
-			return errx.InternalError()
-		}
 		ctx = withAIVarRewrite(ctx)
 	}
+	// Each block replaces its copy only once written, and never on a step already reserved or sent.
+	w := aiVarWrite{fresh: rewrite, save: func(id, text string) error {
+		return s.leadReview.SaveLeadAIVariable(ctx, campaign.ID, contact.ID, step.ID, id, text)
+	}}
 	extra := templateContext(nil, PreviewUnsubscribeLink)
 	subject, bodyHTML, bodyPlain := renderLeadCopy(campaign.ID, step.ID, *contact, extra, src.subject, src.bodyHTML, src.bodyPlain)
-	if _, _, _, aerr := s.resolveAIVariables(ctx, campaign, contact, step.ID, subject, bodyHTML, bodyPlain); aerr != nil {
+	if _, _, _, _, aerr := s.resolveAIVariablesWith(ctx, campaign, contact, step.ID, subject, bodyHTML, bodyPlain, w); aerr != nil {
 		switch {
+		case errors.Is(aerr, repository.ErrLeadStepSent):
+			return sentErr
 		case errors.Is(aerr, ErrAIVarBalance):
 			return errx.NewWithIdentifier(errx.PaymentRequired, "insufficient_credits", "The workspace balance is too low. Add money under Billing to keep going.")
 		case errors.Is(aerr, ErrAIVarCap):

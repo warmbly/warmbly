@@ -45,7 +45,7 @@ SELECT cl.campaign_id, cl.contact_id, '55555555-0000-0000-0000-000000000001',
        '<p>Hi Ana,</p><p>Your talk on cleaning up pipeline data stuck with me, especially the part about reply tracking.</p><p>We help teams like Northwind stop losing warm replies in shared inboxes. Worth a 15 minute look next week?</p><p>Best,<br>Sam</p>',
        ''
 FROM campaign_leads cl JOIN contacts ct ON ct.id = cl.contact_id
-WHERE ct.email = 'ana.ruiz@northwind.test'
+WHERE cl.campaign_id = '44444444-0000-0000-0000-000000000001' AND ct.email = 'ana.ruiz@northwind.test'
 ON CONFLICT DO NOTHING;
 
 -- A draft about to launch, with a clean, verified list.

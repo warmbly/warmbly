@@ -2088,6 +2088,7 @@ func main() {
 		if emails, ok := tasksService.(tasks.LeadEmailsService); ok {
 			leadReviewService = &leadreview.Service{
 				Campaigns:     campaignService,
+				Contacts:      leadreview.RepoContacts{Repo: contactRepoForHandler},
 				Repo:          campaignReviewRepository,
 				Emails:        emails,
 				Steps:         tasksService,
@@ -2986,7 +2987,6 @@ func main() {
 		AuditService: auditService,
 	}
 	if leadReviewService != nil {
-		leadReviewService.Contacts = h.ReviewContacts()
 		h.LeadReview = leadReviewService
 	}
 	// Agency keys on the MCP server see the agency tools, migrations included.

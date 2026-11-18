@@ -7,7 +7,7 @@ export type ReviewStatus = "waiting" | "ready" | "held" | "started";
 // The fields the readiness check counts blanks of.
 export type MissingField = "FirstName" | "LastName" | "Company" | "Phone";
 
-export const MISSING_FIELD_LABEL: Record<string, string> = {
+export const MISSING_FIELD_LABEL: Record<MissingField, string> = {
     FirstName: "first name",
     LastName: "last name",
     Company: "company",
@@ -52,7 +52,7 @@ export interface ReviewLead {
     hold?: LeadHold | null;
     personalized: number;
     missing?: MissingField[];
-    added_at?: string | null;
+    added_at?: Date | null;
 }
 
 export interface ReviewLeadsPage {
@@ -77,14 +77,14 @@ export interface LeadEmailStep {
     source: { subject: string; body_html: string; body_plain: string };
     threaded: boolean;
     personalized: boolean;
-    edited_at?: string | null;
+    edited_at?: Date | null;
     step_changed: boolean;
     variant_id?: string | null;
     ai_blocks?: { id: string; name: string; written: boolean }[];
     missing?: MissingField[];
     errors?: string[];
     sent: boolean;
-    sent_at?: string | null;
+    sent_at?: Date | null;
 }
 
 export interface LeadEmails {

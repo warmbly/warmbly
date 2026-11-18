@@ -47,7 +47,7 @@ export async function reopenCampaignLeads(campaignId: string, contactIds: string
     });
 }
 
-// One pass of writing AI copy ahead; repeat with the returned next as after while remaining > 0.
+// One pass of writing AI copy ahead; repeat with the returned next as after while remaining > 0 and stopped is unset.
 export async function writeCampaignReviewAI(
     campaignId: string,
     body: { step_id?: string; contact_ids?: string[]; waiting_only?: boolean; after?: string },

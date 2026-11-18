@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,23 +13,6 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
-
-// reviewContacts loads contacts for the review service through the handler's org-scoped lookup.
-type reviewContacts struct{ h *Handler }
-
-func (r reviewContacts) Load(ctx context.Context, orgID, contactID uuid.UUID) (*models.Contact, *errx.Error) {
-	c, xerr := r.h.orgContact(ctx, orgID, contactID)
-	if xerr != nil {
-		return nil, xerr
-	}
-	if c.CustomFields == nil {
-		c.CustomFields = map[string]string{}
-	}
-	return c, nil
-}
-
-// ReviewContacts is the contact loader the review service is built with.
-func (h *Handler) ReviewContacts() leadreview.Contacts { return reviewContacts{h: h} }
 
 func (h *Handler) reviewReady(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {
 	if h.LeadReview == nil {
@@ -357,6 +339,11 @@ func (h *Handler) WriteCampaignReviewAI(c *gin.Context) {
 			errx.JSON(c, errx.InvalidBody(err))
 			return
 		}
+	}
+	// An empty list is refused, so a client bug cannot widen a paid pass to every lead.
+	if req.ContactIDs != nil && len(req.ContactIDs) == 0 {
+		errx.JSON(c, errx.New(errx.BadRequest, "contact_ids is empty; omit it to write every lead"))
+		return
 	}
 	var after *models.CampaignReviewCursor
 	if req.After != "" {

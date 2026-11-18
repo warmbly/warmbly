@@ -44,14 +44,18 @@ type CampaignReviewRepository interface {
 	// ActiveAICampaigns lists active campaigns with an AI block in an email step, after the given id.
 	ActiveAICampaigns(ctx context.Context, after uuid.UUID, limit int) ([]CampaignOrg, error)
 
-	// ClearResolvedAIVariables drops a lead's written copy of the listed AI blocks of one step.
-	ClearResolvedAIVariables(ctx context.Context, campaignID, contactID, stepID uuid.UUID, ids []string) error
+	// SaveLeadAIVariable stores one AI block's copy for a step; ErrLeadStepSent once the step is reserved or sent.
+	SaveLeadAIVariable(ctx context.Context, campaignID, contactID, stepID uuid.UUID, id, text string) error
 
 	GetOverride(ctx context.Context, campaignID, contactID, stepID uuid.UUID) (*models.LeadStepOverride, error)
 	ListOverrides(ctx context.Context, campaignID, contactID uuid.UUID) ([]models.LeadStepOverride, error)
+	// UpsertOverride and DeleteOverride refuse with ErrLeadStepSent once the step is reserved or sent.
 	UpsertOverride(ctx context.Context, o models.LeadStepOverride) (*models.LeadStepOverride, error)
 	DeleteOverride(ctx context.Context, campaignID, contactID, stepID uuid.UUID) (bool, error)
 }
+
+// ErrLeadStepSent is a change to the copy of a step the lead was already sent, or is being sent.
+var ErrLeadStepSent = errors.New("the lead was already sent this step")
 
 type campaignReviewRepository struct {
 	db *pgxpool.Pool
@@ -69,6 +73,9 @@ const reviewStatusSQL = `CASE
 	WHEN campaign_lead_attempted(cl.campaign_id, cl.contact_id) THEN 'started'
 	WHEN cl.paused_at IS NOT NULL AND (cl.paused_until IS NULL OR cl.paused_until > NOW()) THEN 'held'
 	ELSE 'ready' END`
+
+// blankRunes is every rune unicode.IsSpace accepts, so SQL and strings.TrimSpace agree on a blank field.
+const blankRunes = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
 
 // missingColumn maps a field name to its contacts column; the map is the whitelist.
 var missingColumn = map[string]string{
@@ -137,6 +144,7 @@ func holdForReview(ctx context.Context, q execer, campaignID uuid.UUID, ids []uu
 		    pause_reason = CASE WHEN `+freeSlotSQL+` THEN NULL ELSE cl.pause_reason END,
 		    pause_source = CASE WHEN `+freeSlotSQL+` THEN 'review' ELSE cl.pause_source END
 		WHERE cl.campaign_id = $1 AND cl.review_pending_at IS NULL
+		  AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = $1 AND c.review_leads)
 		  AND NOT campaign_lead_attempted(cl.campaign_id, cl.contact_id)`+filter, args...)
 	if err != nil {
 		return 0, err
@@ -179,7 +187,20 @@ func (r *campaignReviewRepository) ReopenLeads(ctx context.Context, campaignID u
 	if len(contactIDs) == 0 {
 		return 0, nil
 	}
-	return holdForReview(ctx, r.db, campaignID, contactIDs)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	// Shared with enrolment, so a reopen sees review turned off before it holds anyone.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(campaign_review_lock_key($1))`, campaignID); err != nil {
+		return 0, err
+	}
+	n, err := holdForReview(ctx, tx, campaignID, contactIDs)
+	if err != nil {
+		return 0, err
+	}
+	return n, tx.Commit(ctx)
 }
 
 func (r *campaignReviewRepository) Counts(ctx context.Context, campaignID uuid.UUID) (*models.CampaignReviewCounts, error) {
@@ -210,7 +231,7 @@ func (r *campaignReviewRepository) MissingCounts(ctx context.Context, campaignID
 		if !ok {
 			continue
 		}
-		cols = append(cols, fmt.Sprintf("COUNT(*) FILTER (WHERE btrim(c.%s) = '')", col))
+		cols = append(cols, fmt.Sprintf("COUNT(*) FILTER (WHERE btrim(c.%s, $2) = '')", col))
 		names = append(names, f)
 	}
 	if len(cols) == 0 {
@@ -226,7 +247,7 @@ func (r *campaignReviewRepository) MissingCounts(ctx context.Context, campaignID
 	for i := range counts {
 		dest[i] = &counts[i]
 	}
-	if err := r.db.QueryRow(ctx, query, campaignID).Scan(dest...); err != nil {
+	if err := r.db.QueryRow(ctx, query, campaignID, blankRunes).Scan(dest...); err != nil {
 		db.CaptureError(err, query, []any{campaignID}, "queryrow")
 		return nil, err
 	}
@@ -285,7 +306,7 @@ func (r *campaignReviewRepository) ListLeads(ctx context.Context, campaignID uui
 		where = append(where, "("+reviewStatusSQL+") = "+add(f.Status))
 	}
 	if col, ok := missingColumn[f.Missing]; ok {
-		where = append(where, "btrim(c."+col+") = ''")
+		where = append(where, "btrim(c."+col+", "+add(blankRunes)+") = ''")
 	}
 	if q := strings.TrimSpace(f.Search); q != "" {
 		p := add("%" + escapeLike(q) + "%")
@@ -380,19 +401,17 @@ func (r *campaignReviewRepository) PendingAILeads(ctx context.Context, campaignI
 		args = append(args, after.Email, after.ContactID)
 		scope += fmt.Sprintf(` AND (c.email, cl.contact_id) > ($%d, $%d)`, len(args)-1, len(args))
 	}
-	var total int
-	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) `+scope, args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-	rows, err := r.db.Query(ctx, `SELECT c.email, cl.contact_id `+scope+fmt.Sprintf(` ORDER BY c.email, cl.contact_id LIMIT %d`, limit), args...)
+	// The count rides on the page, so both come from one snapshot.
+	rows, err := r.db.Query(ctx, `SELECT c.email, cl.contact_id, COUNT(*) OVER () `+scope+fmt.Sprintf(` ORDER BY c.email, cl.contact_id LIMIT %d`, limit), args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
+	var total int
 	var out []models.CampaignReviewCursor
 	for rows.Next() {
 		var c models.CampaignReviewCursor
-		if err := rows.Scan(&c.Email, &c.ContactID); err != nil {
+		if err := rows.Scan(&c.Email, &c.ContactID, &total); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, c)
@@ -466,8 +485,32 @@ func (r *campaignReviewRepository) ListOverrides(ctx context.Context, campaignID
 	return out, rows.Err()
 }
 
+// claimUnsentStep locks the lead's progress row for the step, the row
+// ReserveSend claims, so a copy change and a send are ordered either way.
+func claimUnsentStep(ctx context.Context, tx pgx.Tx, campaignID, contactID, stepID uuid.UUID) error {
+	var ok bool
+	err := tx.QueryRow(ctx, `
+		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (campaign_id, contact_id, sequence_id) DO UPDATE SET sequence_id = EXCLUDED.sequence_id
+		WHERE campaign_contact_progress.sent_at IS NULL AND campaign_contact_progress.dispatched_at IS NULL
+		RETURNING true`, campaignID, contactID, stepID).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrLeadStepSent
+	}
+	return err
+}
+
 func (r *campaignReviewRepository) UpsertOverride(ctx context.Context, o models.LeadStepOverride) (*models.LeadStepOverride, error) {
-	return scanOverride(r.db.QueryRow(ctx, `
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	if err := claimUnsentStep(ctx, tx, o.CampaignID, o.ContactID, o.StepID); err != nil {
+		return nil, err
+	}
+	out, err := scanOverride(tx.QueryRow(ctx, `
 		INSERT INTO campaign_lead_step_overrides (campaign_id, contact_id, sequence_id, subject, body_html, body_plain, edited_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (campaign_id, contact_id, sequence_id) DO UPDATE
@@ -475,22 +518,40 @@ func (r *campaignReviewRepository) UpsertOverride(ctx context.Context, o models.
 		    edited_by = EXCLUDED.edited_by, updated_at = NOW()
 		RETURNING `+overrideColumns,
 		o.CampaignID, o.ContactID, o.StepID, o.Subject, o.BodyHTML, o.BodyPlain, o.EditedBy))
+	if err != nil {
+		return nil, err
+	}
+	return out, tx.Commit(ctx)
 }
 
 func (r *campaignReviewRepository) DeleteOverride(ctx context.Context, campaignID, contactID, stepID uuid.UUID) (bool, error) {
-	cmd, err := r.db.Exec(ctx, `DELETE FROM campaign_lead_step_overrides
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	if err := claimUnsentStep(ctx, tx, campaignID, contactID, stepID); err != nil {
+		return false, err
+	}
+	cmd, err := tx.Exec(ctx, `DELETE FROM campaign_lead_step_overrides
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3`, campaignID, contactID, stepID)
 	if err != nil {
 		return false, err
 	}
-	return cmd.RowsAffected() > 0, nil
+	return cmd.RowsAffected() > 0, tx.Commit(ctx)
 }
 
-func (r *campaignReviewRepository) ClearResolvedAIVariables(ctx context.Context, campaignID, contactID, stepID uuid.UUID, ids []string) error {
-	_, err := r.db.Exec(ctx, `
-		UPDATE campaign_contact_progress
-		SET ai_variables_resolved = COALESCE(ai_variables_resolved, '{}'::jsonb) - $4::text[]
-		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
-		  AND sent_at IS NULL AND dispatched_at IS NULL`, campaignID, contactID, stepID, ids)
+func (r *campaignReviewRepository) SaveLeadAIVariable(ctx context.Context, campaignID, contactID, stepID uuid.UUID, id, text string) error {
+	var ok bool
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id, ai_variables_resolved)
+		VALUES ($1, $2, $3, jsonb_build_object($4::text, $5::text))
+		ON CONFLICT (campaign_id, contact_id, sequence_id) DO UPDATE
+		SET ai_variables_resolved = COALESCE(campaign_contact_progress.ai_variables_resolved, '{}'::jsonb) || jsonb_build_object($4::text, $5::text)
+		WHERE campaign_contact_progress.sent_at IS NULL AND campaign_contact_progress.dispatched_at IS NULL
+		RETURNING true`, campaignID, contactID, stepID, id, text).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrLeadStepSent
+	}
 	return err
 }

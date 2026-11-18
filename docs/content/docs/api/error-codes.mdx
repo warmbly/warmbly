@@ -860,6 +860,8 @@ Returned when an AI action, or a placement test paid from the balance, is reques
 
 Placement tests answer `402` too, with `placement_not_entitled` or `placement_quota_exceeded`; see [placement test refusals](#placement-test-refusals). A paid placement test past the balance answers `insufficient_credits`, and one past a spend limit answers `429` with `usage_cap_exceeded`; neither charges anything.
 
+Writing a lead's AI copy ahead ([write one lead's AI copy now](/api/reference/campaigns/#write-one-leads-ai-copy-now)) checks the balance before each AI block, so its `insufficient_credits` can follow blocks of the same email already written and charged. Those stay saved, and a retry after a top-up writes only the rest.
+
 ### 403 Forbidden
 
 Returned when authenticated but lacking necessary permissions.
@@ -1218,7 +1220,7 @@ Every endpoint that checks a password, an emailed or two-factor code, or a sign-
 }
 ```
 
-Writing one lead's AI copy ahead ([write one lead's AI copy now](/api/reference/campaigns/#write-one-leads-ai-copy-now)) answers `ai_unavailable` on an instance with no AI provider and `ai_generation_failed` when the provider did not answer; neither charges anything.
+Writing one lead's AI copy ahead ([write one lead's AI copy now](/api/reference/campaigns/#write-one-leads-ai-copy-now)) answers `ai_unavailable` on an instance with no AI provider, which charges nothing, and `ai_generation_failed` when the provider did not answer. A step's blocks are written one at a time, so after `ai_generation_failed` the blocks written before the failure stay written and charged, as can a web lookup the failed block already made. A retry writes only the blocks still missing.
 
 Other temporary failures answer the generic form:
 

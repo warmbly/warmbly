@@ -669,9 +669,10 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// zero-cost no-op when the body has no AI blocks. A generation failure fails
 	// the send (recorded like other send failures) so the task retries with the
 	// same cached output.
+	var usedAI map[string]string
 	if s.aiProvider != nil && s.aiCredits != nil {
 		var aerr error
-		subject, bodyHTML, bodyPlain, aerr = s.resolveAIVariables(ctx, campaign, contact, sequence.ID, subject, bodyHTML, bodyPlain)
+		subject, bodyHTML, bodyPlain, usedAI, aerr = s.resolveAIVariablesWith(ctx, campaign, contact, sequence.ID, subject, bodyHTML, bodyPlain, aiVarWrite{})
 		if aerr != nil {
 			s.taskRepo.RecordTaskFailure(ctx, taskID, "AI variable resolution failed", aerr.Error())
 			if s.campaignLogRepo != nil {
@@ -872,6 +873,20 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
 		executionStatus = "completed"
 		return nil
+	}
+	// A copy change that landed before the claim is sent next pass, never the copy read before it.
+	if changed, cerr := s.leadCopyChanged(ctx, campaign.ID, contact.ID, sequence.ID, override, usedAI); changed || cerr != nil {
+		if relErr := s.campaignProgressRepo.ReleaseSend(ctx, campaign.ID, contact.ID, sequence.ID, nextPair.IsNewLead); relErr != nil {
+			errs.CaptureException(relErr)
+		}
+		reason := "The lead's copy changed while this send was prepared"
+		if cerr != nil {
+			reason = cerr.Error()
+		}
+		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send postponed for the lead's latest copy", reason)
+		s.retryCampaignTickLater(ctx, taskRecord)
+		executionStatus = "failed"
+		return errx.InternalError()
 	}
 
 	// STEP 16: Send email to worker via Kafka

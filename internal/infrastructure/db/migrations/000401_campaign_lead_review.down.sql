@@ -1,3 +1,12 @@
+-- A lead still waiting for review stays held as an indefinite manual pause.
+-- Runs before the DDL, so the scan holds no exclusive lock.
+UPDATE public.campaign_leads
+SET paused_at = COALESCE(review_pending_at, paused_at, NOW()), paused_until = NULL,
+    pause_source = 'manual', pause_reason = 'Waiting for review'
+WHERE pause_source = 'review'
+   OR (review_pending_at IS NOT NULL
+       AND NOT (pause_source = 'manual' AND paused_at IS NOT NULL AND paused_until IS NULL));
+
 DROP TRIGGER IF EXISTS campaign_lead_enrol_review_hold ON public.campaign_leads;
 DROP FUNCTION IF EXISTS public.campaign_lead_enrol_review_hold();
 
@@ -36,14 +45,6 @@ DROP FUNCTION IF EXISTS public.campaign_review_lock_key(uuid);
 DROP FUNCTION IF EXISTS public.campaign_lead_attempted(uuid, uuid);
 DROP TABLE IF EXISTS public.campaign_lead_step_overrides;
 
--- A lead still waiting for review stays held, as a member's pause, rather than
--- being released unreviewed. A live hold of another kind is left in its place.
-UPDATE public.campaign_leads
-SET paused_at = COALESCE(paused_at, review_pending_at), paused_until = NULL,
-    pause_source = 'manual', pause_reason = 'Waiting for review'
-WHERE pause_source = 'review'
-   OR (review_pending_at IS NOT NULL
-       AND (paused_at IS NULL OR (paused_until IS NOT NULL AND paused_until <= NOW())));
 ALTER TABLE public.campaign_leads DROP COLUMN IF EXISTS review_pending_at;
 
 ALTER TABLE public.campaign_leads DROP CONSTRAINT IF EXISTS campaign_leads_pause_source_check;

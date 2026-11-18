@@ -136,7 +136,7 @@ export default function ReviewToolbar({
                         {chip.label}
                     </button>
                 </PopoverMenuTrigger>
-                <PopoverMenuContent minWidth={340} className="p-1 max-w-[min(420px,calc(100vw-32px))]">
+                <PopoverMenuContent minWidth={340} role="dialog" aria-label="Sending checks" className="p-1 max-w-[min(420px,calc(100vw-32px))]">
                     {checks.length === 0 ? (
                         <div className="px-2.5 py-2 flex items-start gap-2 text-[12px] text-emerald-700">
                             <CheckCircle2Icon className="mt-px w-3.5 h-3.5 shrink-0" />
@@ -187,7 +187,7 @@ export default function ReviewToolbar({
                             )}
                         </button>
                     </PopoverMenuTrigger>
-                    <PopoverMenuContent minWidth={300} className="p-2.5 max-w-[min(380px,calc(100vw-32px))]">
+                    <PopoverMenuContent minWidth={300} role="dialog" aria-label="AI copy" className="p-2.5 max-w-[min(380px,calc(100vw-32px))]">
                         <p className="text-[12px] leading-relaxed text-slate-700">{aiText}</p>
                         {aiProgress ? (
                             <button type="button" onClick={onStopAI} className="mt-2 h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 hover:bg-slate-50">

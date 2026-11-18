@@ -162,7 +162,8 @@ func TestWriteAheadWritesEveryLeadAndStopsAtTheBalance(t *testing.T) {
 	for _, l := range unpaidLeads {
 		unpaidCalls += emails.calls[l.ContactID]
 	}
-	if len(repo.pending[unpaid]) != 20 || unpaidCalls > 4*WritePassSize {
+	// Every tick reaches the balance check once, and stops before a second round of writers.
+	if len(repo.pending[unpaid]) != 20 || unpaidCalls < 4 || unpaidCalls > 4*writeParallel {
 		t.Fatalf("workspace without balance: %d pending, %d attempts over 4 ticks", len(repo.pending[unpaid]), unpaidCalls)
 	}
 

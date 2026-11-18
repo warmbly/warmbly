@@ -90,11 +90,11 @@ function refreshReview(qc: QueryClient, campaignId: string) {
 function patchStatus(qc: QueryClient, campaignId: string, ids: Set<string> | "all", from: ReviewStatus, to: ReviewStatus) {
     const prefix = [...reviewKey(campaignId), "leads"];
     const snapshot = qc.getQueriesData<InfiniteData<ReviewLeadsPage, string | null>>({ queryKey: prefix });
+    const moves = (l: ReviewLead) => l.status === from && (ids === "all" || ids.has(l.contact_id));
     for (const [key, data] of snapshot) {
         if (!data) continue;
         // A list filtered to one state loses the rows that leave it, so they animate out at once.
         const filter = key[4];
-        const moves = (l: ReviewLead) => l.status === from && (ids === "all" || ids.has(l.contact_id));
         qc.setQueryData<InfiniteData<ReviewLeadsPage, string | null>>(key, {
             ...data,
             pages: data.pages.map((p) => ({
@@ -106,7 +106,25 @@ function patchStatus(qc: QueryClient, campaignId: string, ids: Set<string> | "al
             })),
         });
     }
-    return () => snapshot.forEach(([key, value]) => qc.setQueryData(key, value));
+    // Undo only this change, so a concurrent approval that succeeded stays applied.
+    return () => {
+        for (const [key, before] of snapshot) {
+            const now = qc.getQueryData<InfiniteData<ReviewLeadsPage, string | null>>(key);
+            if (!before || !now) continue;
+            const current = new Map(now.pages.flatMap((p) => p.data).map((l) => [l.contact_id, l]));
+            qc.setQueryData<InfiniteData<ReviewLeadsPage, string | null>>(key, {
+                ...before,
+                pages: before.pages.map((p) => ({
+                    ...p,
+                    data: p.data.flatMap((l) => {
+                        if (moves(l)) return [l];
+                        const cur = current.get(l.contact_id);
+                        return cur ? [cur] : [];
+                    }),
+                })),
+            });
+        }
+    };
 }
 
 export function useApproveLeads(campaignId: string) {
@@ -171,6 +189,9 @@ export function useWriteReviewAIPass(campaignId: string) {
 export { refreshReview };
 
 const aiWrites = new Map<string, Promise<LeadEmails>>();
+// Writes in flight per lead, and those that overlapped another write for the same lead.
+const leadWrites = new Map<string, Set<object>>();
+const overlapped = new WeakSet<object>();
 const aiWriteListeners = new Set<() => void>();
 let aiWritesVersion = 0;
 function aiWritesChanged() {
@@ -186,9 +207,28 @@ export function writeLeadAIOnce(qc: QueryClient, campaignId: string, contactId: 
     const key = `${campaignId}:${contactId}:${stepId}`;
     const running = aiWrites.get(key);
     if (running && !rewrite) return running;
-    const p = writeLeadEmailAI(campaignId, contactId, stepId, rewrite)
+    const token = {};
+    const lead = `${campaignId}:${contactId}`;
+    const send = () => {
+        const peers = leadWrites.get(lead) ?? new Set<object>();
+        if (peers.size > 0) {
+            peers.forEach((t) => overlapped.add(t));
+            overlapped.add(token);
+        }
+        peers.add(token);
+        leadWrites.set(lead, peers);
+        return writeLeadEmailAI(campaignId, contactId, stepId, rewrite).finally(() => {
+            peers.delete(token);
+            if (peers.size === 0 && leadWrites.get(lead) === peers) leadWrites.delete(lead);
+        });
+    };
+    // A rewrite waits for the write already running for this step, so the entry spans both.
+    const p = (running ? running.catch(() => undefined).then(send) : send())
         .then((data) => {
-            qc.setQueryData(leadEmailsQuery(campaignId, contactId).queryKey, data);
+            const emailsKey = leadEmailsQuery(campaignId, contactId).queryKey;
+            // Each answer carries every step, so one that raced another write for the lead may be stale.
+            if (overlapped.has(token)) void qc.invalidateQueries({ queryKey: emailsKey, exact: true });
+            else qc.setQueryData(emailsKey, data);
             void qc.invalidateQueries({ queryKey: [...reviewKey(campaignId), "summary"] });
             void qc.invalidateQueries({ queryKey: ["subscription", "credits"] });
             return data;

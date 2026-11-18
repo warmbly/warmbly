@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { STATUS_PILL } from "./reviewStatus";
 import { EmailPaneSkeleton, RunningGrid, RunningLabel } from "./reviewLook";
 import { aiPreviewCss } from "./aiPreviewCss";
+import { useReportDirty } from "@/components/app/flow/dirty";
 
 // One left edge for the header, tabs, notices and email; the email keeps a readable width.
 const EDGE = "w-full px-5";
@@ -45,7 +46,7 @@ const COLUMN = "w-full max-w-[820px] px-5";
 
 type AIState = "writing" | "error" | "balance" | "cap" | "unavailable";
 
-const fmtDate = (v?: string | null) =>
+const fmtDate = (v?: Date | string | null) =>
     v ? new Date(v).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
 function Notice({ tone, icon: Icon, children }: { tone: "amber" | "sky" | "violet" | "slate" | "rose"; icon: React.ElementType; children: React.ReactNode }) {
@@ -112,7 +113,10 @@ export default function LeadEmailsPane({
     const personalize = usePersonalizeLeadEmail(campaignId, contactId);
     const reset = useResetLeadEmail(campaignId, contactId);
     const [stepId, setStepId] = React.useState<string | null>(lockedStep ?? null);
-    const [draft, setDraft] = React.useState<{ subject: string; html: string; plain: string } | null>(null);
+    // A draft belongs to the step it was started on, whatever the data refreshes to.
+    const [draft, setDraft] = React.useState<{ stepId: string; subject: string; html: string; plain: string } | null>(null);
+    const draftRef = React.useRef(draft);
+    draftRef.current = draft;
     const [dirty, setDirty] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
     const [ai, setAI] = React.useState<Record<string, AIState>>({});
@@ -123,13 +127,19 @@ export default function LeadEmailsPane({
 
     const data = emails.data;
     const steps = React.useMemo(() => data?.steps ?? [], [data]);
-    const step: LeadEmailStep | undefined = steps.find((s) => s.step_id === stepId) ?? steps.find((s) => !s.sent) ?? steps[0];
+    // A locked panel or an open draft never falls back to another step.
+    const pinned = draft?.stepId ?? lockedStep;
+    const step: LeadEmailStep | undefined = pinned
+        ? steps.find((s) => s.step_id === pinned)
+        : (steps.find((s) => s.step_id === stepId) ?? steps.find((s) => !s.sent) ?? steps[0]);
     const canWrite = canAI && canEdit;
     const pending = step && !step.sent ? (step.ai_blocks ?? []).filter((b) => !b.written) : [];
     const aiState = step ? ai[step.step_id] : undefined;
     const writing = aiState === "writing" || (!!step && pending.length > 0 && aiWriteRunning(campaignId, contactId, step.step_id));
 
     React.useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
+    // Inside a step panel, closing it or opening another step asks before dropping this edit.
+    useReportDirty(dirty);
 
     const write = React.useCallback(
         async (target: LeadEmailStep, rewrite: boolean) => {
@@ -181,16 +191,19 @@ export default function LeadEmailsPane({
     };
     const startEditing = () => {
         if (!step) return;
-        setDraft({ subject: step.source.subject, html: step.source.body_html, plain: step.source.body_plain });
+        setStepId(step.step_id);
+        setDraft({ stepId: step.step_id, subject: step.source.subject, html: step.source.body_html, plain: step.source.body_plain });
         setDirty(false);
     };
     const save = async () => {
-        if (!step || !draft) return;
+        if (!draft) return;
+        const sent = draft;
         try {
-            await personalize.mutateAsync({ stepId: step.step_id, subject: draft.subject, body_html: draft.html, body_plain: draft.plain });
+            await personalize.mutateAsync({ stepId: sent.stepId, subject: sent.subject, body_html: sent.html, body_plain: sent.plain });
             toast.success("Saved for this lead");
-            stopEditing();
-            attempted.current.delete(step.step_id);
+            // Typing during the save keeps the editor open with the newer text.
+            if (draftRef.current === sent) stopEditing();
+            attempted.current.delete(sent.stepId);
         } catch (err) {
             toast.error(buildError(err as AppError));
         }
@@ -223,6 +236,10 @@ export default function LeadEmailsPane({
                 Could not load this lead's emails.
                 <button type="button" onClick={() => void emails.refetch()} className="text-sky-700 hover:text-sky-800 font-medium">
                     Try again
+                </button>
+                <button type="button" onClick={onBack} className="md:hidden h-7 px-1.5 rounded text-[12px] text-slate-600 hover:bg-slate-100 inline-flex items-center gap-1">
+                    <ArrowLeftIcon className="w-3.5 h-3.5" />
+                    Leads
                 </button>
             </div>
         );
@@ -297,6 +314,8 @@ export default function LeadEmailsPane({
 
             {steps.length === 0 ? (
                 <p className="p-6 text-center text-[12.5px] text-slate-500">This campaign has no email steps yet.</p>
+            ) : !step && lockedStep ? (
+                <p className="p-6 text-center text-[12.5px] text-slate-500">This email step is no longer in the campaign.</p>
             ) : (
                 <>
                     <div className={cn("shrink-0 border-b border-slate-200", lockedStep && "hidden")}>
@@ -338,7 +357,7 @@ export default function LeadEmailsPane({
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto">
-                        {step && draft ? (
+                        {step && draft?.stepId === step.step_id ? (
                             <div className={cn(COLUMN, "py-4 flex flex-col gap-3")}>
                                 <p className="text-[12px] text-slate-500">
                                     Editing this email for {leadName(lead)} only. Merge fields and AI blocks still fill in when it sends.
@@ -434,6 +453,16 @@ export default function LeadEmailsPane({
                                             <button type="button" onClick={() => void write(step, false)} className="font-medium underline underline-offset-2">
                                                 Try again
                                             </button>
+                                        </Notice>
+                                    )}
+                                    {pending.length === 0 && aiState && aiState !== "writing" && (
+                                        <Notice key="ai-rewrite" tone="rose" icon={SparklesIcon}>
+                                            {aiState === "balance"
+                                                ? "The balance is too low to write it again."
+                                                : aiState === "cap"
+                                                  ? "The workspace reached its AI spend limit."
+                                                  : "It could not be written again just now."}{" "}
+                                            The copy below is unchanged.
                                         </Notice>
                                     )}
                                     {pending.length > 0 && !canWrite && (

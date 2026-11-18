@@ -1391,17 +1391,8 @@ func (s *campaignService) PauseLead(ctx context.Context, orgID, campaignID, cont
 		return nil, errx.InternalError()
 	}
 	if hold == nil {
-		// The guard refuses only a lead waiting for review, which stays held as it is.
-		current, gerr := s.campaignProgressRepo.GetLeadHold(ctx, campaignID, contactID)
-		if errors.Is(gerr, repository.ErrLeadNotInCampaign) {
-			return nil, errx.New(errx.NotFound, "contact is not a lead of this campaign")
-		}
-		if gerr != nil {
-			return nil, errx.InternalError()
-		}
-		if current != nil && current.Source == models.LeadHoldSourceReview {
-			return current, nil
-		}
+		// A manual pause is never refused by the guard, so no row means the
+		// contact is not a lead of this campaign.
 		return nil, errx.New(errx.NotFound, "contact is not a lead of this campaign")
 	}
 	return hold, nil

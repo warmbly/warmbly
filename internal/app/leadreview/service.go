@@ -44,6 +44,26 @@ type Contacts interface {
 	Load(ctx context.Context, orgID, contactID uuid.UUID) (*models.Contact, *errx.Error)
 }
 
+// RepoContacts loads contacts through the organization-scoped contact repository.
+type RepoContacts struct {
+	Repo repository.ContactRepository
+}
+
+func (r RepoContacts) Load(ctx context.Context, orgID, contactID uuid.UUID) (*models.Contact, *errx.Error) {
+	found, xerr := r.Repo.GetByIDsAndOrganization(ctx, orgID, []uuid.UUID{contactID})
+	if xerr != nil {
+		return nil, xerr
+	}
+	if len(found) == 0 {
+		return nil, errx.New(errx.NotFound, "contact not found")
+	}
+	c := found[0]
+	if c.CustomFields == nil {
+		c.CustomFields = map[string]string{}
+	}
+	return &c, nil
+}
+
 // Undeliverable counts leads verification rejected.
 type Undeliverable interface {
 	CountUndeliverableLeads(ctx context.Context, campaignID uuid.UUID) (int, error)
@@ -161,12 +181,12 @@ func (s *Service) Summary(ctx context.Context, orgID, campaignID uuid.UUID) (*mo
 	}
 
 	if s.Undeliverable != nil {
-		if n, err := s.Undeliverable.CountUndeliverableLeads(ctx, campaignID); err == nil {
-			out.Undeliverable = n
+		if out.Undeliverable, err = s.Undeliverable.CountUndeliverableLeads(ctx, campaignID); err != nil {
+			return nil, errx.InternalError()
 		}
 	}
-	if n, err := s.Repo.UnsubscribedCount(ctx, campaignID); err == nil {
-		out.Unsubscribed = n
+	if out.Unsubscribed, err = s.Repo.UnsubscribedCount(ctx, campaignID); err != nil {
+		return nil, errx.InternalError()
 	}
 
 	if len(steps) > 0 {
@@ -318,6 +338,9 @@ func (s *Service) Reopen(ctx context.Context, orgID, campaignID uuid.UUID, ids [
 	if xerr := checkBatch(ids, false); xerr != nil {
 		return nil, xerr
 	}
+	if !campaign.ReviewLeads {
+		return nil, errx.New(errx.BadRequest, "review mode is off; turn it on to hold leads for review")
+	}
 	n, err := s.Repo.ReopenLeads(ctx, campaignID, ids)
 	if err != nil {
 		return nil, errx.InternalError()
@@ -397,24 +420,10 @@ func errStepSent() *errx.Error {
 	return errx.NewWithIdentifier(errx.Conflict, "lead_step_sent", "This lead already received this email, so its copy can no longer change.")
 }
 
-func (s *Service) stepSent(ctx context.Context, orgID uuid.UUID, campaign *models.Campaign, contact *models.Contact, stepID uuid.UUID) (bool, *errx.Error) {
-	steps, _, xerr := s.Emails.LeadEmails(ctx, orgID, campaign, contact)
-	if xerr != nil {
-		return false, xerr
-	}
-	for _, st := range steps {
-		if st.StepID == stepID {
-			return st.Sent, nil
-		}
-	}
-	return false, nil
-}
-
 // Personalize stores this lead's own copy of one email step. It is checked
 // like a step's copy and replaces the step, and any A/B variant, for this lead.
 func (s *Service) Personalize(ctx context.Context, orgID, campaignID, contactID, stepID uuid.UUID, editor *uuid.UUID, in models.LeadStepOverrideInput) (*models.LeadStepOverride, *errx.Error) {
-	campaign, contact, _, xerr := s.lead(ctx, orgID, campaignID, contactID)
-	if xerr != nil {
+	if _, _, _, xerr := s.lead(ctx, orgID, campaignID, contactID); xerr != nil {
 		return nil, xerr
 	}
 	if _, xerr := s.emailStep(ctx, campaignID, stepID); xerr != nil {
@@ -433,17 +442,13 @@ func (s *Service) Personalize(ctx context.Context, orgID, campaignID, contactID,
 	); err != nil {
 		return nil, errx.InvalidTemplate(err)
 	}
-	sent, xerr := s.stepSent(ctx, orgID, campaign, contact, stepID)
-	if xerr != nil {
-		return nil, xerr
-	}
-	if sent {
-		return nil, errStepSent()
-	}
 	o, err := s.Repo.UpsertOverride(ctx, models.LeadStepOverride{
 		CampaignID: campaignID, ContactID: contactID, StepID: stepID,
 		Subject: in.Subject, BodyHTML: in.BodyHTML, BodyPlain: in.BodyPlain, EditedBy: editor,
 	})
+	if errors.Is(err, repository.ErrLeadStepSent) {
+		return nil, errStepSent()
+	}
 	if err != nil {
 		return nil, errx.InternalError()
 	}
@@ -452,21 +457,16 @@ func (s *Service) Personalize(ctx context.Context, orgID, campaignID, contactID,
 
 // ResetPersonalization drops this lead's own copy, so the step's copy goes out again.
 func (s *Service) ResetPersonalization(ctx context.Context, orgID, campaignID, contactID, stepID uuid.UUID) (bool, *errx.Error) {
-	campaign, contact, _, xerr := s.lead(ctx, orgID, campaignID, contactID)
-	if xerr != nil {
+	if _, _, _, xerr := s.lead(ctx, orgID, campaignID, contactID); xerr != nil {
 		return false, xerr
 	}
 	if _, xerr := s.emailStep(ctx, campaignID, stepID); xerr != nil {
 		return false, xerr
 	}
-	sent, xerr := s.stepSent(ctx, orgID, campaign, contact, stepID)
-	if xerr != nil {
-		return false, xerr
-	}
-	if sent {
+	removed, err := s.Repo.DeleteOverride(ctx, campaignID, contactID, stepID)
+	if errors.Is(err, repository.ErrLeadStepSent) {
 		return false, errStepSent()
 	}
-	removed, err := s.Repo.DeleteOverride(ctx, campaignID, contactID, stepID)
 	if err != nil {
 		return false, errx.InternalError()
 	}
@@ -531,6 +531,14 @@ func (s *Service) WriteAIBatch(ctx context.Context, orgID, campaignID uuid.UUID,
 			break
 		}
 		sem <- struct{}{}
+		// A worker that finished while this waited may have stopped the pass.
+		mu.Lock()
+		halted = stop != ""
+		mu.Unlock()
+		if halted {
+			<-sem
+			break
+		}
 		wg.Add(1)
 		go func(contactID uuid.UUID) {
 			defer wg.Done()

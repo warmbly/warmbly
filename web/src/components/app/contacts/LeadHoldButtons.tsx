@@ -63,12 +63,15 @@ export function ResumeLeadButton({
         try {
             await toast.promise(
                 (async () => {
-                    if (approve) await approveLeads.mutateAsync({ contact_ids: [contactId] });
-                    else await resume.mutateAsync({ campaignId, contactId });
+                    if (approve) return (await approveLeads.mutateAsync({ contact_ids: [contactId] })).released;
+                    await resume.mutateAsync({ campaignId, contactId });
+                    return 1;
                 })(),
                 {
                     loading: approve ? "Approving lead…" : "Resuming lead…",
-                    success: approve ? "Approved. Their first email goes out on schedule." : "Lead resumed",
+                    // Zero released: the hold changed before the approval landed; the refresh shows what it is now.
+                    success: (released) =>
+                        !approve ? "Lead resumed" : released > 0 ? "Approved. Their first email goes out on schedule." : "This lead was no longer waiting for approval.",
                     error: (err: AppError) => buildError(err),
                 },
             );

@@ -117,17 +117,24 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // Moving away from a panel with unsaved edits asks first.
     const selectionRef = React.useRef(selection);
     selectionRef.current = selection;
+    // A link's Review request opens with the panel and is used once: reopening the step later starts on Email.
+    const [review, setReview] = React.useState<{ stepId: string; lead?: string; at: number } | null>(null);
     const select = React.useCallback(
-        (next: Selection) => {
-            if (sameSelection(selectionRef.current, next)) return;
+        (next: Selection, onOpen?: () => void) => {
+            if (sameSelection(selectionRef.current, next)) return onOpen?.();
+            const go = () => {
+                setSelection(next);
+                setReview(null);
+                onOpen?.();
+            };
             if (dirty.isDirty()) {
                 confirm.show("Discard your unsaved changes to this step?", async () => {
                     dirty.clear();
-                    setSelection(next);
+                    go();
                 });
                 return;
             }
-            setSelection(next);
+            go();
         },
         [confirm, dirty],
     );
@@ -135,7 +142,6 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // A link (?review=1, optionally &step= and &lead=) opens an email step on its Review tab, then leaves the URL.
     const navigate = useNavigate();
     const search = useSearch({ strict: false }) as SearchParams;
-    const [review, setReview] = React.useState<{ stepId: string; lead?: string; at: number } | null>(null);
     const applied = React.useRef("");
     React.useEffect(() => {
         if (search.review !== "1") {
@@ -150,12 +156,10 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         const emails = steps.filter((s) => s.kind === "email");
         const target = emails.find((s) => s.id === search.step) ?? emails[0];
         if (target) {
-            select({ kind: "step", id: target.id });
-            setReview({ stepId: target.id, lead: search.lead, at: Date.now() });
+            select({ kind: "step", id: target.id }, () => setReview({ stepId: target.id, lead: search.lead, at: Date.now() }));
         } else {
             // Leads can wait for approval with no email step left, and still need a way out.
-            select({ kind: "review" });
-            setReview({ stepId: "", lead: search.lead, at: Date.now() });
+            select({ kind: "review" }, () => setReview({ stepId: "", lead: search.lead, at: Date.now() }));
         }
         void navigate({ to: "/app/campaigns/$id/steps", params: { id: campaignId }, search: {}, replace: true });
     }, [search.review, search.step, search.lead, sequences, steps, select, navigate, campaignId]);
@@ -692,6 +696,22 @@ function StepPanel({
     React.useEffect(() => {
         if (step.kind !== "email") setTab("email");
     }, [step.kind]);
+    // Review's unsaved lead edits count for the flow's guards too, and leaving the tab unmounts them, so it asks first.
+    const confirm = useConfirm();
+    const outerDirty = React.useContext(DirtyContext);
+    const { report: reportReviewLocal, isDirty: reviewDirty } = useDirtyRegistry();
+    const reportReview = React.useCallback(
+        (id: string, d: boolean) => {
+            reportReviewLocal(id, d);
+            outerDirty?.(id, d);
+        },
+        [reportReviewLocal, outerDirty],
+    );
+    const pickTab = (next: "email" | "review") => {
+        if (next === tab) return;
+        if (tab === "review" && reviewDirty()) return confirm.show("Discard your changes to this lead's email?", async () => setTab(next));
+        setTab(next);
+    };
     // Parses earlier bodies; kept stable so the editor's AI context is too.
     const earlierEmails = React.useMemo(() => earlierEmailsFor(steps, index), [steps, index]);
     const footer = canEdit ? (
@@ -758,7 +778,7 @@ function StepPanel({
                     type="button"
                     role="tab"
                     aria-selected={tab === t.key}
-                    onClick={() => setTab(t.key)}
+                    onClick={() => pickTab(t.key)}
                     title={t.key === "review" ? "Read this email as each lead gets it, and approve leads" : undefined}
                     className={cn(
                         "relative inline-flex h-10 items-center gap-1.5 px-2.5 text-[12.5px] transition-colors",
@@ -803,9 +823,11 @@ function StepPanel({
                 </fieldset>
             </div>
             {tab === "review" && (
-                <React.Suspense fallback={null}>
-                    <CampaignReviewView key={review?.at ?? 0} campaignId={campaignId} stepId={step.id} initialLead={review?.lead} />
-                </React.Suspense>
+                <DirtyContext.Provider value={reportReview}>
+                    <React.Suspense fallback={null}>
+                        <CampaignReviewView key={review?.at ?? 0} campaignId={campaignId} stepId={step.id} initialLead={review?.lead} />
+                    </React.Suspense>
+                </DirtyContext.Provider>
             )}
         </FlowPanel>
     );

@@ -2561,13 +2561,6 @@ func crmHoldGuard(alias string) string {
 		  AND (NOT (` + liveHold(alias) + `) OR ` + alias + `.pause_source IN ('out_of_office', 'inbox_tagging'))`
 }
 
-// reviewHoldGuard keeps a member's pause from replacing a review hold, which
-// would let the lead start unreviewed once the pause is lifted.
-func reviewHoldGuard(alias string) string {
-	return `
-		  AND ` + alias + `.pause_source IS DISTINCT FROM 'review'`
-}
-
 // automaticHoldSource reports a hold the system wrote, which a member's own
 // pause always outranks and a longer automatic hold is never cut short by.
 func automaticHoldSource(source string) bool {
@@ -2589,8 +2582,6 @@ func (r *campaignProgressRepository) HoldLead(ctx context.Context, campaignID, c
 		guard = automaticHoldGuard("campaign_leads", "$3")
 	} else if source == models.LeadHoldSourceCRM {
 		guard = crmHoldGuard("campaign_leads")
-	} else {
-		guard = reviewHoldGuard("campaign_leads")
 	}
 	now := time.Now()
 	hold, err := scanHold(resultDB(ctx, r.db).QueryRow(ctx, `
@@ -2638,8 +2629,6 @@ func (r *campaignProgressRepository) HoldLeadElsewhere(ctx context.Context, cont
 		guard = automaticHoldGuard("cl", "$2")
 	} else if source == models.LeadHoldSourceCRM {
 		guard = crmHoldGuard("cl")
-	} else {
-		guard = reviewHoldGuard("cl")
 	}
 	rows, err := resultDB(ctx, r.db).Query(ctx, `
 		UPDATE campaign_leads cl
@@ -2677,7 +2666,7 @@ func (r *campaignProgressRepository) HoldLeadElsewhere(ctx context.Context, cont
 // resume that changed nothing is not mistaken for one that did.
 //
 // It never approves a lead waiting for review: that is its own column, and the
-// 'review' hold kept in the slot for older releases is left in place.
+// slot goes back to the 'review' hold older releases read.
 func (r *campaignProgressRepository) ResumeLead(ctx context.Context, campaignID, contactID uuid.UUID) (bool, error) {
 	// RETURNING sees the row AFTER the update, so whether there was a hold to
 	// lift is read from the pre-update snapshot the CTE holds.
@@ -2687,10 +2676,10 @@ func (r *campaignProgressRepository) ResumeLead(ctx context.Context, campaignID,
 			SELECT paused_at, pause_source FROM campaign_leads WHERE campaign_id = $1 AND contact_id = $2
 		), lifted AS (
 			UPDATE campaign_leads
-			SET paused_at = CASE WHEN pause_source = 'review' THEN paused_at END,
+			SET paused_at = CASE WHEN pause_source = 'review' THEN paused_at WHEN review_pending_at IS NOT NULL THEN NOW() END,
 			    paused_until = CASE WHEN pause_source = 'review' THEN paused_until END,
 			    pause_reason = CASE WHEN pause_source = 'review' THEN pause_reason END,
-			    pause_source = CASE WHEN pause_source = 'review' THEN pause_source END
+			    pause_source = CASE WHEN pause_source = 'review' OR review_pending_at IS NOT NULL THEN 'review' END
 			WHERE campaign_id = $1 AND contact_id = $2
 			RETURNING 1
 		)
@@ -2731,7 +2720,7 @@ func (r *campaignProgressRepository) CountHeldLeads(ctx context.Context, campaig
 	var n int
 	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT COUNT(*) FROM campaign_leads cl
-		WHERE cl.campaign_id = $1 AND (`+recoveryPausedLeadSQL("cl")+` OR `+reviewPendingSQL("cl")+` OR (`+liveHold("cl")+`
+		WHERE cl.campaign_id = $1 AND (`+recoveryPausedLeadSQL("cl")+` OR ((`+reviewPendingSQL("cl")+` OR `+liveHold("cl")+`)
 		  -- Reached in another lead's thread: nothing is left to wait for.
 		  AND cl.pause_source IS DISTINCT FROM 'cc'))`,
 		campaignID).Scan(&n)

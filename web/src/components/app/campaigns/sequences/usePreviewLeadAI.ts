@@ -20,6 +20,7 @@ export function usePreviewLeadAI({
     campaignId?: string;
     stepId?: string;
     contactId?: string;
+    // Must be the preview rendered for contactId, never one still showing the previous lead.
     preview: TemplatePreview | null;
     // Off while the step has unsaved edits: the write reads the saved step.
     enabled: boolean;
@@ -34,6 +35,8 @@ export function usePreviewLeadAI({
     const attempted = React.useRef(new Set<string>());
 
     const key = campaignId && stepId && contactId ? `${contactId}:${stepId}` : "";
+    const keyRef = React.useRef(key);
+    keyRef.current = key;
     React.useEffect(() => {
         setState(undefined);
         setFresh([]);
@@ -41,29 +44,34 @@ export function usePreviewLeadAI({
 
     const pending = preview?.lead ? (preview.ai_blocks ?? []).filter((b) => !b.written) : [];
     const blockIds = (preview?.ai_blocks ?? []).map((b) => b.id).join(",");
+    const eligible = enabled && canWrite && !!preview?.lead && !preview.personalized;
 
     const write = React.useCallback(async () => {
-        if (!campaignId || !stepId || !contactId) return;
+        if (!campaignId || !stepId || !contactId || !eligible) return;
+        const owner = key;
         setState("writing");
         try {
             await writeLeadAIOnce(qc, campaignId, contactId, stepId);
+            // The write still lands in the cache; only the lead it was for shows it.
+            if (keyRef.current !== owner) return;
             setFresh(blockIds ? blockIds.split(",") : []);
             setState(undefined);
             onWritten();
         } catch (err) {
+            if (keyRef.current !== owner) return;
             const code = (err as AppError).code;
             setState(code === "insufficient_credits" ? "balance" : code === "usage_cap_exceeded" ? "cap" : code === "ai_unavailable" ? "unavailable" : "error");
         }
-    }, [qc, campaignId, stepId, contactId, blockIds, onWritten]);
+    }, [qc, campaignId, stepId, contactId, key, eligible, blockIds, onWritten]);
 
     const pendingKey = pending.map((b) => b.id).join(",");
     React.useEffect(() => {
-        if (!enabled || !key || !pendingKey || !canWrite || preview?.personalized) return;
+        if (!eligible || !key || !pendingKey) return;
         // Once per lead and step, so a block the write cannot fill is not retried in a loop.
         if (attempted.current.has(key)) return;
         attempted.current.add(key);
         void write();
-    }, [enabled, key, pendingKey, canWrite, preview?.personalized, write]);
+    }, [eligible, key, pendingKey, write]);
 
     return { state, fresh, pending, canWrite, write };
 }

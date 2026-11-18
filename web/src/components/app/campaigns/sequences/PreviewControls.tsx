@@ -127,12 +127,12 @@ export function PreviewLeadStepper({
     });
     const leads = list.contacts ?? [];
     const at = value ? leads.findIndex((c) => c.id === value.id) : -1;
-    const { hasNextPage, isFetchingNextPage, fetchNextPage } = list;
+    const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = list;
     const lastLoaded = at >= 0 && at === leads.length - 1;
-    // Load the next page as the last loaded lead opens, so Next keeps going.
+    // Load the next page as the last loaded lead opens, so Next keeps going; a failed page is not retried in a loop.
     React.useEffect(() => {
-        if (lastLoaded && hasNextPage && !isFetchingNextPage) void fetchNextPage();
-    }, [lastLoaded, hasNextPage, isFetchingNextPage, fetchNextPage]);
+        if (lastLoaded && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+    }, [lastLoaded, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
     if (leads.length === 0) return null;
 
     const prev = at > 0 ? leads[at - 1] : null;

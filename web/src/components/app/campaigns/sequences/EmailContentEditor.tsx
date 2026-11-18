@@ -140,6 +140,8 @@ export default function EmailContentEditor({
     const [previewContact, setPreviewContact] = React.useState<Contact | null>(null);
     const [previewMailbox, setPreviewMailbox] = React.useState<Inbox | null>(null);
     const [serverPreview, setServerPreview] = React.useState<TemplatePreview | null>(null);
+    // Whose preview serverPreview is ("" for the sample), so the lead's notes and AI write never read another lead's.
+    const [serverPreviewFor, setServerPreviewFor] = React.useState("");
     const senders = useCampaignSenderInboxes(campaignId ?? "");
     // Both picks belong to one campaign, so drop them when this editor is
     // pointed at a different one, or at none, without remounting. The rendered
@@ -183,6 +185,7 @@ export default function EmailContentEditor({
         const settle = tab === "preview" ? 250 : 800;
         // Responses can land out of order; only the newest request may paint.
         let active = true;
+        const forContact = campaignId && previewContact ? previewContact.id : "";
         const t = setTimeout(() => {
             runPreview({
                 subject: shownSubject,
@@ -196,7 +199,9 @@ export default function EmailContentEditor({
                 ...(campaignId && stepId ? { step_id: stepId } : {}),
             })
                 .then((p) => {
-                    if (active) setServerPreview(p);
+                    if (!active) return;
+                    setServerPreview(p);
+                    setServerPreviewFor(forContact);
                 })
                 .catch(() => {
                     if (active) setServerPreview(null);
@@ -217,12 +222,13 @@ export default function EmailContentEditor({
 
     // Only the step's own copy previews lead by lead; an A/B arm or a lead's own copy is not what every lead gets.
     const leadPreview = !!campaignId && !!stepId && !!canSendTest;
+    const leadServerPreview = serverPreviewFor === (campaignId && previewContact ? previewContact.id : "") ? serverPreview : null;
     const rerender = React.useCallback(() => setRendered((n) => n + 1), []);
     const leadAI = usePreviewLeadAI({
         campaignId,
         stepId,
         contactId: previewContact?.id,
-        preview: serverPreview,
+        preview: leadServerPreview,
         enabled: leadPreview && tab === "preview" && !dirty,
         onWritten: rerender,
     });
@@ -508,7 +514,7 @@ export default function EmailContentEditor({
                             </div>
                         )}
                         {leadPreview && (
-                            <PreviewLeadNotes campaignId={campaignId!} stepId={stepId!} contact={previewContact} preview={serverPreview} dirty={dirty} ai={leadAI} />
+                            <PreviewLeadNotes campaignId={campaignId!} stepId={stepId!} contact={previewContact} preview={leadServerPreview} dirty={dirty} ai={leadAI} />
                         )}
                         {serverPreview?.from && (
                             <div className="border-b border-slate-200/70 px-3 py-2 text-[12.5px]">

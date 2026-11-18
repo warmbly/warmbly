@@ -136,10 +136,14 @@ func (r previewReviewRepo) GetOverride(context.Context, uuid.UUID, uuid.UUID, uu
 
 type previewProgressRepo struct {
 	repository.CampaignProgressRepository
-	written map[string]string
+	campaign, contact, step uuid.UUID
+	written                 map[string]string
 }
 
-func (r previewProgressRepo) GetResolvedAIVariables(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (map[string]string, error) {
+func (r previewProgressRepo) GetResolvedAIVariables(_ context.Context, campaignID, contactID, stepID uuid.UUID) (map[string]string, error) {
+	if campaignID != r.campaign || contactID != r.contact || stepID != r.step {
+		return map[string]string{}, nil
+	}
 	return r.written, nil
 }
 
@@ -155,7 +159,8 @@ func TestPreviewEmailShowsAICopyForTheLead(t *testing.T) {
 			Subject: "x", BodyHTML: body, BodyPlain: "Hi\n\n[[ai:opener]]", Contact: contact, Campaign: campaign, SequenceID: step,
 		})
 	}
-	written := previewProgressRepo{written: map[string]string{"opener": "Loved the Acme launch."}}
+	lead := models.Contact{ID: uuid.New(), FirstName: "Jonas"}
+	written := previewProgressRepo{campaign: campaign.ID, contact: lead.ID, step: step, written: map[string]string{"opener": "Loved the Acme launch."}}
 
 	p := render(&tasksService{leadReview: previewReviewRepo{}, campaignProgressRepo: written}, models.Contact{FirstName: "Alex"})
 	if strings.Contains(p.BodyHTML, "[[ai:") || strings.Contains(p.BodyHTML, "data-ai-config") || !strings.Contains(p.BodyHTML, `data-ai-pending="opener" data-ai-name="Opener"`) {
@@ -165,18 +170,17 @@ func TestPreviewEmailShowsAICopyForTheLead(t *testing.T) {
 		t.Fatalf("sample preview: %+v", p)
 	}
 
-	lead := models.Contact{ID: uuid.New(), FirstName: "Jonas"}
 	p = render(&tasksService{leadReview: previewReviewRepo{lead: true, own: true}, campaignProgressRepo: written}, lead)
 	if !strings.Contains(p.BodyHTML, `<span data-ai-block="opener">Loved the Acme launch.</span>`) || !strings.Contains(p.BodyPlain, "Loved the Acme launch.") {
 		t.Fatalf("lead preview should carry their written AI copy: %q / %q", p.BodyHTML, p.BodyPlain)
 	}
-	if !p.Lead || !p.Personalized || !p.AIBlocks[0].Written {
+	if !p.Lead || !p.Personalized || len(p.AIBlocks) != 1 || !p.AIBlocks[0].Written {
 		t.Fatalf("lead preview flags: %+v", p)
 	}
 
 	// A contact outside the campaign reads nothing the campaign wrote.
 	p = render(&tasksService{leadReview: previewReviewRepo{}, campaignProgressRepo: written}, lead)
-	if p.Lead || strings.Contains(p.BodyHTML, "Loved the Acme launch.") {
+	if p.Lead || strings.Contains(p.BodyHTML, "Loved the Acme launch.") || strings.Contains(p.BodyPlain, "Loved the Acme launch.") {
 		t.Fatalf("non-lead preview read campaign copy: %+v", p)
 	}
 }

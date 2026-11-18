@@ -922,7 +922,7 @@ Read whether one contact's flow inside this campaign is currently held. A hold p
 }
 ```
 
-`hold` is absent when the lead is not held, including for a dated hold that has since expired. `until` is absent when the hold has no end, in which case only a resume lifts it. `source` is `out_of_office`, `inbox_tagging` (a classified reply, or with `reply_intent.stop_all_campaigns_on_reply` on, a reply to another campaign), `manual`, `crm`, `review` while a [review campaign](#turn-review-mode-on-or-off) waits for someone to approve the lead (shown ahead of any other hold the lead has), or `cc` while the contact is [copied on another lead's emails](#set-a-leads-cc) in this campaign; a `cc` hold's `reason` is that lead's address.
+`hold` is absent when the lead is not held, including for a dated hold that has since expired. `until` is absent when the hold has no end, in which case only a resume lifts it; a `review` hold has no `until` either, and only [approving the lead](#approve-waiting-leads) or turning review mode off lifts it. `source` is `out_of_office`, `inbox_tagging` (a classified reply, or with `reply_intent.stop_all_campaigns_on_reply` on, a reply to another campaign), `manual`, `crm`, `review` while a [review campaign](#turn-review-mode-on-or-off) waits for someone to approve the lead (shown ahead of any other hold the lead has), or `cc` while the contact is [copied on another lead's emails](#set-a-leads-cc) in this campaign; a `cc` hold's `reason` is that lead's address.
 
 ### Errors
 
@@ -945,7 +945,7 @@ The request states an absolute hold rather than applying a delta, and replacing 
 | `until` | body | string | RFC 3339 timestamp the hold lifts at. Must be in the future and within a year. Omit or send `null` for a hold with no end, which only a resume lifts. |
 | `reason` | body | string | Optional note shown next to the hold in the dashboard. Trimmed and capped at 200 characters. |
 
-A manual pause wins over an automatic hold: it replaces a hold an out-of-office auto-reply wrote, and a later auto-reply never shortens it or takes it over. Pausing a lead waiting for review leaves it waiting; only an approval releases it.
+A manual pause wins over an automatic hold: it replaces a hold an out-of-office auto-reply wrote, and a later auto-reply never shortens it or takes it over. Pausing a lead waiting for review writes the pause and answers with it (`source` `manual`), and the lead keeps waiting for review. Approving the lead later leaves the pause in place, and resuming the pause leaves the lead waiting for review.
 
 ### Request body
 
@@ -970,7 +970,7 @@ Same shape as [get a lead's hold](#get-a-leads-hold).
 
 Lift the hold now. The held time is dropped rather than carried, so the step returns to the schedule it would have had without the hold: the campaign's next pass when that moment has already passed, otherwise when the step's own wait elapses. The campaign's own wakeup is pulled forward with it, and a campaign that had finished while the lead was held is restarted through the usual launch checks. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
-Resuming a lead that is not held succeeds and changes nothing, so a retry is safe. Resuming never approves a lead waiting for review; use [approve waiting leads](#approve-waiting-leads). It lifts any other hold on that lead, which keeps waiting for review.
+Resuming a lead that is not held succeeds and changes nothing, so a retry is safe. Resuming never approves a lead waiting for review; use [approve waiting leads](#approve-waiting-leads). On a lead waiting for review it lifts any other hold, such as a manual pause, and the lead goes back to waiting for review.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -1197,7 +1197,7 @@ The campaign's leads ordered by email, each with its review state. **Scope** `RE
 
 Release leads waiting for review. Their first email goes out under the campaign's schedule, daily limits, spacing and every other sending rule, exactly as without review, and the campaign's wakeup is pulled forward. **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`.
 
-Approving a lead that is not waiting changes nothing, so a retry is safe and no `Idempotency-Key` is needed. Only this endpoint and turning review off release a waiting lead. A lead also paused for another reason keeps that pause until it lifts.
+Approving a lead that is not waiting changes nothing, so retrying the same `contact_ids` is safe and no `Idempotency-Key` is needed. `all` approves whoever is waiting when it runs, so repeating it also approves leads that started waiting since the first call; retry with the `contact_ids` you meant to approve instead. Only this endpoint and turning review off release a waiting lead. A lead also paused for another reason keeps that pause until it lifts.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -1222,7 +1222,7 @@ Approving a lead that is not waiting changes nothing, so a retry is safe and no 
 
 `POST /campaigns/:id/review/reopen`
 
-Hold the listed leads for review again. A lead already emailed, or paused for another reason, is left as it is, and a lead already waiting stays waiting, so a retry is safe. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+Hold the listed leads for review again. The campaign must have review mode on. A lead already emailed is left as it is. A lead paused for another reason waits for review too and keeps that pause, so it needs both the approval and the pause to lift before its first email. A lead already waiting stays waiting, so a retry is safe. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -1232,6 +1232,13 @@ Hold the listed leads for review again. A lead already emailed, or paused for an
 ### Response
 
 Same shape as [approve waiting leads](#approve-waiting-leads); `held` counts the leads put back.
+
+### Errors
+
+| Status | Code | When |
+| --- | --- | --- |
+| `400` | `bad_request` | `contact_ids` is missing, empty or longer than `500`, `all` is sent, or review mode is off. |
+| `404` | `not_found` | The campaign is not the caller's organization's. |
 
 ## Write AI copy ahead
 
@@ -1245,7 +1252,7 @@ Call it again with the `next` it returned as `after` while `remaining` is above 
 | --- | --- | --- | --- |
 | `id` | path | uuid | Campaign id. |
 | `step_id` | body | uuid | An email step. Default the first one. |
-| `contact_ids` | body | array of uuid | Only these leads, at most `500`. |
+| `contact_ids` | body | array of uuid | Only these leads, `1` to `500`. An empty list is refused with `400`; omit it to write every lead. |
 | `waiting_only` | body | boolean | Without `contact_ids`, only leads waiting for review. Without either, every lead not yet emailed. |
 | `after` | body | string | The previous pass's `next`. |
 
@@ -1317,30 +1324,30 @@ The body replaces the whole copy, so a retry lands on the same row and no `Idemp
 | `400` | `bad_request` | No body, or the email is too long. |
 | `400` | `invalid_template` | The copy does not render as written. |
 | `404` | `not_found` | The campaign, the lead or the email step is not found. |
-| `409` | `lead_step_sent` | This lead already received this email. |
+| `409` | `lead_step_sent` | This lead already received this email, or it is being sent now. |
 
 ## Reset one lead's email
 
 `DELETE /campaigns/:id/leads/:contact_id/emails/:step_id`
 
-Drop this lead's own copy, so the step's copy goes out again. Deleting a copy that is not there succeeds with `204`. **Scope** `WRITE_CAMPAIGNS` and `READ_CONTACTS` · **Org permission** `manage_campaigns` and `view_contacts`. Answers `409 lead_step_sent` once the lead received the email.
+Drop this lead's own copy, so the step's copy goes out again. Deleting a copy that is not there succeeds with `204`. **Scope** `WRITE_CAMPAIGNS` and `READ_CONTACTS` · **Org permission** `manage_campaigns` and `view_contacts`. Answers `409 lead_step_sent` once the lead received the email or while it is being sent.
 
 ## Write one lead's AI copy now
 
 `POST /campaigns/:id/leads/:contact_id/emails/:step_id/write`
 
-Write the step's AI blocks for this lead now instead of at send time, and answer the lead's emails as [get one lead's emails](#get-one-leads-emails) does. Charged and cached as in [write AI copy ahead](#write-ai-copy-ahead), so a retry writes and charges nothing more. Send `{"rewrite": true}` to replace copy already written with a new generation, which is charged again. **Scope** `WRITE_CAMPAIGNS` and `READ_CONTACTS` · **Org permission** `manage_campaigns`, `use_ai` and `view_contacts`.
+Write the step's AI blocks for this lead now instead of at send time, and answer the lead's emails as [get one lead's emails](#get-one-leads-emails) does. Charged and cached as in [write AI copy ahead](#write-ai-copy-ahead), so a retry writes and charges nothing more. Send `{"rewrite": true}` to replace copy already written with a new generation, which is charged again. A repeated rewrite is another new generation and another charge, so do not retry one automatically. The blocks of a step are written one at a time and each is saved as it is written, so a call that fails partway keeps and charges the blocks it finished; a retry writes only the ones still missing. **Scope** `WRITE_CAMPAIGNS` and `READ_CONTACTS` · **Org permission** `manage_campaigns`, `use_ai` and `view_contacts`.
 
 ### Errors
 
 | Status | Code | When |
 | --- | --- | --- |
-| `402` | `insufficient_credits` | The balance is too low. Nothing is charged. |
+| `402` | `insufficient_credits` | The balance is too low for the next block. Blocks written before it stay written and charged. |
 | `404` | `not_found` | The campaign, the lead or the email step is not found. |
-| `409` | `lead_step_sent` | A rewrite of an email the lead already received. |
+| `409` | `lead_step_sent` | The lead already received this email, or it is being sent now, so its copy can no longer change. |
 | `429` | `usage_cap_exceeded` | The workspace reached its AI spend limit. |
 | `503` | `ai_unavailable` | The instance has no AI provider. |
-| `503` | `ai_generation_failed` | The provider did not answer. Nothing is charged; try again. |
+| `503` | `ai_generation_failed` | The provider did not answer. The failed block is not charged, though a web lookup it already made can be, and blocks written before it stay written and charged. Try again. |
 
 ## Get campaign logs
 
@@ -1798,7 +1805,7 @@ Render subject and body templates for a contact exactly as the send path would, 
 
 A `TemplatePreview` object. `errors` lists template parse errors that would block sending, `unresolved` lists literal tokens left after render. `from` is present when `account_id` was given, `attachments` when `campaign_id` was given and there are files on the send (the campaign-wide ones plus `step_id`'s own). All four are omitted when empty.
 
-The body's [AI blocks](/guides/ai-variables/) are never generated here. Each is replaced by a `<span data-ai-pending="ID" data-ai-name="Name">` marker, or, when `contact_id` is a lead of `campaign_id` and `step_id` is given, by the copy already written for that lead in `<span data-ai-block="ID">`; in `subject` and `body_plain` the written text or `[AI: Name]` stands in. `ai_blocks` lists each block as `{ "id", "name", "written" }`. `lead` is `true` when the contact is a lead of the campaign, and `personalized` is `true` when that lead has their own copy of the step, which they get instead of the copy previewed. The three are omitted when empty or false.
+The body's [AI blocks](/guides/ai-variables/) are never generated here. Each is replaced by a `<span data-ai-pending="ID" data-ai-name="Name">` marker, or, when `contact_id` is a lead of `campaign_id` and `step_id` is given, by the copy already written for that lead in `<span data-ai-block="ID">`; in `subject` and `body_plain` the written text or `[AI: Name]` stands in. `ai_blocks` lists each block as `{ "id", "name", "written" }`. `lead` is `true` when `step_id` is given and the contact is a lead of `campaign_id` (without `step_id` it is omitted even for a lead), and `personalized` is `true` when that lead has their own copy of the step, which they get instead of the copy previewed. The three are omitted when empty or false.
 
 ```json
 {

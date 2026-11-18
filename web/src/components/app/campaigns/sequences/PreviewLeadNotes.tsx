@@ -87,17 +87,26 @@ export default function PreviewLeadNotes({
             </Note>
         );
     }
+    // A write reads the saved step, so unsaved edits take the retry away.
+    const retry = !dirty && ai.canWrite && (
+        <>
+            {" "}
+            <button type="button" onClick={ai.write} className="font-medium underline underline-offset-2">
+                Try again
+            </button>
+        </>
+    );
     if (ai.state === "balance") {
         return (
             <Note tone="amber" icon={SparklesIcon}>
-                The AI balance is used up, so the marked part is written when the email sends, once there is balance.
+                The AI balance is used up, so the marked part is written when the email sends, once there is balance.{retry}
             </Note>
         );
     }
     if (ai.state === "cap") {
         return (
             <Note tone="amber" icon={SparklesIcon}>
-                The workspace reached its AI spend limit, so the marked part is written when the email sends.
+                The workspace reached its AI spend limit, so the marked part is written when the email sends, once the limit allows.{retry}
             </Note>
         );
     }
@@ -108,13 +117,10 @@ export default function PreviewLeadNotes({
             </Note>
         );
     }
-    if (ai.state === "error") {
+    if (ai.state === "error" && !dirty) {
         return (
             <Note tone="rose" icon={SparklesIcon}>
-                The marked part could not be written for {first} just now.{" "}
-                <button type="button" onClick={ai.write} className="font-medium underline underline-offset-2">
-                    Try again
-                </button>
+                The marked part could not be written for {first} just now.{retry}
             </Note>
         );
     }

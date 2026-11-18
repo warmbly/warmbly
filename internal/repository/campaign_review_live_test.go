@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -72,11 +73,6 @@ func TestLiveCampaignReviewHoldsUntilApproved(t *testing.T) {
 	if pending(emailed) || source(emailed) != "" {
 		t.Fatalf("emailed lead was touched")
 	}
-	// Enabling again moves nothing, so an approval is never undone by a retry.
-	if held, _, _ := review.SetReviewLeads(ctx, f.campaign, true); held != 0 {
-		t.Fatalf("repeat enable held %d", held)
-	}
-
 	// Every enrolment path goes through the trigger.
 	later := addLead(t, f, "later-"+uuid.New().String()[:6]+"@test.local", "valid", true)
 	if !pending(later) || source(later) != "review" {
@@ -86,9 +82,15 @@ func TestLiveCampaignReviewHoldsUntilApproved(t *testing.T) {
 		t.Fatalf("hold of a waiting lead = %+v, %v", hold, err)
 	}
 
-	// A member's pause cannot replace the review hold.
-	if hold, err := progress.HoldLead(ctx, f.campaign, later, nil, "", models.LeadHoldSourceManual); err != nil || hold != nil {
-		t.Fatalf("manual pause over review = %+v, %v; want refused", hold, err)
+	// A member's pause takes the slot and the lead still waits; resuming it puts the review hold back.
+	if hold, err := progress.HoldLead(ctx, f.campaign, later, nil, "", models.LeadHoldSourceManual); err != nil || hold == nil || hold.Source != models.LeadHoldSourceManual {
+		t.Fatalf("manual pause over review = %+v, %v", hold, err)
+	}
+	if !pending(later) || source(later) != "manual" {
+		t.Fatalf("paused waiting lead: pending %v, slot %q", pending(later), source(later))
+	}
+	if lifted, err := progress.ResumeLead(ctx, f.campaign, later); err != nil || !lifted || !pending(later) || source(later) != "review" {
+		t.Fatalf("resume of a paused waiting lead lifted %v (%v): pending %v, slot %q", lifted, err, pending(later), source(later))
 	}
 	// Nor can an out-of-office hold.
 	if held, err := progress.HoldLeadEverywhere(ctx, later, nil, "away", models.LeadHoldSourceOutOfOffice); err != nil || len(held) != 0 {
@@ -109,11 +111,11 @@ func TestLiveCampaignReviewHoldsUntilApproved(t *testing.T) {
 		t.Fatalf("lead released from cc in a review campaign: pending %v, slot %q", pending(later), source(later))
 	}
 
-	// Resuming lifts the pause and nothing else: the lead still waits for review.
+	// Resuming lifts the pause and nothing else: the lead still waits, with the review hold older releases read.
 	if _, err := progress.ResumeLead(ctx, f.campaign, paused); err != nil {
 		t.Fatalf("resume: %v", err)
 	}
-	if !pending(paused) || source(paused) != "" {
+	if !pending(paused) || source(paused) != "review" {
 		t.Fatalf("resumed lead: pending %v, slot %q", pending(paused), source(paused))
 	}
 	// Resuming a lead that only waits for review approves nothing.
@@ -166,6 +168,16 @@ func TestLiveCampaignReviewHoldsUntilApproved(t *testing.T) {
 	if got, _ := review.GetOverride(ctx, f.campaign, later, step); got == nil || got.BodyHTML != "<p>Only you</p>" {
 		t.Fatalf("get = %+v", got)
 	}
+	// The copy of a step already sent no longer changes.
+	if _, err := review.UpsertOverride(ctx, models.LeadStepOverride{CampaignID: f.campaign, ContactID: emailed, StepID: step, BodyHTML: "<p>Late</p>"}); !errors.Is(err, ErrLeadStepSent) {
+		t.Fatalf("override of a sent step = %v, want ErrLeadStepSent", err)
+	}
+	if _, err := review.DeleteOverride(ctx, f.campaign, emailed, step); !errors.Is(err, ErrLeadStepSent) {
+		t.Fatalf("reset of a sent step = %v, want ErrLeadStepSent", err)
+	}
+	if err := review.SaveLeadAIVariable(ctx, f.campaign, emailed, step, "b1", "late"); !errors.Is(err, ErrLeadStepSent) {
+		t.Fatalf("AI copy of a sent step = %v, want ErrLeadStepSent", err)
+	}
 
 	// AI written ahead: a lead with every block cached counts as written.
 	if err := progress.SaveResolvedAIVariable(ctx, f.campaign, before, step, "b1", "text"); err != nil {
@@ -186,6 +198,10 @@ func TestLiveCampaignReviewHoldsUntilApproved(t *testing.T) {
 	}
 	if pending(before) || source(before) != "" {
 		t.Fatalf("approved lead: pending %v, slot %q", pending(before), source(before))
+	}
+	// Enabling again moves nothing, so an approval is never undone by a retry.
+	if held, released, err := review.SetReviewLeads(ctx, f.campaign, true); err != nil || held != 0 || released != 0 || pending(before) {
+		t.Fatalf("repeat enable = %d held, %d released, %v; approved lead pending %v", held, released, err, pending(before))
 	}
 	if n, err := review.ReopenLeads(ctx, f.campaign, []uuid.UUID{before, emailed}); err != nil || n != 1 {
 		t.Fatalf("reopen = %d, %v; want only the lead not yet emailed", n, err)

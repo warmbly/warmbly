@@ -643,6 +643,8 @@ export default function ContactsTable({
     const [pauseTarget, setPauseTarget] = React.useState<{ id: string; name: string } | null>(null);
     const resumeLead = useResumeLead();
     const canSend = usePermission("SEND_CAMPAIGNS");
+    // An approval needs the send permission; lifting any other hold needs campaign write access.
+    const canLiftHold = React.useCallback((source?: string) => (source === "review" ? canSend : campaignWrite.allowed), [canSend, campaignWrite.allowed]);
     const queryClient = useQueryClient();
     const resumeOne = React.useCallback(
         (contactId: string, source?: string) => {
@@ -657,15 +659,17 @@ export default function ContactsTable({
                     await toast.promise(
                         (async () => {
                             if (source === "review") {
-                                await approveCampaignLeads(current_campaign.id, { contact_ids: [contactId] });
+                                const res = await approveCampaignLeads(current_campaign.id, { contact_ids: [contactId] });
                                 refreshReview(queryClient, current_campaign.id);
-                            } else {
-                                await resumeLead.mutateAsync({ campaignId: current_campaign.id, contactId });
+                                return res.released;
                             }
+                            await resumeLead.mutateAsync({ campaignId: current_campaign.id, contactId });
+                            return 1;
                         })(),
                         {
                             loading: source === "review" ? "Approving lead…" : "Resuming lead…",
-                            success: source === "review" ? "Approved" : "Lead resumed",
+                            success: (released) =>
+                                source !== "review" ? "Lead resumed" : released > 0 ? "Approved" : "This lead was no longer waiting for approval.",
                             error: (err: AppError) => buildError(err),
                         },
                     );
@@ -746,7 +750,8 @@ export default function ContactsTable({
                     : undefined
             }
             onPauseLead={embedded && campaignWrite.allowed ? (id, name) => setPauseTarget({ id, name }) : undefined}
-            onResumeLead={embedded && campaignWrite.allowed ? resumeOne : undefined}
+            onResumeLead={embedded && (campaignWrite.allowed || canSend) ? resumeOne : undefined}
+            canLiftHold={canLiftHold}
             emptyTitle={
                 subFilter !== "all"
                     ? `No ${subFilter} contacts`
@@ -1311,6 +1316,7 @@ function ContactsTableBody({
     onRemoveFromCampaign,
     onPauseLead,
     onResumeLead,
+    canLiftHold,
     emptyTitle,
     emptyBody,
     emptyCta,
@@ -1348,6 +1354,7 @@ function ContactsTableBody({
     // row rather than offering one that fails.
     onPauseLead?: (id: string, name: string) => void;
     onResumeLead?: (id: string, source?: string) => void;
+    canLiftHold: (source?: string) => boolean;
     emptyTitle: string;
     emptyBody: string;
     emptyCta: React.ReactNode;
@@ -1562,16 +1569,19 @@ function ContactsTableBody({
                                 <td className="px-3" onClick={(e) => e.stopPropagation()}>
                                     {/* Touch-safe: always visible on mobile, hover-reveal on desktop. */}
                                     <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                                        {lead?.hold && onResumeLead ? (
-                                            <button
-                                                type="button"
-                                                aria-label={lead.hold.source === "review" ? "Approve lead" : "Resume lead"}
-                                                title={`${holdSummary(lead.hold)}. ${lead.hold.source === "review" ? "Approve now" : "Resume now"}`}
-                                                onClick={() => onResumeLead(c.id, lead.hold?.source)}
-                                                className="size-6 rounded text-violet-500 hover:text-violet-700 hover:bg-violet-50 flex items-center justify-center transition-colors"
-                                            >
-                                                <PlayIcon className="w-3 h-3" />
-                                            </button>
+                                        {lead?.hold ? (
+                                            onResumeLead &&
+                                            canLiftHold(lead.hold.source) && (
+                                                <button
+                                                    type="button"
+                                                    aria-label={lead.hold.source === "review" ? "Approve lead" : "Resume lead"}
+                                                    title={`${holdSummary(lead.hold)}. ${lead.hold.source === "review" ? "Approve now" : "Resume now"}`}
+                                                    onClick={() => onResumeLead(c.id, lead.hold?.source)}
+                                                    className="size-6 rounded text-violet-500 hover:text-violet-700 hover:bg-violet-50 flex items-center justify-center transition-colors"
+                                                >
+                                                    <PlayIcon className="w-3 h-3" />
+                                                </button>
+                                            )
                                         ) : onPauseLead && !terminal ? (
                                             <button
                                                 type="button"
