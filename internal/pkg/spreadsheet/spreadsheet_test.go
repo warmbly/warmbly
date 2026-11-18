@@ -141,6 +141,11 @@ func TestParseSkipsLeadingBlankRows(t *testing.T) {
 		t.Fatalf("separator-only lines: %q %v", rows, err)
 	}
 
+	rows, _, err = Parse(strings.NewReader(",,\nemail;name\na@example.test;Smith, Ann\n"), "contacts.csv", 10)
+	if err != nil || len(rows) != 2 || len(rows[0]) != 2 || rows[0][0] != "email" || rows[1][1] != "Smith, Ann" {
+		t.Fatalf("comma line above a semicolon header: %q %v", rows, err)
+	}
+
 	rows, _, err = Parse(strings.NewReader(",,\n,,\n"), "contacts.csv", 10)
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("blank csv: %q %v", rows, err)

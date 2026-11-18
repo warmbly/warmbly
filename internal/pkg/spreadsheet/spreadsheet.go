@@ -154,7 +154,7 @@ func pick(counts map[rune]int) rune {
 }
 
 // blank is a row with nothing in it. Leading ones are dropped so the header is
-// the first row that says something.
+// the first row that says something, the same line Delimiter reads.
 func blank(row []string) bool {
 	for _, c := range row {
 		if strings.TrimFunc(c, blankRune) != "" {
@@ -164,6 +164,7 @@ func blank(row []string) bool {
 	return true
 }
 
+// blankRune says nothing: whitespace, a byte-order mark, or a separator.
 func blankRune(r rune) bool {
-	return unicode.IsSpace(r) || r == '\ufeff'
+	return unicode.IsSpace(r) || r == '\ufeff' || r == ',' || r == ';' || r == '\t'
 }
