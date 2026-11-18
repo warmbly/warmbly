@@ -220,7 +220,7 @@ export default function CampaignReviewView({ campaignId, stepId, initialLead }: 
             }
         };
         if (!enabled) {
-            if (waiting > 0 && !canSend) {
+            if (!canSend) {
                 toast.error("Turning review off approves every waiting lead, which needs the Send campaigns permission.");
                 return;
             }

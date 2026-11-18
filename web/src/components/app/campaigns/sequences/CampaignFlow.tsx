@@ -121,17 +121,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const [review, setReview] = React.useState<{ stepId: string; lead?: string; at: number } | null>(null);
     const select = React.useCallback(
         (next: Selection, onOpen?: () => void) => {
-            if (sameSelection(selectionRef.current, next)) {
-                // A link into the open step still replaces its Review view, so an unsaved draft asks first.
-                if (onOpen && dirty.isDirty()) {
-                    confirm.show("Discard your unsaved changes to this step?", async () => {
-                        dirty.clear();
-                        onOpen();
-                    });
-                    return;
-                }
-                return onOpen?.();
-            }
+            if (sameSelection(selectionRef.current, next)) return onOpen?.();
             const go = () => {
                 setSelection(next);
                 setReview(null);
@@ -699,9 +689,8 @@ function StepPanel({
     review?: { lead?: string; at: number } | null;
 }) {
     const [tab, setTab] = React.useState<"email" | "review">(review ? "review" : "email");
-    React.useEffect(() => {
-        if (review) setTab("review");
-    }, [review]);
+    // The link the Review view was opened for; a newer one replaces it only after an unsaved lead edit is discarded.
+    const [shown, setShown] = React.useState(review ?? null);
     // A step switched to another type, here or by a teammate, comes back as an email on its Email tab.
     React.useEffect(() => {
         if (step.kind !== "email") setTab("email");
@@ -717,6 +706,18 @@ function StepPanel({
         },
         [reportReviewLocal, outerDirty],
     );
+    const asked = React.useRef(review?.at ?? 0);
+    React.useEffect(() => {
+        // Each link is asked about once, whatever the answer.
+        if (!review || review.at === shown?.at || asked.current === review.at) return;
+        asked.current = review.at;
+        const open = () => {
+            setShown(review);
+            setTab("review");
+        };
+        if (reviewDirty()) confirm.show("Discard your changes to this lead's email?", async () => open());
+        else open();
+    }, [review, shown, reviewDirty, confirm]);
     const pickTab = (next: "email" | "review") => {
         if (next === tab) return;
         if (tab === "review" && reviewDirty()) return confirm.show("Discard your changes to this lead's email?", async () => setTab(next));
@@ -835,7 +836,7 @@ function StepPanel({
             {tab === "review" && (
                 <DirtyContext.Provider value={reportReview}>
                     <React.Suspense fallback={null}>
-                        <CampaignReviewView key={review?.at ?? 0} campaignId={campaignId} stepId={step.id} initialLead={review?.lead} />
+                        <CampaignReviewView key={shown?.at ?? 0} campaignId={campaignId} stepId={step.id} initialLead={shown?.lead} />
                     </React.Suspense>
                 </DirtyContext.Provider>
             )}
