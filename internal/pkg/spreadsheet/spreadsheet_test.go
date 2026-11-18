@@ -111,3 +111,31 @@ func TestMacroEnabledWorkbookImport(t *testing.T) {
 		t.Fatal("workbook bytes changed")
 	}
 }
+
+func TestParseSkipsLeadingBlankRows(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	for cell, v := range map[string]string{"A1": " ", "B3": "email", "C3": "name", "B4": "a@example.test", "C4": "Ann"} {
+		if err := f.SetCellValue("Sheet1", cell, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := Parse(bytes.NewReader(data.Bytes()), "contacts.xlsx", 2)
+	if err != nil || len(rows) != 2 || len(rows[0]) != 3 || rows[0][1] != "email" || rows[1][1] != "a@example.test" {
+		t.Fatalf("xlsx: %q %v", rows, err)
+	}
+
+	rows, _, err = Parse(strings.NewReader("\ufeff,,\n   \nemail,name\na@example.test,Ann\n"), "contacts.csv", 10)
+	if err != nil || len(rows) != 2 || rows[0][0] != "email" || rows[1][1] != "Ann" {
+		t.Fatalf("csv: %q %v", rows, err)
+	}
+
+	rows, _, err = Parse(strings.NewReader(",,\n,,\n"), "contacts.csv", 10)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("blank csv: %q %v", rows, err)
+	}
+}

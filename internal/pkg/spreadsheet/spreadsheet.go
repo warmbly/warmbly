@@ -63,6 +63,9 @@ func parse(r io.Reader, filename string, maxRows int) ([][]string, string, error
 		if err != nil {
 			return nil, "csv", errors.New("failed to parse CSV: " + err.Error())
 		}
+		for len(rows) > 0 && blank(rows[0]) {
+			rows = rows[1:]
+		}
 		return rows, "csv", nil
 	case ".xlsx", ".xlsm":
 		// An XLSX is a zip of XML, so its uncompressed size is unrelated to the
@@ -96,6 +99,9 @@ func parse(r io.Reader, filename string, maxRows int) ([][]string, string, error
 			cols, cerr := it.Columns()
 			if cerr != nil {
 				return nil, "xlsx", errors.New("failed to read XLSX rows: " + cerr.Error())
+			}
+			if len(rows) == 0 && blank(cols) {
+				continue
 			}
 			rows = append(rows, cols)
 			if maxRows > 0 && len(rows) >= maxRows {
@@ -138,4 +144,15 @@ func Delimiter(data []byte) rune {
 		}
 	}
 	return best
+}
+
+// blank is a row with nothing in it. Leading ones are dropped so the header is
+// the first row that says something.
+func blank(row []string) bool {
+	for _, c := range row {
+		if strings.TrimSpace(strings.TrimPrefix(c, "\ufeff")) != "" {
+			return false
+		}
+	}
+	return true
 }
