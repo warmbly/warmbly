@@ -20,6 +20,8 @@ func TestDelimiterFollowsTheHeader(t *testing.T) {
 		`"Smith, Ann";email;password` + "\n" + "x;y;z": ';',
 		"email\na@x.test":                              ',',
 		"\n\nemail;password\na;b":                      ';',
+		"\t\nemail,name\na,b":                          ',',
+		",,\nemail;name\na;b":                          ';',
 	}
 	for in, want := range cases {
 		if got := Delimiter([]byte(in)); got != want {
@@ -109,5 +111,43 @@ func TestMacroEnabledWorkbookImport(t *testing.T) {
 	}
 	if !bytes.Equal(data, before) {
 		t.Fatal("workbook bytes changed")
+	}
+}
+
+func TestParseSkipsLeadingBlankRows(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	for cell, v := range map[string]string{"A1": " \ufeff ", "B3": "email", "C3": "name", "B4": "a@example.test", "C4": "Ann"} {
+		if err := f.SetCellValue("Sheet1", cell, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := Parse(bytes.NewReader(data.Bytes()), "contacts.xlsx", 2)
+	if err != nil || len(rows) != 2 || len(rows[0]) != 3 || rows[0][1] != "email" || rows[1][1] != "a@example.test" {
+		t.Fatalf("xlsx: %q %v", rows, err)
+	}
+
+	rows, _, err = Parse(strings.NewReader("\ufeff,,\n   \nemail,name\na@example.test,Ann\n"), "contacts.csv", 10)
+	if err != nil || len(rows) != 2 || rows[0][0] != "email" || rows[1][1] != "Ann" {
+		t.Fatalf("csv: %q %v", rows, err)
+	}
+
+	rows, _, err = Parse(strings.NewReader("\t\n  \nemail,name\na@example.test,Ann\n"), "contacts.csv", 10)
+	if err != nil || len(rows) != 2 || len(rows[0]) != 2 || rows[0][1] != "name" {
+		t.Fatalf("separator-only lines: %q %v", rows, err)
+	}
+
+	rows, _, err = Parse(strings.NewReader(",,\nemail;name\na@example.test;Smith, Ann\n"), "contacts.csv", 10)
+	if err != nil || len(rows) != 2 || len(rows[0]) != 2 || rows[0][0] != "email" || rows[1][1] != "Smith, Ann" {
+		t.Fatalf("comma line above a semicolon header: %q %v", rows, err)
+	}
+
+	rows, _, err = Parse(strings.NewReader(",,\n,,\n"), "contacts.csv", 10)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("blank csv: %q %v", rows, err)
 	}
 }

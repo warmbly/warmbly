@@ -9,6 +9,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/warmbly/warmbly/internal/pkg/textcontent"
 	"github.com/xuri/excelize/v2"
@@ -63,6 +64,9 @@ func parse(r io.Reader, filename string, maxRows int) ([][]string, string, error
 		if err != nil {
 			return nil, "csv", errors.New("failed to parse CSV: " + err.Error())
 		}
+		for len(rows) > 0 && blank(rows[0]) {
+			rows = rows[1:]
+		}
 		return rows, "csv", nil
 	case ".xlsx", ".xlsm":
 		// An XLSX is a zip of XML, so its uncompressed size is unrelated to the
@@ -97,6 +101,9 @@ func parse(r io.Reader, filename string, maxRows int) ([][]string, string, error
 			if cerr != nil {
 				return nil, "xlsx", errors.New("failed to read XLSX rows: " + cerr.Error())
 			}
+			if len(rows) == 0 && blank(cols) {
+				continue
+			}
 			rows = append(rows, cols)
 			if maxRows > 0 && len(rows) >= maxRows {
 				break
@@ -110,27 +117,33 @@ func parse(r io.Reader, filename string, maxRows int) ([][]string, string, error
 	return nil, "", errors.New("unsupported file type: " + ext)
 }
 
-// Delimiter is the separator a delimited file uses, read off its first line:
-// a comma, or the semicolon spreadsheet apps write where the comma is the
-// decimal mark, or a tab. Separators inside quotes do not count.
+// Delimiter is the separator a delimited file uses, read off its first line
+// with anything in it: a comma, or the semicolon spreadsheet apps write where
+// the comma is the decimal mark, or a tab. Separators inside quotes do not count.
 func Delimiter(data []byte) rune {
 	counts := map[rune]int{}
-	quoted := false
+	quoted, content := false, false
 	for _, r := range string(bytes.TrimPrefix(data, []byte("\ufeff"))) {
-		if r == '"' {
+		switch {
+		case r == '"':
 			quoted = !quoted
-			continue
-		}
-		if !quoted && (r == '\n' || r == '\r') {
-			if counts[','] > 0 || counts[';'] > 0 || counts['\t'] > 0 {
-				break
+		case !quoted && (r == '\n' || r == '\r'):
+			if !content {
+				clear(counts)
+			} else if counts[','] > 0 || counts[';'] > 0 || counts['\t'] > 0 {
+				return pick(counts)
 			}
-			continue
-		}
-		if !quoted && (r == ',' || r == ';' || r == '\t') {
+			content = false
+		case !quoted && (r == ',' || r == ';' || r == '\t'):
 			counts[r]++
+		case !blankRune(r):
+			content = true
 		}
 	}
+	return pick(counts)
+}
+
+func pick(counts map[rune]int) rune {
 	best := ','
 	for _, r := range []rune{';', '\t'} {
 		if counts[r] > counts[best] {
@@ -138,4 +151,20 @@ func Delimiter(data []byte) rune {
 		}
 	}
 	return best
+}
+
+// blank is a row with nothing in it. Leading ones are dropped so the header is
+// the first row that says something, the same line Delimiter reads.
+func blank(row []string) bool {
+	for _, c := range row {
+		if strings.TrimFunc(c, blankRune) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// blankRune says nothing: whitespace, a byte-order mark, or a separator.
+func blankRune(r rune) bool {
+	return unicode.IsSpace(r) || r == '\ufeff' || r == ',' || r == ';' || r == '\t'
 }
