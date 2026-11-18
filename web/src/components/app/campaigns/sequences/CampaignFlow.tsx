@@ -7,8 +7,10 @@
 // is made.
 
 import React from "react";
-import { AnimatePresence } from "framer-motion";
-import { ArrowDownIcon, ArrowUpIcon, FlagIcon, GitBranchIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowDownIcon, ArrowUpIcon, ClipboardCheckIcon, FlagIcon, GitBranchIcon, MailIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { SearchParams } from "@/lib/routerSearch";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast/headless";
 import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
@@ -43,6 +45,8 @@ import { DirtyContext, useDirtyRegistry } from "@/components/app/flow/dirty";
 import { layoutFlow, type InsertPoint, type PlacedEdge } from "@/components/app/flow/tree";
 import { cn } from "@/lib/utils";
 import StepEmailArms from "./StepEmailArms";
+
+const CampaignReviewView = React.lazy(() => import("@/components/app/campaigns/review/CampaignReviewView"));
 import { conversationOpenerFor, conversationSubjectFor, earlierEmailsFor } from "./threading";
 import { ActionEditor, NodeTypeSwitcher, PathEditor, ReplyStopWarning, StopOnReplyToggle } from "./CampaignEditors";
 import { defaultActionFor } from "./campaignActions";
@@ -77,7 +81,7 @@ const SEQ_KEY = (id: string) => ["campaigns", id, "sequences"] as const;
 const POSITIVE_REPLY_FIELDS = ["replied", "reply_positive", "reply_negative", "reply_neutral", "reply_automated"];
 
 // A path with a draft is a new condition not saved yet.
-type Selection = { kind: "entry" } | { kind: "step"; id: string } | { kind: "path"; stepId: string; port: string; draft?: SequenceBranch } | null;
+type Selection = { kind: "entry" } | { kind: "review" } | { kind: "step"; id: string } | { kind: "path"; stepId: string; port: string; draft?: SequenceBranch } | null;
 type Choice = "email" | "router" | SequenceActionType;
 
 const sizeOf = (id: string) => (isStopId(id) ? { w: TERMINAL_W, h: TERMINAL_H } : { w: STEP_W, h: STEP_H });
@@ -127,6 +131,34 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         },
         [confirm, dirty],
     );
+
+    // A link (?review=1, optionally &step= and &lead=) opens an email step on its Review tab, then leaves the URL.
+    const navigate = useNavigate();
+    const search = useSearch({ strict: false }) as SearchParams;
+    const [review, setReview] = React.useState<{ stepId: string; lead?: string; at: number } | null>(null);
+    const applied = React.useRef("");
+    React.useEffect(() => {
+        if (search.review !== "1") {
+            applied.current = "";
+            return;
+        }
+        // Once per link: steps refetch after every save, and that must not pull the panel back.
+        const key = `${search.step ?? ""}|${search.lead ?? ""}`;
+        if (!sequences || applied.current === key) return;
+        applied.current = key;
+        // Steps come in send order, so the first email step is the opening email.
+        const emails = steps.filter((s) => s.kind === "email");
+        const target = emails.find((s) => s.id === search.step) ?? emails[0];
+        if (target) {
+            select({ kind: "step", id: target.id });
+            setReview({ stepId: target.id, lead: search.lead, at: Date.now() });
+        } else {
+            // Leads can wait for approval with no email step left, and still need a way out.
+            select({ kind: "review" });
+            setReview({ stepId: "", lead: search.lead, at: Date.now() });
+        }
+        void navigate({ to: "/app/campaigns/$id/steps", params: { id: campaignId }, search: {}, replace: true });
+    }, [search.review, search.step, search.lead, sequences, steps, select, navigate, campaignId]);
 
     // ── Derived ──────────────────────────────────────────────────────────────
     const byId = React.useMemo(() => new Map(steps.map((s) => [s.id, s])), [steps]);
@@ -322,7 +354,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 await deleteSequence.mutateAsync(id);
                 // Only the panel of the step being deleted loses its unsaved edits.
                 const cur = selectionRef.current;
-                if (cur && cur.kind !== "entry" && (cur.kind === "step" ? cur.id : cur.stepId) === id) {
+                if (cur && (cur.kind === "step" || cur.kind === "path") && (cur.kind === "step" ? cur.id : cur.stepId) === id) {
                     dirty.clear();
                     setSelection(null);
                 }
@@ -515,6 +547,13 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                             </div>
                         </FlowPanel>
                     )}
+                    {selection?.kind === "review" && (
+                        <FlowPanel key="review" icon={<ClipboardCheckIcon />} tone="sky" kicker="Review" title="Leads waiting for review" onClose={() => select(null)} xwide fill>
+                            <React.Suspense fallback={null}>
+                                <CampaignReviewView key={review?.at ?? 0} campaignId={campaignId} initialLead={review?.lead} />
+                            </React.Suspense>
+                        </FlowPanel>
+                    )}
                     {panelStep && (
                         <StepPanel
                             key={panelStep.id}
@@ -532,6 +571,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                                 const draft = draftCondition(DEFAULT_CONDITION);
                                 select({ kind: "path", stepId: panelStep.id, port: `b:${draft.branch_id}`, draft });
                             }}
+                            review={review?.stepId === panelStep.id ? review : null}
                         />
                     )}
                     {pathStep && selection?.kind === "path" && (
@@ -628,6 +668,7 @@ function StepPanel({
     onDelete,
     onSelectPath,
     onAddCondition,
+    review,
 }: {
     campaignId: string;
     step: Sequence;
@@ -640,7 +681,17 @@ function StepPanel({
     onDelete: () => void;
     onSelectPath: (port: string) => void;
     onAddCondition: () => void;
+    // Set when a link asked for this step's Review tab, with the lead to open.
+    review?: { lead?: string; at: number } | null;
 }) {
+    const [tab, setTab] = React.useState<"email" | "review">(review ? "review" : "email");
+    React.useEffect(() => {
+        if (review) setTab("review");
+    }, [review]);
+    // A step switched to another type, here or by a teammate, comes back as an email on its Email tab.
+    React.useEffect(() => {
+        if (step.kind !== "email") setTab("email");
+    }, [step.kind]);
     // Parses earlier bodies; kept stable so the editor's AI context is too.
     const earlierEmails = React.useMemo(() => earlierEmailsFor(steps, index), [steps, index]);
     const footer = canEdit ? (
@@ -684,23 +735,78 @@ function StepPanel({
             </FlowPanel>
         );
     }
-    return (
-        <FlowPanel readOnly={!canEdit} icon={view.icon} tone={view.tone} kicker={view.kicker} title={view.title} onClose={onClose} footer={footer} wide={step.kind === "email"}>
-            <div className="p-3">
-                <NodeTypeSwitcher campaignId={campaignId} sequence={step} onChanged={onChanged} />
-                {step.kind === "email" ? (
-                    <StepEmailArms
-                        campaignId={campaignId}
-                        sequence={step}
-                        index={index}
-                        conversationSubject={conversationSubjectFor(steps, index)}
-                        conversationOpener={conversationOpenerFor(steps, index)}
-                        earlierEmails={earlierEmails}
-                    />
-                ) : (
+    if (step.kind !== "email") {
+        return (
+            <FlowPanel readOnly={!canEdit} icon={view.icon} tone={view.tone} kicker={view.kicker} title={view.title} onClose={onClose} footer={footer}>
+                <div className="p-3">
+                    <NodeTypeSwitcher campaignId={campaignId} sequence={step} onChanged={onChanged} />
                     <ActionEditor campaignId={campaignId} sequence={step} onSaved={onChanged} />
-                )}
+                </div>
+            </FlowPanel>
+        );
+    }
+    const tabs = (
+        <div className="shrink-0 flex items-center gap-1 border-b border-slate-200 px-3" role="tablist" aria-label="Step">
+            {(
+                [
+                    { key: "email", label: "Email", icon: MailIcon },
+                    { key: "review", label: "Review", icon: ClipboardCheckIcon },
+                ] as const
+            ).map((t) => (
+                <button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t.key}
+                    onClick={() => setTab(t.key)}
+                    title={t.key === "review" ? "Read this email as each lead gets it, and approve leads" : undefined}
+                    className={cn(
+                        "relative inline-flex h-10 items-center gap-1.5 px-2.5 text-[12.5px] transition-colors",
+                        tab === t.key ? "font-medium text-slate-900" : "text-slate-500 hover:text-slate-800",
+                    )}
+                >
+                    <t.icon className="h-3.5 w-3.5" />
+                    {t.label}
+                    {tab === t.key && <motion.span layoutId={`step-tab-${step.id}`} className="absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-sky-600" />}
+                </button>
+            ))}
+        </div>
+    );
+    return (
+        <FlowPanel
+            readOnly={!canEdit}
+            icon={view.icon}
+            tone={view.tone}
+            kicker={view.kicker}
+            title={view.title}
+            onClose={onClose}
+            tabs={tabs}
+            footer={tab === "email" ? footer : undefined}
+            wide={tab === "email"}
+            xwide={tab === "review"}
+            fill
+        >
+            {/* The editor stays mounted on the Review tab, so unsaved edits survive the switch. */}
+            <div className={cn("h-full overflow-y-auto", tab !== "email" && "hidden")}>
+                <fieldset disabled={!canEdit} className="contents">
+                    <div className="p-3">
+                        <NodeTypeSwitcher campaignId={campaignId} sequence={step} onChanged={onChanged} />
+                        <StepEmailArms
+                            campaignId={campaignId}
+                            sequence={step}
+                            index={index}
+                            conversationSubject={conversationSubjectFor(steps, index)}
+                            conversationOpener={conversationOpenerFor(steps, index)}
+                            earlierEmails={earlierEmails}
+                        />
+                    </div>
+                </fieldset>
             </div>
+            {tab === "review" && (
+                <React.Suspense fallback={null}>
+                    <CampaignReviewView key={review?.at ?? 0} campaignId={campaignId} stepId={step.id} initialLead={review?.lead} />
+                </React.Suspense>
+            )}
         </FlowPanel>
     );
 }

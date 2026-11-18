@@ -613,6 +613,22 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	if threadSubject != "" {
 		rawSubject = threadSubject
 	}
+	// A lead's own copy of the step replaces it, A/B variants included. Fail
+	// closed: sending the shared copy to a lead someone personalized for is wrong.
+	override, oerr := s.leadOverride(ctx, campaign.ID, contact.ID, sequence.ID)
+	if oerr != nil {
+		errs.CaptureException(oerr)
+		s.taskRepo.RecordTaskFailure(ctx, taskID, "Could not read the lead's own copy of this step", oerr.Error())
+		s.retryCampaignTickLater(ctx, taskRecord)
+		executionStatus = "failed"
+		return errx.InternalError()
+	}
+	if override != nil {
+		rawBodyHTML, rawBodyPlain = override.BodyHTML, override.BodyPlain
+		if threadSubject == "" {
+			rawSubject = override.Subject
+		}
+	}
 	s.resolveFormLinks(ctx, orgID, campaign, contact, &rawSubject, &rawBodyHTML, &rawBodyPlain)
 
 	// STEP 9.75: The recipient's opt-out. The link (when the instance can
@@ -633,7 +649,11 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// once and expand any {a|b|c} spintax per-recipient. Rendering happens after
 	// the variant pick so a contact value is never parsed as template text.
 	resolveLinks := func(parts ...*string) { s.resolveFormLinks(ctx, orgID, campaign, contact, parts...) }
-	rendered, sxerr := s.selectAndRender(ctx, orgID, campaign.ID, sequence.ID, *contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain, resolveLinks)
+	var picker variantSelector
+	if s.advanced != nil && override == nil {
+		picker = s.advanced
+	}
+	rendered, sxerr := selectAndRender(ctx, picker, orgID, campaign.ID, sequence.ID, *contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain, resolveLinks)
 	if sxerr != nil {
 		return sxerr
 	}
@@ -1268,7 +1288,7 @@ func HeldLeadsMessage(n int) string {
 	if n != 1 {
 		lead = "leads are"
 	}
-	return fmt.Sprintf("Waiting: %d %s paused. The campaign stays active and continues when they resume.", n, lead)
+	return fmt.Sprintf("Waiting: %d %s paused or waiting for review. The campaign stays active and continues when they resume or are approved.", n, lead)
 }
 
 // CampaignHeldEventType is the activity log entry for a campaign waiting on
@@ -1931,14 +1951,7 @@ type renderedCopy struct {
 
 // selectAndRender picks the step's copy or an A/B variant from template text, then renders it once.
 // resolveLinks resolves form-link markers in the chosen copy, which a variant brings unresolved.
-func (s *tasksService) selectAndRender(ctx context.Context, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string, resolveLinks func(...*string)) (renderedCopy, *errx.Error) {
-	var picker variantSelector
-	if s.advanced != nil {
-		picker = s.advanced
-	}
-	return selectAndRender(ctx, picker, orgID, campaignID, sequenceID, contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain, resolveLinks)
-}
-
+// A nil picker sends the copy as given.
 func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string, resolveLinks func(...*string)) (renderedCopy, *errx.Error) {
 	var arm *models.StepABArm
 	if picker != nil {
@@ -1958,12 +1971,8 @@ func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaig
 	if resolveLinks != nil {
 		resolveLinks(&rawSubject, &rawBodyHTML, &rawBodyPlain)
 	}
-	out := renderedCopy{
-		Subject:   expandSpintax(RenderTemplateWith(rawSubject, contact, extra)),
-		BodyHTML:  expandSpintax(RenderHTMLTemplateWith(rawBodyHTML, contact, extra)),
-		BodyPlain: expandSpintax(RenderTemplateWith(rawBodyPlain, contact, extra)),
-		Arm:       arm,
-	}
+	out := renderedCopy{Arm: arm}
+	out.Subject, out.BodyHTML, out.BodyPlain = renderLeadCopy(campaignID, sequenceID, contact, extra, rawSubject, rawBodyHTML, rawBodyPlain)
 	if out.BodyPlain == "" && out.BodyHTML != "" {
 		out.BodyPlain = ExtractPlainTextFromHTML(out.BodyHTML)
 	}

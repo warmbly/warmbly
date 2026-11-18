@@ -181,7 +181,7 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  utm_tracking, utm_source, utm_medium, utm_campaign,
 		  unsubscribe_mode,
 		  continuous, idle_since, stop_on_meeting,
-		  follow_up_sender, timezone_mode, warmup_graduation`
+		  follow_up_sender, timezone_mode, warmup_graduation, review_leads`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -203,7 +203,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
-		&campaign.FollowUpSender, &campaign.TimezoneMode, &campaign.WarmupGraduation,
+		&campaign.FollowUpSender, &campaign.TimezoneMode, &campaign.WarmupGraduation, &campaign.ReviewLeads,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -230,7 +230,7 @@ const CAMPAIGN_SELECT_FULL = `
 	c.utm_tracking, c.utm_source, c.utm_medium, c.utm_campaign,
 	c.unsubscribe_mode,
 	c.continuous, c.idle_since, c.stop_on_meeting,
-	c.follow_up_sender, c.timezone_mode, c.warmup_graduation,
+	c.follow_up_sender, c.timezone_mode, c.warmup_graduation, c.review_leads,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -1520,7 +1520,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
-		&campaign.FollowUpSender, &campaign.TimezoneMode, &campaign.WarmupGraduation,
+		&campaign.FollowUpSender, &campaign.TimezoneMode, &campaign.WarmupGraduation, &campaign.ReviewLeads,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {

@@ -147,6 +147,16 @@ Campaigns, steps and activity logs are scoped to the selected organization for s
 | GET | `/campaigns/:id/leads/:contactId/cc` | `READ_CAMPAIGNS` + `READ_CONTACTS` |
 | PUT | `/campaigns/:id/leads/:contactId/cc` | `WRITE_CAMPAIGNS` + `READ_CONTACTS` |
 | GET | `/campaigns/:id/leads/:contactId/cc/suggestions` | `READ_CAMPAIGNS` + `READ_CONTACTS` |
+| GET | `/campaigns/:id/review` | `READ_CAMPAIGNS` |
+| PUT | `/campaigns/:id/review` | `WRITE_CAMPAIGNS` (+ `SEND_CAMPAIGNS` to turn it off) |
+| GET | `/campaigns/:id/review/leads` | `READ_CAMPAIGNS` + `READ_CONTACTS` |
+| POST | `/campaigns/:id/review/approve` | `SEND_CAMPAIGNS` |
+| POST | `/campaigns/:id/review/reopen` | `WRITE_CAMPAIGNS` |
+| POST | `/campaigns/:id/review/write` | `WRITE_CAMPAIGNS` (org `use_ai`) |
+| GET | `/campaigns/:id/leads/:contactId/emails` | `READ_CAMPAIGNS` + `READ_CONTACTS` |
+| PUT | `/campaigns/:id/leads/:contactId/emails/:stepId` | `WRITE_CAMPAIGNS` + `READ_CONTACTS` |
+| DELETE | `/campaigns/:id/leads/:contactId/emails/:stepId` | `WRITE_CAMPAIGNS` + `READ_CONTACTS` |
+| POST | `/campaigns/:id/leads/:contactId/emails/:stepId/write` | `WRITE_CAMPAIGNS` + `READ_CONTACTS` (org `use_ai`) |
 | GET | `/campaigns/:id/logs` | `READ_CAMPAIGNS` |
 | GET | `/campaigns/:id/send-plan` | `READ_CAMPAIGNS` |
 | GET | `/campaigns/:id/lead-timezones` | `READ_CAMPAIGNS` |

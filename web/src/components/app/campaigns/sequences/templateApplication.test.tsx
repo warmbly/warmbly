@@ -32,7 +32,8 @@ vi.mock("./RichTextEditor", () => ({
 vi.mock("./StepAttachments", () => ({ default: () => null }));
 vi.mock("@/components/ui/scroll-strip", () => ({ default: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock("../ContentScore", () => ({ default: () => null }));
-vi.mock("./PreviewControls", () => ({ PlacementTestButton: () => null, PreviewContactPicker: () => null, PreviewMailboxPicker: () => null, SendTestButton: () => null }));
+vi.mock("./PreviewControls", () => ({ PlacementTestButton: () => null, PreviewContactPicker: () => null, PreviewLeadStepper: () => null, PreviewMailboxPicker: () => null, SendTestButton: () => null }));
+vi.mock("./usePreviewLeadAI", () => ({ usePreviewLeadAI: () => ({ pending: [], fresh: [], canWrite: false, write: vi.fn() }) }));
 vi.mock("./EmailAIWriter", () => ({ WriteEmailWithAI: () => null, SubjectAI: () => null }));
 vi.mock("@/lib/api/hooks/app/emails/useEmails", () => ({ default: () => ({ emails: [] }) }));
 vi.mock("./useEmailAIWriter", () => ({ useEmailAIWriter: () => ({ phase: "idle", busyLabels: [] }) }));

@@ -10,6 +10,7 @@
 //     parent passes `current_campaign` and the topbar collapses to a
 //     section header so it nests cleanly under the campaign view.
 
+import { useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useSearchParams } from "@/hooks/useSearchParams";
@@ -43,7 +44,9 @@ import {
 } from "lucide-react";
 
 import { useConfirm } from "@/hooks/context/confirm";
-import { useWriteGuard } from "@/hooks/usePermission";
+import { usePermission, useWriteGuard } from "@/hooks/usePermission";
+import { approveCampaignLeads } from "@/lib/api/client/app/campaigns/review";
+import { refreshReview } from "@/lib/api/hooks/app/campaigns/useCampaignReview";
 import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
 import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import useDeleteContacts from "@/lib/api/hooks/app/contacts/useDeleteContacts";
@@ -639,16 +642,30 @@ export default function ContactsTable({
     // resuming is one call, so the row acts straight away.
     const [pauseTarget, setPauseTarget] = React.useState<{ id: string; name: string } | null>(null);
     const resumeLead = useResumeLead();
+    const canSend = usePermission("SEND_CAMPAIGNS");
+    const queryClient = useQueryClient();
     const resumeOne = React.useCallback(
-        (contactId: string, copied?: boolean) => {
+        (contactId: string, source?: string) => {
             if (!current_campaign) return;
+            // A lead waiting for review is released by an approval, which needs the send permission.
+            if (source === "review" && !canSend) {
+                toast.error("Approving a lead needs the Send campaigns permission.");
+                return;
+            }
             const run = async () => {
                 try {
                     await toast.promise(
-                        resumeLead.mutateAsync({ campaignId: current_campaign.id, contactId }),
+                        (async () => {
+                            if (source === "review") {
+                                await approveCampaignLeads(current_campaign.id, { contact_ids: [contactId] });
+                                refreshReview(queryClient, current_campaign.id);
+                            } else {
+                                await resumeLead.mutateAsync({ campaignId: current_campaign.id, contactId });
+                            }
+                        })(),
                         {
-                            loading: "Resuming lead…",
-                            success: "Lead resumed",
+                            loading: source === "review" ? "Approving lead…" : "Resuming lead…",
+                            success: source === "review" ? "Approved" : "Lead resumed",
                             error: (err: AppError) => buildError(err),
                         },
                     );
@@ -656,10 +673,10 @@ export default function ContactsTable({
                     /* toast.promise already surfaced it */
                 }
             };
-            if (copied) confirm.show(CC_RESUME_CONFIRM, run);
+            if (source === "cc") confirm.show(CC_RESUME_CONFIRM, run);
             else void run();
         },
-        [current_campaign, resumeLead, confirm],
+        [current_campaign, resumeLead, confirm, canSend, queryClient],
     );
 
     // Leads-view scope chips write straight into the search request, so the
@@ -1330,7 +1347,7 @@ function ContactsTableBody({
     // member without campaign write access, which takes the control off the
     // row rather than offering one that fails.
     onPauseLead?: (id: string, name: string) => void;
-    onResumeLead?: (id: string, copied?: boolean) => void;
+    onResumeLead?: (id: string, source?: string) => void;
     emptyTitle: string;
     emptyBody: string;
     emptyCta: React.ReactNode;
@@ -1548,9 +1565,9 @@ function ContactsTableBody({
                                         {lead?.hold && onResumeLead ? (
                                             <button
                                                 type="button"
-                                                aria-label="Resume lead"
-                                                title={`${holdSummary(lead.hold)}. Resume now`}
-                                                onClick={() => onResumeLead(c.id, lead.hold?.source === "cc")}
+                                                aria-label={lead.hold.source === "review" ? "Approve lead" : "Resume lead"}
+                                                title={`${holdSummary(lead.hold)}. ${lead.hold.source === "review" ? "Approve now" : "Resume now"}`}
+                                                onClick={() => onResumeLead(c.id, lead.hold?.source)}
                                                 className="size-6 rounded text-violet-500 hover:text-violet-700 hover:bg-violet-50 flex items-center justify-center transition-colors"
                                             >
                                                 <PlayIcon className="w-3 h-3" />

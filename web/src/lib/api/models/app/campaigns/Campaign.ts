@@ -76,6 +76,9 @@ export default interface Campaign {
     ramp_level_date?: Date | null;
     // Mailboxes leaving warmup earn volume from replies. Absent from an older backend, which means on.
     warmup_graduation?: boolean;
+    // Each new lead waits for a member to approve its first email. Changed through
+    // the Review tab (PUT /campaigns/:id/review). Absent from an older backend, which means off.
+    review_leads?: boolean;
 
     // Match the sending mailbox provider to the recipient's provider.
     esp_match_mode: 'off' | 'prefer' | 'strict';

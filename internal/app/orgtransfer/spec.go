@@ -644,6 +644,12 @@ var Tables = []Table{
 		Note:  "Must travel with the leads, or a copied contact held on their own lead is released into a second sequence.",
 	},
 	{
+		// Below campaign_leads and sequences, which it references.
+		Name: "campaign_lead_step_overrides", Group: models.OrgDataGroupCampaigns,
+		Scope: `campaign_id IN ` + orgCampaigns,
+		Note:  "Must travel, or a lead someone personalized an email for receives the step's shared copy instead.",
+	},
+	{
 		Name: "campaign_lead_removals", Group: models.OrgDataGroupCampaigns,
 		Scope: `campaign_id IN ` + orgCampaigns,
 		Note:  "Must travel, or linked segments on the destination re-add every lead the user removed by hand.",

@@ -446,7 +446,7 @@ func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 				warmup, warmup_tag, warmup_pool_type, warmup_reply_rate,
 				warmup_base, warmup_increase, warmup_max,
 				warmup_start_time, warmup_end_time, warmup_paused_at,
-				created_at
+				test_mode, created_at
 			) VALUES (
 				$1, $2, $3, $4,
 				$5, $6, $7, $8,
@@ -455,10 +455,11 @@ func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 				NOW() - make_interval(days => $9), 'sandbox', 'premium', $10,
 				$11, $12, $13,
 				'00:01', '23:59', CASE WHEN $14 THEN NOW() - INTERVAL '2 days' END,
-				NOW() - make_interval(days => $15)
+				'legacy', NOW() - make_interval(days => $15)
 			)
 			ON CONFLICT (id) DO UPDATE SET
 				worker_id = EXCLUDED.worker_id,
+				test_mode = EXCLUDED.test_mode,
 				status = 'active',
 				signature_plain = EXCLUDED.signature_plain,
 				signature_html = EXCLUDED.signature_html,

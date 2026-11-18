@@ -5,6 +5,7 @@ import { Loader2Icon, PauseIcon, PlayIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import PauseLeadDialog from "./PauseLeadDialog";
 import { useResumeLead } from "@/lib/api/hooks/app/campaigns/useLeadHold";
+import { useApproveLeads } from "@/lib/api/hooks/app/campaigns/useCampaignReview";
 import { useConfirm } from "@/hooks/context/confirm";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -42,6 +43,7 @@ export function ResumeLeadButton({
     disabled = false,
     onBusyChange,
     confirmText,
+    approve = false,
 }: {
     campaignId: string;
     contactId: string;
@@ -50,17 +52,26 @@ export function ResumeLeadButton({
     onBusyChange?: (busy: boolean) => void;
     // Asked first when resuming has a consequence worth a second look.
     confirmText?: string;
+    // The lead waits for review, which only an approval lifts.
+    approve?: boolean;
 }) {
     const resume = useResumeLead();
+    const approveLeads = useApproveLeads(campaignId);
     const confirm = useConfirm();
     async function run() {
         onBusyChange?.(true);
         try {
-            await toast.promise(resume.mutateAsync({ campaignId, contactId }), {
-                loading: "Resuming lead…",
-                success: "Lead resumed",
-                error: (err: AppError) => buildError(err),
-            });
+            await toast.promise(
+                (async () => {
+                    if (approve) await approveLeads.mutateAsync({ contact_ids: [contactId] });
+                    else await resume.mutateAsync({ campaignId, contactId });
+                })(),
+                {
+                    loading: approve ? "Approving lead…" : "Resuming lead…",
+                    success: approve ? "Approved. Their first email goes out on schedule." : "Lead resumed",
+                    error: (err: AppError) => buildError(err),
+                },
+            );
         } catch {
             /* toast.promise already surfaced it */
         } finally {
@@ -71,11 +82,11 @@ export function ResumeLeadButton({
         <button
             type="button"
             onClick={() => (confirmText ? confirm.show(confirmText, run) : void run())}
-            disabled={disabled || resume.isPending}
-            title="Lift the pause now; the flow picks up where it stopped"
+            disabled={disabled || resume.isPending || approveLeads.isPending}
+            title={approve ? "Approve this lead; their first email goes out on schedule" : "Lift the pause now; the flow picks up where it stopped"}
             className="h-6 px-2 rounded-md bg-white border border-violet-200 text-[11px] font-medium text-violet-700 hover:bg-violet-100 inline-flex items-center gap-1 transition-colors disabled:opacity-60 shrink-0"
         >
-            {resume.isPending ? <Loader2Icon className="w-2.5 h-2.5 animate-spin" /> : <PlayIcon className="w-2.5 h-2.5" />}
+            {resume.isPending || approveLeads.isPending ? <Loader2Icon className="w-2.5 h-2.5 animate-spin" /> : <PlayIcon className="w-2.5 h-2.5" />}
             {label}
         </button>
     );

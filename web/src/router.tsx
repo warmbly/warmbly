@@ -355,6 +355,16 @@ const campaignLeads = dash(campaignRoute, "leads", dashboardPages.campaignLeads,
 const campaignPreferences = dash(campaignRoute, "preferences", dashboardPages.campaignPreferences, "Campaign settings", loaders.campaignPreferencesLoader);
 const campaignSchedule = dash(campaignRoute, "schedule", dashboardPages.campaignSchedule, "Campaign schedule", loaders.campaignScheduleLoader);
 const campaignSteps = dash(campaignRoute, "steps", dashboardPages.campaignSteps, "Campaign steps", loaders.campaignStepsLoader);
+// Reviewing leads lives on each email step's Review tab; old links open the first email's.
+const campaignReview = createRoute({
+    getParentRoute: () => campaignRoute,
+    path: "review",
+    beforeLoad: ({ params, location }) => {
+        const search = new URLSearchParams(location.searchStr);
+        search.set("review", "1");
+        throw redirect({ href: `/app/campaigns/${encodeURIComponent((params as { id: string }).id)}/steps?${search.toString()}`, replace: true });
+    },
+});
 
 const analyticsRoute = dash(appRoute, "analytics", dashboardPages.analytics, "Analytics", loaders.analyticsLoader);
 const reportsRoute = createRoute({ getParentRoute: () => appRoute, path: "reports" });
@@ -507,7 +517,7 @@ const routeTree = rootRoute.addChildren([
         formsRoute.addChildren([formsIndex, formRoute]),
         campaignsRoute.addChildren([
             campaignsIndex,
-            campaignRoute.addChildren([campaignIndex, campaignLeads, campaignPreferences, campaignSchedule, campaignSteps]),
+            campaignRoute.addChildren([campaignIndex, campaignLeads, campaignReview, campaignPreferences, campaignSchedule, campaignSteps]),
         ]),
         analyticsRoute,
         reportsRoute.addChildren([reportsIndex, reportRoute]),

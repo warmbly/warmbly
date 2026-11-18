@@ -44,6 +44,25 @@ const (
 	aiVarResearchTimeout       = 45 * time.Second
 )
 
+type aiVarKeySuffixKey struct{}
+
+// withAIVarRewrite marks a deliberate rewrite, so its generation and charge get
+// keys of their own instead of being taken for a retry of the first one.
+func withAIVarRewrite(ctx context.Context) context.Context {
+	return context.WithValue(ctx, aiVarKeySuffixKey{}, ":rewrite:"+uuid.NewString())
+}
+
+func aiVarKeySuffix(ctx context.Context) string {
+	s, _ := ctx.Value(aiVarKeySuffixKey{}).(string)
+	return s
+}
+
+// ErrAIVarBalance and ErrAIVarCap are the two refusals a caller words for the member.
+var (
+	ErrAIVarBalance = errors.New("the workspace balance is too low for this AI variable")
+	ErrAIVarCap     = errors.New("AI usage cap reached; try again later")
+)
+
 // errAIVarNoTools signals the tool registry exposed no usable web tools, so the
 // caller falls back to the single-completion path.
 var errAIVarNoTools = errors.New("no web tools available for research")
@@ -141,7 +160,7 @@ func (s *tasksService) resolveAIVariables(ctx context.Context, campaign *models.
 		// Give the model the surrounding email so the fragment flows with it.
 		before, after := aiVarSurrounding(bodyPlain, "[[ai:"+ref.id+"]]")
 		text, gerr := s.generateAIVariable(ctx, *campaign.OrganizationID, contact, cfg, rendered, before, after,
-			fmt.Sprintf("seq_ai_var:%s:%s:%s:%s", campaign.ID, contact.ID, sequenceID, ref.id))
+			fmt.Sprintf("seq_ai_var:%s:%s:%s:%s%s", campaign.ID, contact.ID, sequenceID, ref.id, aiVarKeySuffix(ctx)))
 		if gerr != nil {
 			// A provider/credit failure fails the send so the task retries (the
 			// charge was already refunded inside generateAIVariable).
@@ -218,9 +237,9 @@ func (s *tasksService) generateAIVariable(ctx context.Context, orgID uuid.UUID, 
 		if cerr := s.aiCredits.Reserve(ctx, orgID, estimate); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				return "", errors.New("the workspace balance is too low for this AI variable")
+				return "", ErrAIVarBalance
 			case errors.Is(cerr, credits.ErrCapExceeded):
-				return "", errors.New("AI usage cap reached; try again later")
+				return "", ErrAIVarCap
 			default:
 				return "", cerr
 			}

@@ -29,6 +29,8 @@ interface EmailBodyProps {
     // Hold back remote content until the reader loads it. Set for mail other
     // people wrote; previews of the user's own drafts leave it off.
     blockRemote?: boolean;
+    // App styles for markers a preview adds to its own copy, after the defaults.
+    extraCss?: string;
 }
 
 const CSP_BASE = "default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
@@ -135,12 +137,12 @@ const isDesignedEmail = (body: string) => DESIGNED.test(body);
 // recipient will never see. Its own <head> gets our shell instead.
 const DOCUMENT_ROOT = /^\s*(?:<!--[\s\S]*?-->\s*)*(?:<!doctype\s+html|<html[\s>])/i;
 
-function shell(csp: string, dark: boolean): string {
+function shell(csp: string, dark: boolean, extraCss = ""): string {
     // The policy must precede everything else in the head to govern it.
     return (
         `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
         `<meta charset="utf-8"><meta name="referrer" content="no-referrer">` +
-        `<base target="_blank"><style>${DOCUMENT_CSS}${dark ? DARK_DOCUMENT_CSS : ""}</style>`
+        `<base target="_blank"><style>${DOCUMENT_CSS}${dark ? DARK_DOCUMENT_CSS : ""}${extraCss}</style>`
     );
 }
 
@@ -156,7 +158,7 @@ function neutralizeLinks(doc: Document) {
     });
 }
 
-function buildDocument(body: string, csp: string, dark: boolean): string {
+function buildDocument(body: string, csp: string, dark: boolean, extraCss = ""): string {
     // Our shell goes FIRST in the parsed document's real head, so the
     // message's own stylesheet comes after it and wins on everything but the
     // containment rules, and nothing in the markup (a commented-out <head>,
@@ -166,12 +168,12 @@ function buildDocument(body: string, csp: string, dark: boolean): string {
         whole ? body : `<!doctype html><html><head></head><body>${body}</body></html>`,
         "text/html",
     );
-    doc.head.insertAdjacentHTML("afterbegin", shell(csp, dark));
+    doc.head.insertAdjacentHTML("afterbegin", shell(csp, dark, extraCss));
     neutralizeLinks(doc);
     return `${doc.doctype ? "<!doctype html>" : ""}${doc.documentElement.outerHTML}`;
 }
 
-export default function EmailBody({ html, plain, blockRemote = false }: EmailBodyProps) {
+export default function EmailBody({ html, plain, blockRemote = false, extraCss = "" }: EmailBodyProps) {
     const frameRef = React.useRef<HTMLIFrameElement>(null);
     const viewportRef = React.useRef<HTMLDivElement>(null);
     const [showQuoted, setShowQuoted] = React.useState(false);
@@ -199,8 +201,8 @@ export default function EmailBody({ html, plain, blockRemote = false }: EmailBod
     const designed = React.useMemo(() => isDesignedEmail(body), [body]);
     const darkDocument = darkTheme && !designed;
     const srcDoc = React.useMemo(
-        () => (body ? buildDocument(showQuoted ? quotes.expanded : quotes.collapsed, csp, darkDocument) : ""),
-        [body, quotes, showQuoted, csp, darkDocument],
+        () => (body ? buildDocument(showQuoted ? quotes.expanded : quotes.collapsed, csp, darkDocument, extraCss) : ""),
+        [body, quotes, showQuoted, csp, darkDocument, extraCss],
     );
 
     // Measure at the available width first; scale only layouts that cannot reflow.

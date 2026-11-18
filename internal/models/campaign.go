@@ -159,6 +159,10 @@ type Campaign struct {
 	// and the campaign ramp as its only volume limits.
 	WarmupGraduation bool `json:"warmup_graduation"`
 
+	// ReviewLeads holds each new lead until a member approves its first email.
+	// Changed through PUT /campaigns/:id/review, which holds or releases leads.
+	ReviewLeads bool `json:"review_leads"`
+
 	// ESP/provider matching: off | prefer | strict.
 	ESPMatchMode string `json:"esp_match_mode"`
 

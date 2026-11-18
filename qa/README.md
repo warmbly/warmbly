@@ -486,3 +486,10 @@ Apply `fixtures/agency.sql`, then `fixtures/agency-client-view.sql` (two roles i
 view has roles to be drawn for), to this worktree's isolated rich-seed database. Run
 `QA_AGENCY_FIXTURES=1 pnpm proof agency-client-view` and `QA_AGENCY_FIXTURES=1 pnpm proof agency-branding-tour`.
 The branding tour saves a look on the seeded agency, so the client view flow records in that brand afterwards.
+
+## Campaign review proof fixtures
+
+`flows/campaign-review.flow.ts` is opt-in: apply `fixtures/campaign-review.sql` to this worktree's isolated
+rich-seed database before each recording. It moves one seeded campaign into the dev workspace as a draft with
+synthetic leads (two without a first name), an AI block and one personalized email, and resets review mode to
+off so the flow can turn it on. Run `QA_CAMPAIGN_REVIEW_FIXTURES=1 pnpm proof campaign-review`.

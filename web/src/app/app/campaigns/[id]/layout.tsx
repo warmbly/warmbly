@@ -23,6 +23,9 @@ import { useConfirm } from "@/hooks/context/confirm";
 import LaunchCampaignDialog from "@/components/app/campaigns/LaunchCampaignDialog";
 import CampaignActionsMenu from "@/components/app/campaigns/CampaignActionsMenu";
 import UndeliverableBanner from "@/components/app/campaigns/UndeliverableBanner";
+import ReviewWaitingBanner from "@/components/app/campaigns/review/ReviewWaitingBanner";
+import { useQuery } from "@tanstack/react-query";
+import { sequencesQuery } from "@/lib/api/hooks/app/campaigns/sequences/useSequences";
 import { canStartCampaign } from "@/components/app/campaigns/useCampaignActions";
 import toast from "react-hot-toast/headless";
 import { CAMPAIGN_DELETED_EVENT, type CampaignDeletedDetail } from "@/lib/realtime/campaignDeleted";
@@ -60,6 +63,9 @@ export default function CampaignLayout() {
     const [searchParams, setSearchParams] = useSearchParams();
     const canSend = usePermission("SEND_CAMPAIGNS");
     const restricted = useAccessRestricted();
+    const onSteps = pathname.replace(/\/$/, "").endsWith("/steps");
+    const { data: steps } = useQuery({ ...sequencesQuery(id), enabled: onSteps });
+    const hasEmailStep = (steps ?? []).some((s) => s.kind === "email");
     const launchRequested = searchParams.get("launch") === "1";
     const loadedStatus = campaignData.data?.status;
 
@@ -205,6 +211,11 @@ export default function CampaignLayout() {
                 </div>
 
                 <UndeliverableBanner campaignId={campaign.id} status={status} />
+                <ReviewWaitingBanner
+                    campaignId={campaign.id}
+                    // On Steps, each email step's Review tab already lists who waits, when there is one.
+                    enabled={!!campaign.review_leads && !restricted && !(onSteps && hasEmailStep)}
+                />
 
                 <div className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200 overflow-x-auto no-scrollbar">
                     {TABS.filter((t) => t.scoped || !restricted).map(({ label, to, Icon }) => (

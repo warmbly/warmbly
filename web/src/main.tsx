@@ -11,11 +11,13 @@ import { Toaster } from '@/components/ui/toaster';
 import { initErrorReporting, reportsErrors } from "@/lib/observability";
 import { initProductAnalytics } from "@/lib/productAnalytics";
 import { installDomMutationGuard } from "@/lib/domGuard";
+import { installRandomUUID } from "@/lib/randomUUID";
 import { queryClient } from "@/lib/queryClient";
 import { dashboardPages, router } from "./router";
 
 // Before the first render, so a translated page never commits unguarded.
 installDomMutationGuard();
+installRandomUUID();
 
 // Before the first render, so a boot failure is reported too.
 initErrorReporting();
