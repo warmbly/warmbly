@@ -28,6 +28,8 @@ func TestCampaignSendGateUsesDurableAdmissionOncePerPass(t *testing.T) {
 	acct := models.Email{ID: uuid.New(), OrganizationID: &org, Provider: "smtp_imap"}
 	retry := time.Now().Add(time.Hour)
 	brief := time.Now().Add(10 * time.Minute)
+	justSent := time.Now().Add(-2 * time.Minute)
+	longAgo := time.Now().Add(-2 * time.Hour)
 	for _, tc := range []struct {
 		name      string
 		admission *repository.SendAdmission
@@ -35,7 +37,9 @@ func TestCampaignSendGateUsesDurableAdmissionOncePerPass(t *testing.T) {
 		want      string
 		paced     bool
 	}{
-		{"unknown hold", &repository.SendAdmission{RecoveryHold: true, HoldReason: "unknown"}, nil, gateRecovery, false},
+		{"send in flight", &repository.SendAdmission{RecoveryHold: true, HoldReason: "unknown", HeldSince: &justSent}, nil, gateRecovery, true},
+		{"unknown hold past recovery", &repository.SendAdmission{RecoveryHold: true, HoldReason: "unknown", HeldSince: &longAgo}, nil, gateRecovery, false},
+		{"unknown hold without its send", &repository.SendAdmission{RecoveryHold: true, HoldReason: "unknown"}, nil, gateRecovery, false},
 		{"permanent hold", &repository.SendAdmission{RecoveryHold: true, HoldReason: "permanent"}, nil, gateRecovery, false},
 		{"domain auth hold", &repository.SendAdmission{RecoveryHold: true, HoldReason: "domain_auth"}, nil, gateRecovery, false},
 		{"long cooldown", &repository.SendAdmission{RetryAt: &retry, PauseReason: "daily_limit"}, nil, gateCooldown, false},
