@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
@@ -334,14 +336,18 @@ func (h *Handler) WriteCampaignReviewAI(c *gin.Context) {
 		return
 	}
 	var req writeReviewAIRequest
+	// Present but null or empty is refused, so a client bug cannot widen a paid pass to every lead.
+	var probe struct {
+		ContactIDs json.RawMessage `json:"contact_ids"`
+	}
 	if c.Request.ContentLength != 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
+		if err := c.ShouldBindBodyWith(&req, binding.JSON); err != nil {
 			errx.JSON(c, errx.InvalidBody(err))
 			return
 		}
+		_ = c.ShouldBindBodyWith(&probe, binding.JSON)
 	}
-	// An empty list is refused, so a client bug cannot widen a paid pass to every lead.
-	if req.ContactIDs != nil && len(req.ContactIDs) == 0 {
+	if probe.ContactIDs != nil && len(req.ContactIDs) == 0 {
 		errx.JSON(c, errx.New(errx.BadRequest, "contact_ids is empty; omit it to write every lead"))
 		return
 	}

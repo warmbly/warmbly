@@ -462,7 +462,7 @@ export default function LeadEmailsPane({
                                                 : aiState === "cap"
                                                   ? "The workspace reached its AI spend limit."
                                                   : "It could not be written again just now."}{" "}
-                                            The copy below is unchanged.
+                                            The copy below is what goes out.
                                         </Notice>
                                     )}
                                     {pending.length > 0 && !canWrite && (

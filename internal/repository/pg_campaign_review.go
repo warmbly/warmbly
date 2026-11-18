@@ -45,7 +45,8 @@ type CampaignReviewRepository interface {
 	ActiveAICampaigns(ctx context.Context, after uuid.UUID, limit int) ([]CampaignOrg, error)
 
 	// SaveLeadAIVariable stores one AI block's copy for a step; ErrLeadStepSent once the step is reserved or sent.
-	SaveLeadAIVariable(ctx context.Context, campaignID, contactID, stepID uuid.UUID, id, text string) error
+	// Without replace, copy another write stored first is kept.
+	SaveLeadAIVariable(ctx context.Context, campaignID, contactID, stepID uuid.UUID, id, text string, replace bool) error
 
 	GetOverride(ctx context.Context, campaignID, contactID, stepID uuid.UUID) (*models.LeadStepOverride, error)
 	ListOverrides(ctx context.Context, campaignID, contactID uuid.UUID) ([]models.LeadStepOverride, error)
@@ -541,15 +542,17 @@ func (r *campaignReviewRepository) DeleteOverride(ctx context.Context, campaignI
 	return cmd.RowsAffected() > 0, tx.Commit(ctx)
 }
 
-func (r *campaignReviewRepository) SaveLeadAIVariable(ctx context.Context, campaignID, contactID, stepID uuid.UUID, id, text string) error {
+func (r *campaignReviewRepository) SaveLeadAIVariable(ctx context.Context, campaignID, contactID, stepID uuid.UUID, id, text string, replace bool) error {
 	var ok bool
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id, ai_variables_resolved)
 		VALUES ($1, $2, $3, jsonb_build_object($4::text, $5::text))
 		ON CONFLICT (campaign_id, contact_id, sequence_id) DO UPDATE
-		SET ai_variables_resolved = COALESCE(campaign_contact_progress.ai_variables_resolved, '{}'::jsonb) || jsonb_build_object($4::text, $5::text)
+		SET ai_variables_resolved = CASE
+		        WHEN NOT $6 AND campaign_contact_progress.ai_variables_resolved ? $4::text THEN campaign_contact_progress.ai_variables_resolved
+		        ELSE COALESCE(campaign_contact_progress.ai_variables_resolved, '{}'::jsonb) || jsonb_build_object($4::text, $5::text) END
 		WHERE campaign_contact_progress.sent_at IS NULL AND campaign_contact_progress.dispatched_at IS NULL
-		RETURNING true`, campaignID, contactID, stepID, id, text).Scan(&ok)
+		RETURNING true`, campaignID, contactID, stepID, id, text, replace).Scan(&ok)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrLeadStepSent
 	}

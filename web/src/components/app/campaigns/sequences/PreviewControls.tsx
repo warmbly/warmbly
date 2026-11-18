@@ -125,7 +125,8 @@ export function PreviewLeadStepper({
         limit: 50,
         keepPrevious: true,
     });
-    const leads = list.contacts ?? [];
+    // While another campaign's rows stand in, none of them is this campaign's lead.
+    const leads = list.isPlaceholderData ? [] : (list.contacts ?? []);
     const at = value ? leads.findIndex((c) => c.id === value.id) : -1;
     const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = list;
     const lastLoaded = at >= 0 && at === leads.length - 1;

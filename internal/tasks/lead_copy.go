@@ -387,7 +387,7 @@ func (s *tasksService) WriteLeadAI(ctx context.Context, orgID uuid.UUID, campaig
 	}
 	// Each block replaces its copy only once written, and never on a step already reserved or sent.
 	w := aiVarWrite{fresh: rewrite, save: func(id, text string) error {
-		return s.leadReview.SaveLeadAIVariable(ctx, campaign.ID, contact.ID, step.ID, id, text)
+		return s.leadReview.SaveLeadAIVariable(ctx, campaign.ID, contact.ID, step.ID, id, text, rewrite)
 	}}
 	extra := templateContext(nil, PreviewUnsubscribeLink)
 	subject, bodyHTML, bodyPlain := renderLeadCopy(campaign.ID, step.ID, *contact, extra, src.subject, src.bodyHTML, src.bodyPlain)

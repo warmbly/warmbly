@@ -66,7 +66,11 @@ export default function CampaignReviewView({ campaignId, stepId, initialLead }: 
     const effectiveStatus: "all" | ReviewStatus = status ?? (summary.data ? openingReviewStatus(summary.data) : "waiting");
 
     React.useEffect(() => {
-        const t = setTimeout(() => setQ(search), 250);
+        // Rows picked while the old results showed may be hidden by the new ones.
+        const t = setTimeout(() => {
+            setQ(search);
+            setSelected(new Set());
+        }, 250);
         return () => clearTimeout(t);
     }, [search]);
 
@@ -149,8 +153,8 @@ export default function CampaignReviewView({ campaignId, stepId, initialLead }: 
             const res = await approve.mutateAsync({ contact_ids: [approved] });
             if (res.released > 0) toast.success("Approved. Their first email goes out on schedule.");
             else toast("This lead is no longer waiting for review.");
-            // Move on only if the reviewer is still on the lead they approved.
-            if (effectiveStatus === "waiting" && following && activeRef.current === approved) {
+            // Move on only if the reviewer is still on the lead they approved, with no edit started meanwhile.
+            if (effectiveStatus === "waiting" && following && activeRef.current === approved && !dirtyRef.current) {
                 setDirection(1);
                 setActiveId(following);
             }
@@ -215,12 +219,18 @@ export default function CampaignReviewView({ campaignId, stepId, initialLead }: 
                 toast.error(buildError(err as AppError));
             }
         };
-        if (!enabled && waiting > 0) {
-            if (!canSend) {
+        if (!enabled) {
+            if (waiting > 0 && !canSend) {
                 toast.error("Turning review off approves every waiting lead, which needs the Send campaigns permission.");
                 return;
             }
-            confirm.show(`Turn review off? The ${waiting.toLocaleString()} waiting lead${waiting === 1 ? " is" : "s are"} approved and start on schedule.`, run);
+            // Always asked: a lead can start waiting after the count above was read.
+            confirm.show(
+                waiting > 0
+                    ? `Turn review off? The ${waiting.toLocaleString()} waiting lead${waiting === 1 ? " is" : "s are"} approved and start on schedule.`
+                    : "Turn review off? Any lead waiting for approval is approved and starts on schedule.",
+                run,
+            );
         } else {
             void run();
         }

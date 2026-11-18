@@ -121,7 +121,17 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const [review, setReview] = React.useState<{ stepId: string; lead?: string; at: number } | null>(null);
     const select = React.useCallback(
         (next: Selection, onOpen?: () => void) => {
-            if (sameSelection(selectionRef.current, next)) return onOpen?.();
+            if (sameSelection(selectionRef.current, next)) {
+                // A link into the open step still replaces its Review view, so an unsaved draft asks first.
+                if (onOpen && dirty.isDirty()) {
+                    confirm.show("Discard your unsaved changes to this step?", async () => {
+                        dirty.clear();
+                        onOpen();
+                    });
+                    return;
+                }
+                return onOpen?.();
+            }
             const go = () => {
                 setSelection(next);
                 setReview(null);

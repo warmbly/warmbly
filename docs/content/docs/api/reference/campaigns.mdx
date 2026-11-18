@@ -1252,7 +1252,7 @@ Call it again with the `next` it returned as `after` while `remaining` is above 
 | --- | --- | --- | --- |
 | `id` | path | uuid | Campaign id. |
 | `step_id` | body | uuid | An email step. Default the first one. |
-| `contact_ids` | body | array of uuid | Only these leads, `1` to `500`. An empty list is refused with `400`; omit it to write every lead. |
+| `contact_ids` | body | array of uuid | Only these leads, `1` to `500`. An empty list or `null` is refused with `400`; omit it to write every lead. |
 | `waiting_only` | body | boolean | Without `contact_ids`, only leads waiting for review. Without either, every lead not yet emailed. |
 | `after` | body | string | The previous pass's `next`. |
 

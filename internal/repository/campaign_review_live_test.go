@@ -175,7 +175,7 @@ func TestLiveCampaignReviewHoldsUntilApproved(t *testing.T) {
 	if _, err := review.DeleteOverride(ctx, f.campaign, emailed, step); !errors.Is(err, ErrLeadStepSent) {
 		t.Fatalf("reset of a sent step = %v, want ErrLeadStepSent", err)
 	}
-	if err := review.SaveLeadAIVariable(ctx, f.campaign, emailed, step, "b1", "late"); !errors.Is(err, ErrLeadStepSent) {
+	if err := review.SaveLeadAIVariable(ctx, f.campaign, emailed, step, "b1", "late", true); !errors.Is(err, ErrLeadStepSent) {
 		t.Fatalf("AI copy of a sent step = %v, want ErrLeadStepSent", err)
 	}
 
