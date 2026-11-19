@@ -846,6 +846,7 @@ The [Buy mailboxes](/guides/buy-mailboxes/) routes (`/store/*`, see [domains and
 | `domain_premium` | 422 | The domain is a premium name, priced by its registry above the standard rate. Premium names are not sold |
 | `tld_unsupported` | 422 | The store does not sell that domain extension |
 | `provider_mixed` | 422 | A domain's mailboxes must all use one provider, Google or Microsoft |
+| `provider_unavailable` | 422 | Mailboxes from a provider that is not offered right now. Only the providers `GET /store/status` lists in `providers` can be ordered. Nothing is charged |
 | `mailbox_limit` | 422 | The order would put more mailboxes on one domain than `limits.mailboxes_per_domain_max` |
 | `renewal_not_due` | 422 | `POST /store/domains/:id/renew` before the domain's renewal window opens |
 | `renewal_window_closed` | 422 | The domain can no longer be renewed. Any charge for the attempt was refunded to the balance |

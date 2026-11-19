@@ -222,6 +222,7 @@ export type CartAction =
     | { type: "admin"; domain: string; index: number }
     | { type: "provider"; domain: string; provider: StoreProvider }
     | { type: "default_provider"; provider: StoreProvider }
+    | { type: "offered_providers"; providers: readonly StoreProvider[] }
     | { type: "sender_add"; limits?: CartLimits }
     | { type: "sender_remove"; id: string }
     | { type: "sender_name"; id: string; first?: string; last?: string }
@@ -345,6 +346,15 @@ export function cartReducer(cart: Cart, action: CartAction): Cart {
             if (cart.provider === action.provider) return cart;
             // A domain that had picked the new default simply follows it from now on.
             return { ...cart, provider: action.provider, domains: cart.domains.map((d) => (!d.providerFixed && d.provider === action.provider ? { ...d, provider: null } : d)) };
+        case "offered_providers": {
+            // A provider no longer offered falls back to the first one that is; a domain with mailboxes keeps its own.
+            const first = action.providers[0];
+            if (!first) return cart;
+            const provider = action.providers.includes(cart.provider) ? cart.provider : first;
+            const domains = cart.domains.map((d) => (!d.providerFixed && d.provider && (!action.providers.includes(d.provider) || d.provider === provider) ? { ...d, provider: null } : d));
+            if (provider === cart.provider && domains.every((d, i) => d === cart.domains[i])) return cart;
+            return { ...cart, provider, domains };
+        }
         case "sender_add": {
             if (!canAddSender(cart)) return cart;
             return keepAdmins(cart, { ...cart, senders: [...cart.senders, { id: nextSenderId(cart), first: "", last: "", photo: null }] });

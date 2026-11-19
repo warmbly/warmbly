@@ -321,6 +321,20 @@ func (s *Service) livePricing(ctx context.Context) (*graphkit.Pricing, error) {
 // externalID is the workspace's id at GraphKit.
 func externalID(orgID uuid.UUID) string { return orgID.String() }
 
+// offeredProviders are the mailbox providers the price list lists, Google first; only listed ones can be ordered.
+func offeredProviders(p *graphkit.Pricing) []string {
+	out := []string{}
+	for _, want := range []string{graphkit.ProviderGoogle, graphkit.ProviderMicrosoft} {
+		for _, m := range p.Mailboxes {
+			if m.Provider == want {
+				out = append(out, want)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // defaultLimits are GraphKit's caps when the price list cannot be read.
 var defaultLimits = graphkit.Limits{MailboxesPerDomainMax: 5, MailboxesPerDomainRecommended: 3}
 
@@ -347,8 +361,11 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 	if !atCost(r) {
 		out.DomainMarkup = "markup"
 	}
-	if p, err := s.livePricing(ctx); err == nil && p.Limits.MailboxesPerDomainMax > 0 {
-		out.Limits = p.Limits
+	if p, err := s.livePricing(ctx); err == nil {
+		if p.Limits.MailboxesPerDomainMax > 0 {
+			out.Limits = p.Limits
+		}
+		out.Providers = offeredProviders(p)
 	}
 	active, err := s.planActive(ctx, orgID)
 	if err != nil {

@@ -29,6 +29,7 @@ const COPY: Record<string, string> = {
     domain_premium: "That domain is a premium name, which the store does not sell. Try a variation.",
     tld_unsupported: "That domain ending is not offered. Try another one.",
     provider_mixed: "A domain can use either Google or Microsoft, not both.",
+    provider_unavailable: "Mailboxes from that provider aren't available right now. Choose another provider.",
     mailbox_exists: "One of these addresses already exists. Change it and try again.",
     local_part_invalid: "One of the addresses cannot be used. Use letters, digits, dots, dashes or underscores.",
     mailbox_limit: "That is more mailboxes than one domain can hold.",
