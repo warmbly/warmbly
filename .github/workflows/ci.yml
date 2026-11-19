@@ -345,8 +345,10 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           set -o pipefail
+          # pgTool takes any client at or above the server's major; newer runner images only ship a newer one.
           if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
-            sudo apt-get update -q && sudo apt-get install -y -q postgresql-client-16
+            sudo apt-get update -q
+            sudo apt-get install -y -q postgresql-client-16 || sudo apt-get install -y -q postgresql-client
           fi
           go test -race -v ./cmd/warmblyctl -run '^TestLiveBackupRestoreRoundTrip$' -count=1 | tee backup-restore.log
           grep -q -- '--- PASS: TestLiveBackupRestoreRoundTrip ' backup-restore.log

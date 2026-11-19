@@ -1,4 +1,5 @@
 import { expect, test } from "../lib/proof.ts";
+import { env } from "../lib/env.ts";
 
 // Runs against the store simulator (`GRAPHKIT_API_URL=fake`, the `make backend` default): any
 // domain label longer than four characters is available, and an order reaches ready in seconds.
@@ -120,7 +121,7 @@ test("set three senders once, buy two domains with a mailbox per sender, and wat
   const track = page.getByRole("list", { name: "Setup steps" });
   await expect(reauth.or(track)).toBeVisible({ timeout: 30_000 });
   if (await reauth.isVisible()) {
-    await reauth.getByRole("textbox", { name: "Password" }).pressSequentially(process.env.QA_PASSWORD ?? "password123", { delay: 40 });
+    await reauth.getByRole("textbox", { name: "Password" }).pressSequentially(env.password, { delay: 40 });
     await proof.shot("reauth", { caption: "Paying asks for a fresh sign-in, like every money change in Warmbly" });
     await reauth.getByRole("button", { name: "Confirm" }).click();
   }
