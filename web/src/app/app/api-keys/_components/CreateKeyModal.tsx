@@ -30,6 +30,7 @@ import useCreateAPIKey from "@/lib/api/hooks/app/api-keys/useCreateAPIKey";
 import useAPIPermissions from "@/lib/api/hooks/app/api-keys/useAPIPermissions";
 import type APIPermission from "@/lib/api/models/app/apikeys/APIPermission";
 import type { APIKeyWithSecret } from "@/lib/api/models/app/apikeys/APIKey";
+import { andBits, anyBits, hasBits, toggleBits } from "@/lib/bitmask";
 
 type Step = "configure" | "reveal";
 type Preset = "read_only" | "full_access" | "custom";
@@ -108,26 +109,26 @@ function ConfigureStep({
     const available = React.useMemo(() => {
         const data = perms.data;
         if (!data) return [];
-        return data.permissions.filter((p) => (data.grantable & p.value) === p.value);
+        return data.permissions.filter((p) => hasBits(data.grantable, p.value));
     }, [perms.data]);
 
     // Default the bitmask to whatever the read_only preset says, once perms load.
     React.useEffect(() => {
         if (perms.data && permissionsBitmask === 0 && preset !== "custom") {
-            setPermissionsBitmask(presetMask(preset, perms.data.presets) & perms.data.grantable);
+            setPermissionsBitmask(andBits(presetMask(preset, perms.data.presets), perms.data.grantable));
         }
     }, [perms.data, preset, permissionsBitmask]);
 
     function switchPreset(p: Preset) {
         setPreset(p);
         if (p !== "custom" && perms.data) {
-            setPermissionsBitmask(presetMask(p, perms.data.presets) & perms.data.grantable);
+            setPermissionsBitmask(andBits(presetMask(p, perms.data.presets), perms.data.grantable));
         }
     }
 
     function togglePermission(value: number) {
         setPreset("custom");
-        setPermissionsBitmask((m) => (m & value ? m & ~value : m | value));
+        setPermissionsBitmask((m) => toggleBits(m, value));
     }
 
     async function submit() {
@@ -538,7 +539,7 @@ function PermissionMatrix({
                         </div>
                         <div>
                             {grouped[cat].map((p) => {
-                                const on = (bitmask & p.value) !== 0;
+                                const on = anyBits(bitmask, p.value);
                                 return (
                                     <button
                                         key={p.name}

@@ -67,9 +67,10 @@ export default function BalanceBanner() {
                 <Link
                     to="/app/settings/billing/{-$tab}"
                     params={{ tab: "balance" }}
+                    hash="add-funds"
                     className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center transition-colors"
                 >
-                    Add money
+                    Add funds
                 </Link>
                 {ar && (
                     <Link
@@ -78,7 +79,7 @@ export default function BalanceBanner() {
                         hash="auto-reload"
                         className="h-7 px-2.5 rounded-md border border-slate-200 bg-white hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 inline-flex items-center transition-colors"
                     >
-                        {ar.enabled ? "Reload settings" : "Turn on automatic reload"}
+                        {ar.enabled ? "Auto top-up settings" : "Turn on auto top-up"}
                     </Link>
                 )}
                 <button

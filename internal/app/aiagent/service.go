@@ -518,7 +518,9 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 
 	var (
 		stopReason string
-		balance    *models.Micro // nil on the free path or when unread
+		// creditErr is the refusal behind "out_of_credits", which says why.
+		creditErr error
+		balance   *models.Micro // nil on the free path or when unread
 	)
 	creditMeta := models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{SessionID: sess.ID.String()}}
 	readBalance := func(ctx context.Context) {
@@ -573,7 +575,7 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 			if cerr := s.credits.Reserve(mctx, inv.OrgID, credits.EstimateAgentIteration); cerr != nil {
 				switch {
 				case errors.Is(cerr, credits.ErrInsufficientCredits):
-					stopReason = "out_of_credits"
+					stopReason, creditErr = "out_of_credits", cerr
 					return errOutOfCredits
 				case errors.Is(cerr, credits.ErrCapExceeded):
 					stopReason = "usage_cap"
@@ -653,7 +655,7 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		_ = s.repo.UpdateSessionContext(ctx, sess.OrgID, sess.UserID, sess.ID, sess.Context)
 		emit(withBalance(StreamEvent{Type: evDone, Message: "awaiting_approval"}))
 	case "stopped":
-		emit(withBalance(stopEvent(stopReason)))
+		emit(withBalance(stopEvent(stopReason, creditErr)))
 	default: // "stop" or "max_iterations"
 		sess.Context.Pending = nil
 		_ = s.repo.UpdateSessionContext(ctx, sess.OrgID, sess.UserID, sess.ID, sess.Context)
@@ -662,9 +664,12 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	return nil
 }
 
-func stopEvent(reason string) StreamEvent {
+func stopEvent(reason string, creditErr error) StreamEvent {
 	switch reason {
 	case "out_of_credits":
+		if code, msg := credits.PaymentRefusal(creditErr); code != "insufficient_credits" {
+			return StreamEvent{Type: evError, Code: code, Message: msg}
+		}
 		return StreamEvent{Type: evError, Code: "insufficient_credits", Message: "The workspace balance is too low. Add funds to keep using Remie."}
 	case "usage_cap":
 		return StreamEvent{Type: evError, Code: "usage_cap_exceeded", Message: "AI usage limit reached, please try again later."}

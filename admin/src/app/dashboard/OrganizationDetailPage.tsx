@@ -278,6 +278,11 @@ function OrgProperties({ org }: { org: AdminOrgDetail }) {
                     </Property>
                 )}
                 <AgencyProperty orgId={org.id} />
+                <Property label="Store">
+                    <Link to={`/store/workspaces/${org.id}`} className="underline underline-offset-2">
+                        Domains, mailboxes, orders
+                    </Link>
+                </Property>
             </PropertyList>
 
             <div className="mt-5 mb-1 text-xs font-medium text-muted-foreground">Lifecycle</div>

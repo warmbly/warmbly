@@ -52,6 +52,8 @@ declare module "@tanstack/react-router" {
 export const dashboardPages = {
     emails: () => import("./app/app/emails/page"),
     domains: () => import("./app/app/emails/domains/page"),
+    buy: () => import("./app/app/emails/buy/page"),
+    buyOrders: () => import("./app/app/emails/buy/orders/page"),
     contactsLayout: () => import("./app/app/contacts/layout"),
     contacts: () => import("./app/app/contacts/page"),
     segments: () => import("./app/app/contacts/segments/page"),
@@ -118,6 +120,7 @@ export const dashboardPages = {
     agencyInbox: () => import("./app/app/agency/inbox/page"),
     agencyClients: () => import("./app/app/agency/clients/page"),
     agencyMailboxes: () => import("./app/app/agency/mailboxes/page"),
+    agencyStore: () => import("./app/app/agency/store/page"),
     agencyStaff: () => import("./app/app/agency/staff/page"),
     agencyUsage: () => import("./app/app/agency/usage/page"),
     agencyBilling: () => import("./app/app/agency/billing/page"),
@@ -274,6 +277,8 @@ const reauthCompleteRoute = standalone("reauth/complete", () => import("./app/re
 // The main address's sign-in for an agency portal, and the portal page that takes its one-time code.
 const portalSignInRoute = standalone("portal/sign-in", () => import("./app/portal/sign-in/page"), "Sign in");
 const portalReturnRoute = standalone("portal/return", () => import("./app/portal/return/page"), "Signing you in");
+// A reseller's one-time login link; outside the auth layout so it also works in a browser already signed in.
+const partnerSignInRoute = standalone("auth/partner", () => import("./app/auth/partner/page"), "Signing you in");
 // Where Warmbly Cloud sends the Google/Microsoft popup back to on a linked instance.
 const cloudOAuthDoneRoute = standalone("cloud-oauth/done", () => import("./app/cloud-oauth/done/page"), "Mailbox connected");
 // Where a sign-in window without an opener hands its result to the waiting dashboard tab.
@@ -324,6 +329,18 @@ const appIndex = forward(appRoute, "/", "/app/emails", true);
 const emailsRoute = createRoute({ getParentRoute: () => appRoute, path: "emails" });
 const emailsIndex = dash(emailsRoute, "/", dashboardPages.emails, "Mailboxes", loaders.emailsLoader);
 const domainsRoute = dash(emailsRoute, "domains", dashboardPages.domains, "Sending domains", loaders.domainsLoader);
+// The buy page is the layout and its children render nothing, so paying slides into the setup step without a remount.
+const buyRoute = createRoute({
+    getParentRoute: () => emailsRoute,
+    path: "buy",
+    component: page(dashboardPages.buy),
+    staticData: { title: "Buy mailboxes", stableParams: ["id"] },
+    loader: loaders.buyLoader,
+});
+const buyIndex = createRoute({ getParentRoute: () => buyRoute, path: "/" });
+const buyOrderRoute = createRoute({ getParentRoute: () => buyRoute, path: "orders/$id", staticData: { title: "Order" }, loader: loaders.buyOrderLoader });
+// The order history is its own page beside the buy layout, which would otherwise render the checkout over it.
+const buyOrdersRoute = dash(emailsRoute, "buy/orders", dashboardPages.buyOrders, "Orders", loaders.buyOrdersLoader);
 
 const contactsRoute = createRoute({
     getParentRoute: () => appRoute,
@@ -454,6 +471,7 @@ const agencyChildren = [
     dash(agencyRoute, "inbox", dashboardPages.agencyInbox, "Agency inbox", loaders.agencyInboxLoader),
     dash(agencyRoute, "clients", dashboardPages.agencyClients, "Agency clients", loaders.agencyClientsLoader),
     dash(agencyRoute, "mailboxes", dashboardPages.agencyMailboxes, "Agency mailboxes", loaders.agencyMailboxesLoader),
+    dash(agencyRoute, "store", dashboardPages.agencyStore, "Agency domains & mailboxes", loaders.agencyStoreLoader),
     dash(agencyRoute, "usage", dashboardPages.agencyUsage, "Agency usage", loaders.agencyUsageLoader),
     dash(agencyRoute, "billing", dashboardPages.agencyBilling, "Agency billing", loaders.agencyBillingLoader),
     dash(agencyRoute, "staff", dashboardPages.agencyStaff, "Agency staff", loaders.agencyStaffLoader),
@@ -502,11 +520,12 @@ const routeTree = rootRoute.addChildren([
     reauthCompleteRoute,
     portalSignInRoute,
     portalReturnRoute,
+    partnerSignInRoute,
     setupRoute,
     oauthRoute.addChildren([oauthAuthorize]),
     appRoute.addChildren([
         appIndex,
-        emailsRoute.addChildren([emailsIndex, domainsRoute]),
+        emailsRoute.addChildren([emailsIndex, domainsRoute, buyRoute.addChildren([buyIndex, buyOrderRoute]), buyOrdersRoute]),
         contactsRoute.addChildren([
             contactsIndex,
             segmentsRoute.addChildren([segmentsIndex, segmentRoute]),

@@ -7,9 +7,11 @@ import PasswordSection from "./PasswordSection";
 import SignInMethods from "./SignInMethods";
 import PortalAccountNote from "@/components/shared/PortalAccountNote";
 import { currentPortal } from "@/lib/portal";
+import { useUserProfile } from "@/hooks/context/user";
 
 export default function SecuritySettingsPage() {
     const navigate = useNavigate();
+    const partnerAccount = useUserProfile().user.partner_account === true;
     // A portal session cannot change how the account signs in, so the page only says where to.
     if (currentPortal().portal) {
         return (
@@ -22,13 +24,23 @@ export default function SecuritySettingsPage() {
     }
     return (
         <SectionShell title="Security" description="Sign-in protection for your account.">
-            <PasskeyManager />
+            {partnerAccount ? (
+                <Section eyebrow="Sign-in" description="How you get into this account.">
+                    <p className="text-[12px] text-slate-500 leading-relaxed">
+                        You sign in through the service that manages your workspace, so a password, passkey or other sign-in method cannot be added here.
+                    </p>
+                </Section>
+            ) : (
+                <>
+                    <PasskeyManager />
 
-            <TwoFactorManager />
+                    <TwoFactorManager />
 
-            <PasswordSection />
+                    <PasswordSection />
 
-            <SignInMethods />
+                    <SignInMethods />
+                </>
+            )}
 
             <SessionManager />
 

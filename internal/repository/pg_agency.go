@@ -304,14 +304,15 @@ func (r *agencyRepository) UpdateBilling(ctx context.Context, agencyID uuid.UUID
 	return err
 }
 
-const agencyMemberColumns = `m.agency_id, m.user_id, m.role, m.created_at, u.email, u.first_name, u.last_name`
+const agencyMemberColumns = `m.agency_id, m.user_id, m.role, m.created_at, u.email, COALESCE(u.contact_email, ''), u.first_name, u.last_name`
 
 func scanAgencyMember(row pgx.Row) (*models.AgencyMember, error) {
 	var m models.AgencyMember
-	var role string
-	if err := row.Scan(&m.AgencyID, &m.UserID, &role, &m.CreatedAt, &m.Email, &m.FirstName, &m.LastName); err != nil {
+	var role, contact string
+	if err := row.Scan(&m.AgencyID, &m.UserID, &role, &m.CreatedAt, &m.Email, &contact, &m.FirstName, &m.LastName); err != nil {
 		return nil, err
 	}
+	m.Email = models.VisibleEmail(m.Email, contact)
 	m.Role = models.AgencyRole(role)
 	return &m, nil
 }

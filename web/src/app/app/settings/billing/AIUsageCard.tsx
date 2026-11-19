@@ -17,6 +17,10 @@ import UsdStepper from "@/components/app/billing/UsdStepper";
 import { reasonLabel } from "@/components/app/billing/balanceModel";
 import { fmtUsd, fmtUsdTrim, parseUsd } from "@/lib/money";
 import { AnimatedNumber, DitherAreaChart, DitherMeter, DitherSlider, type DitherBarDatum, type DitherTone } from "@/components/ui/dither";
+import { NumberInput } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
+import { useBalance } from "@/lib/api/hooks/app/subscription/useBalance";
 import { Section } from "../_components/SectionShell";
 
 type WindowKey = "day" | "week" | "month";
@@ -47,7 +51,11 @@ interface SpendForm {
     memberWeekly: number | null;
     memberMonthly: number | null;
     lowThreshold: number;
+    overage: boolean;
+    overageLimit: number | null;
 }
+
+const OVERAGE_LIMIT_DEFAULT = 25;
 
 function toForm(s: AISpendSettings): SpendForm {
     return {
@@ -58,6 +66,8 @@ function toForm(s: AISpendSettings): SpendForm {
         memberWeekly: s.member_limit_weekly_usd ?? null,
         memberMonthly: s.member_limit_monthly_usd ?? null,
         lowThreshold: s.low_balance_usd ?? 0,
+        overage: s.ai_overage_enabled ?? true,
+        overageLimit: s.ai_overage_monthly_limit_usd ?? null,
     };
 }
 
@@ -68,6 +78,8 @@ export default function AIUsageCard() {
     const usage = useCreditUsage(range);
     const settings = useCreditSettings();
     const save = useUpdateCreditSettings();
+    const balance = useBalance();
+    const allowance = balance.data?.monthly_allowance_usd ?? 0;
 
     // Local form state, seeded from the server row once it loads.
     const [form, setForm] = React.useState<SpendForm | null>(null);
@@ -94,6 +106,8 @@ export default function AIUsageCard() {
                     member_limit_weekly_usd: form.memberWeekly,
                     member_limit_monthly_usd: form.memberMonthly,
                     low_balance_usd: form.lowThreshold,
+                    ai_overage_enabled: form.overage,
+                    ai_overage_monthly_limit_usd: form.overage ? form.overageLimit : null,
                 }),
                 {
                     loading: "Saving limits…",
@@ -136,6 +150,22 @@ export default function AIUsageCard() {
                 <div className="h-24 rounded bg-slate-100 animate-pulse" />
             ) : u ? (
                 <>
+                    {balance.data && !balance.data.unlimited && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-600">
+                            <span>
+                                Included AI:{" "}
+                                <span className="font-medium text-slate-900 tabular-nums">
+                                    {fmtUsd(balance.data.monthly_used_usd)} of {fmtUsd(allowance)}
+                                </span>{" "}
+                                used
+                            </span>
+                            <span>
+                                From your balance:{" "}
+                                <span className="font-medium text-slate-900 tabular-nums">{fmtUsd(u.ai_from_balance_month_usd ?? 0)}</span>{" "}
+                                this month
+                            </span>
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <SpendStat label="Today" spent={u.spent_today_usd} limit={u.limit_daily_usd} />
                         <SpendStat label="This week" spent={u.spent_week_usd} limit={u.limit_weekly_usd} />
@@ -163,6 +193,14 @@ export default function AIUsageCard() {
 
             {form && (
                 <div className="mt-2 border-t border-slate-200 pt-4 space-y-5">
+                    <OverageControl
+                        allowance={allowance}
+                        enabled={form.overage}
+                        limit={form.overageLimit}
+                        onEnabled={(v) => setForm({ ...form, overage: v })}
+                        onLimit={(v) => setForm({ ...form, overageLimit: v })}
+                    />
+
                     <div>
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Workspace limits</div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -278,6 +316,71 @@ export default function AIUsageCard() {
                 </div>
             )}
         </Section>
+    );
+}
+
+// OverageControl decides whether AI may use money you added once the plan's
+// included AI usage is spent, and how much of it per month.
+function OverageControl({
+    allowance,
+    enabled,
+    limit,
+    onEnabled,
+    onLimit,
+}: {
+    allowance: number;
+    enabled: boolean;
+    limit: number | null;
+    onEnabled: (v: boolean) => void;
+    onLimit: (v: number | null) => void;
+}) {
+    const included = allowance > 0 ? `the included ${fmtUsdTrim(allowance)}` : "the included AI usage";
+    return (
+        <div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">After the included usage</div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5">
+                <span className="text-[12.5px] text-slate-700">Let AI use my balance after {included} runs out</span>
+                <Toggle value={enabled} onChange={onEnabled} ariaLabel="Let AI use my balance after the included usage runs out" />
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+                {enabled
+                    ? "Once this month's included AI usage is spent, AI keeps working and is paid from money you added."
+                    : "AI stops for the rest of the month once the included usage is spent. Money you added is kept for domains, mailboxes and other charges."}
+            </p>
+            <AnimatePresence initial={false}>
+                {enabled && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.18, ease: "easeOut" }}
+                        className="overflow-hidden"
+                    >
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-slate-600">
+                            <label className="inline-flex items-center gap-2">
+                                <Checkbox
+                                    tone="slate"
+                                    checked={limit !== null}
+                                    onChange={(e) => onLimit(e.target.checked ? OVERAGE_LIMIT_DEFAULT : null)}
+                                />
+                                Use at most
+                            </label>
+                            <NumberInput
+                                value={limit ?? OVERAGE_LIMIT_DEFAULT}
+                                onChange={(n) => onLimit(n)}
+                                min={1}
+                                max={50000}
+                                step={5}
+                                disabled={limit === null}
+                                suffix="$ / month"
+                                className="w-36"
+                            />
+                            <span className="text-slate-400">{limit === null ? "No monthly cap" : "of the balance on AI each month"}</span>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }
 

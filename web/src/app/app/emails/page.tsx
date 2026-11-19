@@ -45,13 +45,16 @@ import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
 import { warmupDaysLabel } from "@/lib/warmupSchedule";
 import BulkTagPopover from "@/components/app/emails/BulkTagPopover";
 import BulkSignatureDialog from "@/components/app/emails/BulkSignatureDialog";
+import BulkPhotoButton from "@/components/app/store/BulkPhotoButton";
 import MailboxImportsMenu from "@/components/app/emails/import/MailboxImportsMenu";
 import MailboxSourceChip from "@/components/app/emails/MailboxSourceChip";
+import { PartnerEnablementChip } from "@/components/app/emails/PartnerEnablement";
 import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import SigninMigrationBanner, { SigninRetiringChip } from "@/components/app/emails/migration/SigninMigrationBanner";
 import SigninMigrationDialog from "@/components/app/emails/migration/SigninMigrationDialog";
 import { useSigninMigration } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import { mailboxBrand, mailboxSource } from "@/lib/mailboxSource";
+import { purchaseState } from "@/lib/buy/purchased";
 import type Tag from "@/lib/api/models/app/Tag";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
@@ -79,6 +82,7 @@ import {
     SendIcon,
     Settings2Icon,
     Trash2Icon,
+    CalendarXIcon,
     UnplugIcon,
     XIcon,
     type LucideIcon,
@@ -153,6 +157,12 @@ import type { AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn, labelInk } from "@/lib/utils";
 import { nextSlotLabel } from "@/lib/helper/nextSlot";
+import { AddAccountMenu, BuyMailboxesButton } from "@/components/app/store/BuyEntry";
+import { MailboxesOrdersLink } from "@/components/app/store/StoreLinks";
+import { addMailboxesCopy } from "@/components/app/store/addMailboxesCopy";
+import usePartnerManaged from "@/hooks/usePartnerManaged";
+import useWorkspaceWritable from "@/hooks/useWorkspaceWritable";
+import { useStoreEnabled } from "@/lib/api/hooks/app/store/useStore";
 
 export default function AddressesPage() {
     const p = useUserProfile();
@@ -201,6 +211,8 @@ export default function AddressesPage() {
     const { connected: cloudConnected, rowFor: cloudRowFor, unavailable: cloudUnavailable } = cloud;
     const authConfig = useAuthConfig();
     const authConfigLoading = authConfig.isLoading;
+    const storeOn = useStoreEnabled(canView).enabled;
+    const emptyCopy = addMailboxesCopy({ partner: usePartnerManaged(), storeOn, writable: useWorkspaceWritable().writable });
 
     // One query for the whole surface; each row reads its own advice out of the
     // index rather than asking for it.
@@ -314,14 +326,22 @@ export default function AddressesPage() {
         // "access is revoked at the provider" over a selection containing an
         // Outlook mailbox would be untrue for that one, and Microsoft publishes
         // no way for us to remove a single app.
+        const boxOf = (id: string) => emailsData.emails?.find((e) => e.id === id);
+        // A purchase has no access of ours to revoke: a live one is kept, an ended one was already deleted.
         const providers = new Set(
-            selected.filter((id) => !cloud.rowFor(id)?.managed).map((id) => emailsData.emails?.find((e) => e.id === id)?.provider).filter(Boolean) as string[],
+            selected
+                .filter((id) => !cloud.rowFor(id)?.managed && !boxOf(id)?.purchased)
+                .map((id) => boxOf(id)?.provider)
+                .filter(Boolean) as string[],
         );
         const managedNote = selected.some((id) => cloud.rowFor(id)?.managed)
             ? "Cloud-managed mailboxes stop warmup sending and receiving, but their mailbox, sign-in and history stay on Cloud."
             : "";
+        const purchasedNote = selected.some((id) => { const b = boxOf(id); return !!b && purchaseState(b).kind === "live"; })
+            ? "Mailboxes bought through Warmbly are kept; cancel them under Subscription in their settings instead."
+            : "";
         confirm.show(
-            `Remove ${n} mailbox${n > 1 ? "es" : ""}? This deletes ${n > 1 ? "their" : "its"} imported mail and warmup history on this instance. ${managedNote} ${bulkRevocationNote(providers)} It cannot be undone. Switch ${n > 1 ? "them" : "it"} off instead to just stop sending.`,
+            `Remove ${n} mailbox${n > 1 ? "es" : ""}? This deletes ${n > 1 ? "their" : "its"} imported mail and warmup history on this instance. ${managedNote} ${purchasedNote} ${bulkRevocationNote(providers)} It cannot be undone. Switch ${n > 1 ? "them" : "it"} off instead to just stop sending.`,
             async () => {
                 setRemoving(true);
                 let failed: BulkMailboxResult[];
@@ -342,7 +362,13 @@ export default function AddressesPage() {
                     // mailbox is worth retrying, and "couldn't be removed"
                     // alone does not say so.
                     const reason = failed.length === 1 ? failed[0].message : undefined;
-                    toast.error(reason || `${failed.length} mailbox${failed.length > 1 ? "es" : ""} couldn't be removed`);
+                    const kept = failed.filter((r) => r.code === "purchased_mailbox").length;
+                    toast.error(
+                        reason ||
+                            (kept === failed.length
+                                ? `${kept} purchased mailboxes were kept. Cancel them under Subscription in their settings.`
+                                : `${failed.length} mailbox${failed.length > 1 ? "es" : ""} couldn't be removed`),
+                    );
                 } else toast.success(`Removed ${n} mailbox${n > 1 ? "es" : ""}`);
             },
         );
@@ -596,15 +622,11 @@ export default function AddressesPage() {
                 <TopbarAction variant="ghost" href="/app/emails/domains" icon={<GlobeIcon className="w-3 h-3" />}>
                     <span className="sr-only sm:not-sr-only">Sending domains</span>
                 </TopbarAction>
-                <TopbarAction variant="ghost" onClick={() => setInviteOpen(true)} icon={<Link2Icon className="w-3 h-3" />}>
+                <MailboxesOrdersLink />
+                <TopbarAction writes variant="ghost" onClick={() => setInviteOpen(true)} icon={<Link2Icon className="w-3 h-3" />}>
                     <span className="sr-only sm:not-sr-only">Invite client to connect</span>
                 </TopbarAction>
-                <TopbarAction
-                    onClick={() => p?.setAddEmail(true)}
-                    icon={<PlusIcon className="w-3 h-3" />}
-                >
-                    Add account
-                </TopbarAction>
+                <AddAccountMenu onConnect={() => p?.setAddEmail(true)} />
             </PageTopbar>
 
             <AccountsTrendStrip warmup={warmupToday} filtered={!!query || !!tag} />
@@ -706,14 +728,21 @@ export default function AddressesPage() {
                     cloud.selfHosted || authConfigLoading ? (
                     <EmptyBlock
                         title="No email accounts yet"
-                        body="Connect your first mailbox to start warming up and sending campaigns."
+                        body={emptyCopy.body}
                         cta={
-                            <TopbarAction
-                                onClick={() => p?.setAddEmail(true)}
-                                icon={<PlusIcon className="w-3 h-3" />}
-                            >
-                                Add account
-                            </TopbarAction>
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                                <BuyMailboxesButton size="sm" />
+                                {emptyCopy.connectLabel && (
+                                    <TopbarAction
+                                        writes
+                                        variant={storeOn ? "ghost" : "primary"}
+                                        onClick={() => p?.setAddEmail(true)}
+                                        icon={<PlusIcon className="w-3 h-3" />}
+                                    >
+                                        {emptyCopy.connectLabel}
+                                    </TopbarAction>
+                                )}
+                            </div>
                         }
                     />
                     ) : null
@@ -820,6 +849,7 @@ export default function AddressesPage() {
                             </button>
                         )}
                         <BulkTagPopover ids={selected} />
+                        <BulkPhotoButton ids={selected} />
                         <button
                             type="button"
                             onClick={() => setBulkSignature(true)}
@@ -968,18 +998,23 @@ const MailboxRow = React.memo(function MailboxRow({
     const warmupPending = actions.warmupPending.has(box.id);
     // Switched off by its owner or the platform; a revoked one needs a reconnect instead.
     const switchedOff = box.status === "inactive";
+    // A purchase that ended has no mailbox left to switch back on.
+    const canSwitchOn = switchedOff && purchaseState(box).kind !== "cancelled";
 
     // Disconnecting is unrecoverable and takes the mailbox's stored mail with
     // it, so the prompt says that rather than "are you sure". What happens to
     // the connection differs by provider and the copy has to differ with it:
     // Google accepts a revocation, Microsoft publishes no way for us to remove
     // one app, so promising it for Outlook would be a promise we cannot keep.
+    const purchase = purchaseState(box);
     const askDisconnect = () => {
         if (cloudRemovalPending) return;
         confirm.show(
             cloud?.managed
                 ? `Disconnect ${box.email} from this instance and stop its Cloud warmup sending and receiving? Imported mail and history on this instance are deleted. Its mailbox, sign-in and history stay in your Warmbly Cloud workspace.`
-                : `Disconnect ${box.email}? This deletes its imported mail, warmup history and credentials. ${revocationNote(box.provider)} It cannot be undone. Switch the mailbox off instead to just stop sending.`,
+                : purchase.kind === "cancelled"
+                  ? `Disconnect ${box.email}? Its subscription ended and the mailbox was already deleted; this deletes its imported mail and warmup history here. It cannot be undone.`
+                  : `Disconnect ${box.email}? This deletes its imported mail, warmup history and credentials. ${revocationNote(box.provider)} It cannot be undone. Switch the mailbox off instead to just stop sending.`,
             async () => {
                 try {
                     await actions.remove(box.id);
@@ -1240,6 +1275,16 @@ const MailboxRow = React.memo(function MailboxRow({
                             ) : (
                                 <span className="truncate" title={source.title}>{source.label}</span>
                             )}
+                            <PartnerEnablementChip emailAccountId={box.id} />
+                            {purchase.kind === "cancelled" && (
+                                <span
+                                    title={purchase.on ? `Subscription ended ${purchase.on}` : "Subscription ended"}
+                                    className="inline-flex items-center gap-1 h-[18px] px-1.5 rounded-full border border-slate-200 bg-slate-50 text-slate-600 text-[10.5px] font-medium shrink-0"
+                                >
+                                    <CalendarXIcon className="w-2.5 h-2.5" />
+                                    Cancelled{purchase.on ? ` ${purchase.on}` : ""}
+                                </span>
+                            )}
                             {inCloud && (
                                 <span className={`inline-flex items-center gap-1 shrink-0 ${cloudPaused ? "text-amber-600" : "text-sky-600"}`}>
                                     <span className="text-slate-300">·</span>
@@ -1340,7 +1385,7 @@ const MailboxRow = React.memo(function MailboxRow({
                         </PopoverMenuTrigger>
                         <PopoverMenuContent minWidth={208}>
                             <PopoverMenuLabel>Warmup · {inCloud ? cloudLabel : box.status === "revoked" && !off ? "Needs reconnect" : switchedOff && !off ? "Mailbox off" : active ? "Active" : paused ? "Paused" : "Off"}</PopoverMenuLabel>
-                            {switchedOff && (
+                            {canSwitchOn && (
                                 <>
                                     <PopoverMenuItem onSelect={() => actions.switchOn(box.id, box.email)} icon={<PowerIcon className="w-3 h-3" />}>
                                         Switch the mailbox back on
@@ -1437,7 +1482,7 @@ const MailboxRow = React.memo(function MailboxRow({
                             <PopoverMenuItem onSelect={() => onOpen(box.id, "settings")} icon={<Settings2Icon className="w-3 h-3" />}>
                                 Mailbox settings
                             </PopoverMenuItem>
-                            {switchedOff && (
+                            {canSwitchOn && (
                                 <PopoverMenuItem onSelect={() => actions.switchOn(box.id, box.email)} icon={<PowerIcon className="w-3 h-3" />}>
                                     Switch back on
                                 </PopoverMenuItem>
@@ -1452,9 +1497,16 @@ const MailboxRow = React.memo(function MailboxRow({
                                 used to exist only behind the row checkboxes and the
                                 selection bar, which nobody finds when they want to
                                 delete one thing. */}
-                            <PopoverMenuItem danger disabled={cloudRemovalPending} onSelect={askDisconnect} icon={<Trash2Icon className="w-3 h-3" />}>
-                                Disconnect mailbox
-                            </PopoverMenuItem>
+                            {/* A purchase the workspace still pays for is cancelled in its settings, not disconnected. */}
+                            {purchase.kind === "live" ? (
+                                <PopoverMenuItem danger onSelect={() => onOpen(box.id, "settings")} icon={<CalendarXIcon className="w-3 h-3" />}>
+                                    Cancel subscription…
+                                </PopoverMenuItem>
+                            ) : (
+                                <PopoverMenuItem danger disabled={cloudRemovalPending} onSelect={askDisconnect} icon={<Trash2Icon className="w-3 h-3" />}>
+                                    Disconnect mailbox
+                                </PopoverMenuItem>
+                            )}
                         </PopoverMenuContent>
                     </PopoverMenu>
                 </div>

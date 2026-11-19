@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/command'
 import { useAppStore } from '@/stores'
 import { THEME_OPTIONS } from '@/components/app/theme/themeOptions'
+import usePartnerManaged from '@/hooks/usePartnerManaged'
 
 interface CommandItem {
   icon: React.ComponentType<{ className?: string }>
@@ -41,6 +42,7 @@ export function CommandPalette() {
   const setShortcutsModalOpen = useAppStore((state) => state.setShortcutsModalOpen)
   const theme = useAppStore((state) => state.theme)
   const setTheme = useAppStore((state) => state.setTheme)
+  const managed = usePartnerManaged() !== null
 
   const runCommand = (command: () => void) => {
     setOpen(false)
@@ -60,7 +62,8 @@ export function CommandPalette() {
     { icon: KeyIcon, label: 'API Keys', shortcut: 'g k', onSelect: () => navigate({ to: '/app/api-keys' }) },
     { icon: SettingsIcon, label: 'Settings', shortcut: 'g s', onSelect: () => navigate({ to: '/app/settings' }) },
     { icon: CreditCardIcon, label: 'Billing', onSelect: () => navigate({ to: '/app/settings/billing/{-$tab}', params: { tab: undefined } }) },
-    { icon: WalletIcon, label: 'Add money', onSelect: () => navigate({ to: '/app/settings/billing/{-$tab}', params: { tab: 'balance' } }) },
+    // A managed workspace's reseller bills it; there is nothing to add money to.
+    ...(managed ? [] : [{ icon: WalletIcon, label: 'Add money', onSelect: () => navigate({ to: '/app/settings/billing/{-$tab}', params: { tab: 'balance' } }) }]),
   ]
 
   return (

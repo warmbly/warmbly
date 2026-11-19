@@ -17,6 +17,8 @@ const (
 	// AuthProviderOIDC covers generic single sign-on. Google and Apple keep
 	// their own values, so the security page can name what was actually used.
 	AuthProviderOIDC = "oidc"
+	// AuthProviderPartner is a sign-in a reseller vouched for with a one-time login link.
+	AuthProviderPartner = "partner"
 )
 
 // Token purposes. Every JWT this service signs carries one, and each verifier
@@ -42,6 +44,8 @@ const (
 	PurposeSSOLink = "sso_link"
 	// PurposeInitialPassword lets the holder of an issued initial password choose their own; it opens nothing else.
 	PurposeInitialPassword = "initial_password"
+	// PurposePartnerLogin is a reseller's one-time login link; it opens nothing but its own exchange.
+	PurposePartnerLogin = "partner_login"
 
 	// A session signed in on an agency portal carries these instead of access, refresh and ws, so a release
 	// that does not hold such a session to its agency refuses its tokens rather than serving them unrestricted.

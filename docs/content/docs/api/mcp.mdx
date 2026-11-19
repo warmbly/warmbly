@@ -181,6 +181,14 @@ Six tools give a client the same understanding of the product a person gets from
 | `list_migrations` / `get_migration` | Read migrations, their inventory, progress and follow-up | `IMPORT_TOOLS` |
 | `start_migration` | Start a scanned migration. Imported campaigns are drafts and never launch | `IMPORT_TOOLS` |
 | `cancel_migration` / `link_migration_senders` | Cancel a migration, or link its draft campaigns to senders connected since | `IMPORT_TOOLS` |
+| `get_store_status` / `search_store_domains` | Whether the store is open to the workspace, its prices and balance; search domains with their prices | `READ_STORE` |
+| `list_store_orders` / `get_store_order` | Read store orders and their setup progress | `READ_STORE` |
+| `list_store_domains` / `get_store_domain` / `list_store_mailboxes` | Read purchased and connected domains, their DNS records, and purchased mailboxes | `READ_STORE` |
+| `create_store_quote` | Price domains and mailboxes for 15 minutes. Charges nothing | `MANAGE_STORE` |
+| `add_store_dns_record` / `delete_store_dns_record` | Add or delete a DNS record on a store domain | `MANAGE_STORE` |
+| `place_store_order` | Pay for a quote from the workspace balance. Needs `expected_due_now_micros`, the total that was shown | `MANAGE_STORE` |
+| `renew_store_domain` / `set_store_domain_auto_renew` | Renew a domain now, or turn its auto-renew on or off | `MANAGE_STORE` |
+| `cancel_store_mailbox` / `resume_store_mailbox` | Cancel a purchased mailbox at the end of its paid month, or undo that | `MANAGE_STORE` |
 | `search_web` / `fetch_url` | Search and read public pages | `AI_AGENT` |
 | `load_skill` | Read one of your playbooks | `AI_AGENT` |
 | `search_docs` / `read_doc` | Search and read the Warmbly docs | none beyond MCP access |
@@ -194,6 +202,8 @@ Rate limits apply to MCP calls exactly as they do to the rest of the API (per-ke
 Tools that return a secret (`create_webhook` and `rotate_webhook_secret`) return it to the MCP client that called them, which is the caller asking for it. The in-product assistant never sees these values.
 
 The migration tools also need the member behind the credential to hold the manage contacts permission, and bringing campaigns or mailboxes over needs the matching campaign or mailbox permission. Mailbox passwords a source tool returns are only used when a signed-in member started the migration, so a migration started over MCP asks for every mailbox to be reconnected.
+
+The [store](/guides/buy-mailboxes/) tools appear only when the instance has a store. Every one needs the member behind the credential to hold the manage mailboxes permission, and the five that charge or change what is charged (`place_store_order`, `renew_store_domain`, `set_store_domain_auto_renew`, `cancel_store_mailbox`, `resume_store_mailbox`) also need the manage billing permission, checked on every call; in the dashboard's assistant they also ask for a recent sign-in. Buying spends the workspace balance. When prices moved since the quote, `place_store_order` answers `price_changed` with a fresh quote and charges nothing; show the new total and order that quote once it is confirmed. The in-product assistant always pauses `place_store_order` for your approval. Getting a domain's transfer code and showing a mailbox's sign-in are not tools, because each returns a credential; use the [store routes](/api/endpoints/#domains-and-mailboxes) for those.
 
 ## Agencies
 

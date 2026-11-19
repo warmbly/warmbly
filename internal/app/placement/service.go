@@ -855,7 +855,10 @@ func (s *service) creditContext(ctx context.Context, in CreateInput, sender stri
 
 // creditErr maps a refused charge onto the placement refusals.
 func creditErr(err error) *errx.Error {
+	var refusal *credits.AIRefusal
 	switch {
+	case errors.As(err, &refusal):
+		return placementErr(errx.PaymentRequired, refusal.Code, refusal.Message)
 	case errors.Is(err, credits.ErrInsufficientCredits):
 		return placementErr(errx.PaymentRequired, "insufficient_credits", "The workspace balance is too low for this test.")
 	case errors.Is(err, credits.ErrCapExceeded):

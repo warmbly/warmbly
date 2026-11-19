@@ -552,7 +552,10 @@ func truncate(s string, n int) string {
 }
 
 func creditErr(err error) error {
+	var refusal *credits.AIRefusal
 	switch {
+	case errors.As(err, &refusal):
+		return errx.NewWithIdentifier(errx.PaymentRequired, refusal.Code, refusal.Message)
 	case errors.Is(err, credits.ErrInsufficientCredits):
 		return errx.NewWithIdentifier(errx.PaymentRequired, "insufficient_credits", "The workspace balance is too low. Add money under Billing to keep going.")
 	case errors.Is(err, credits.ErrCapExceeded):

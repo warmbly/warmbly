@@ -37,4 +37,15 @@ export default interface Organization {
     // The agency this workspace is a client of, when it is one. can_leave is
     // false when the workspace's owner also owns the agency.
     agency?: { id: string; name: string; can_leave?: boolean }
+    // The reseller that manages and bills this workspace, when one does (GET /organization/current only).
+    partner?: PartnerManaged
+}
+
+export interface PartnerManaged {
+    // Shown as "Billed through <display_name>".
+    display_name: string
+    // suspended and cancelled leave the workspace read-only with sending and warmup paused.
+    state: "active" | "suspended" | "cancelled"
+    suspended_reason?: "billing" | "admin" | "reseller"
+    deletes_at?: string
 }

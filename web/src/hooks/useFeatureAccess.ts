@@ -28,6 +28,7 @@ import { PERMISSION_BITS, hasPermission } from "@/lib/permissions";
 import {
     WARMUP_PLAN_ID,
     PARTNERSHIP_PLAN_ID,
+    MANAGED_PLAN_ID,
     TEST_PLAN_ID,
     AGENCY_PLAN_TIERS,
     getPlan,
@@ -133,8 +134,12 @@ export default function useFeatureAccess(): FeatureAccess {
     }
 
     const testGrant = sub.data?.managed === true && sub.data.plan?.id === TEST_PLAN_ID;
+    // A reseller's workspace has every feature; what it pays is between the reseller and its customer.
+    const resold = sub.data?.managed === true && sub.data.plan?.id === MANAGED_PLAN_ID;
     const agencyPlan = sub.data?.plan?.id ? AGENCY_PLAN_TIERS[sub.data.plan.id] : undefined;
-    const planId = testGrant
+    const planId = resold
+        ? "enterprise"
+        : testGrant
         ? "business"
         : agencyPlan
         ? agencyPlan.tier
@@ -172,7 +177,7 @@ export default function useFeatureAccess(): FeatureAccess {
         loading: sub.isPending || authConfig.isLoading,
         status,
         plan,
-        planLabel: agencyPlan?.label,
+        planLabel: resold ? "Managed" : agencyPlan?.label,
         managed,
         billing: true,
         paid: isPaid,

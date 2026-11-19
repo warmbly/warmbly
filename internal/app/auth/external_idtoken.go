@@ -135,6 +135,11 @@ func (s *authService) resolveFederated(ctx context.Context, provider, issuer, su
 		}
 	}
 
+	// A reserved internal address is never a sign-in, so no provider's claim to one may link or create an account.
+	if models.InternalAddress(email.Address) {
+		return federatedResolution{}, errx.New(errx.Forbidden, "this address cannot be used to sign in")
+	}
+
 	u, uerr := s.userRepository.GetUserByEmail(ctx, email.Address)
 	if uerr != nil && !errors.Is(uerr, errx.ErrUser) {
 		errs.CaptureException(uerr)

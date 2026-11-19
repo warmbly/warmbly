@@ -25,7 +25,9 @@ const (
 	EventSubscriptionIssue       = "subscription.payment_failed"
 	EventAdminSignIn             = "admin.signed_in"
 	EventAdminAccess             = "admin.access_changed"
-	EventTest                    = "test"
+	// EventStoreUnavailable is GraphKit refusing the instance's partner account (suspended, bad key, empty balance).
+	EventStoreUnavailable = "store.unavailable"
+	EventTest             = "test"
 )
 
 // Severity drives the colour a chat transport renders.
@@ -73,6 +75,12 @@ var Catalog = []EventDef{
 		Label:       "Limit increase requested",
 		Description: "A workspace asked for more capacity than its plan allows.",
 		Severity:    SeverityInfo, SelfHostRelevant: true,
+	},
+	{
+		Key: EventStoreUnavailable, Group: "Operations",
+		Label:       "Domain and mailbox store unavailable",
+		Description: "GraphKit refused this instance's partner account (suspended, key refused or balance too low), so no workspace can buy or renew.",
+		Severity:    SeverityUrgent, SelfHostRelevant: true,
 	},
 	{
 		Key: EventSubscriptionIssue, Group: "Sales",

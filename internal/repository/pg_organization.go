@@ -319,7 +319,7 @@ func (r *organizationRepository) GetMembers(ctx context.Context, orgID uuid.UUID
 		SELECT
 			om.id, om.organization_id, om.user_id, om.role, om.role_id, om.permissions,
 			om.invited_by, om.invited_at, om.accepted_at, om.access_scope,
-			u.id, u.first_name, u.last_name, u.email, u.created_at, u.updated_at
+			u.id, u.first_name, u.last_name, u.email, COALESCE(u.contact_email, ''), u.created_at, u.updated_at
 		FROM organization_members om
 		JOIN users u ON u.id = om.user_id
 		WHERE om.organization_id = $1
@@ -338,13 +338,13 @@ func (r *organizationRepository) GetMembers(ctx context.Context, orgID uuid.UUID
 		err := rows.Scan(
 			&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.RoleID, &m.Permissions,
 			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt, &m.AccessScope,
-			&u.ID, &u.FirstName, &u.LastName, &u.Email, &u.CreatedAt, &u.UpdatedAt,
+			&u.ID, &u.FirstName, &u.LastName, &u.Email, &u.ContactEmail, &u.CreatedAt, &u.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
 		m.User = &u
-		m.Email = u.Email
+		m.Email = u.VisibleEmail()
 		m.Name = strings.TrimSpace(u.FirstName + " " + u.LastName)
 		members = append(members, m)
 	}

@@ -11,6 +11,11 @@ import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { usePoolLinkInstances } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
 import { isWarmupOnlyPlan } from "@/lib/plans";
+import { BuyMailboxesButton } from "@/components/app/store/BuyEntry";
+import { useStoreEnabled } from "@/lib/api/hooks/app/store/useStore";
+import { addMailboxesCopy } from "@/components/app/store/addMailboxesCopy";
+import usePartnerManaged from "@/hooks/usePartnerManaged";
+import useWorkspaceWritable from "@/hooks/useWorkspaceWritable";
 
 const FREE_MAILBOXES = 10;
 
@@ -19,6 +24,10 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
     const access = useFeatureAccess();
     const hosted = authConfig.data?.self_hosted === false;
     const instances = usePoolLinkInstances(hosted);
+    const storeOn = useStoreEnabled(hosted).enabled;
+    const partner = usePartnerManaged();
+    const workspace = useWorkspaceWritable();
+    const copy = addMailboxesCopy({ partner, storeOn, writable: workspace.writable });
     // Both hops are optional: a list endpoint whose rows come back as a nil
     // slice serialises `data` as null, not [], so the inner one throws.
     const linked = instances.data?.data?.length ?? 0;
@@ -27,7 +36,8 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
     if (!hosted || access.loading) return null;
     // The pool plan decides this once it has loaded; the subscription only
     // stands in while it is in flight.
-    const limit = plan ? plan.mailbox_limit : access.paid ? null : FREE_MAILBOXES;
+    // A managed workspace has no free allowance: its reseller pays per enabled mailbox.
+    const limit = partner ? null : plan ? plan.mailbox_limit : access.paid ? null : FREE_MAILBOXES;
     const used = plan?.enrolled ?? mailboxCount;
     // The server counts the whole workspace; the page's list is filtered and paged, so it only stands in for the total.
     const total = plan?.enrolled ?? mailboxCount;
@@ -44,20 +54,29 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-200 overflow-hidden">
                     <div className="px-6 py-7 text-center bg-gradient-to-b from-sky-50/70 to-white">
                         <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-white border border-sky-100 text-sky-700 text-[11px] font-medium">
-                            <CloudIcon className="w-3 h-3" /> {free ? `${allowance} mailboxes free` : "Unlimited mailboxes"}
+                            <CloudIcon className="w-3 h-3" /> {partner ? `Managed by ${partner.display_name}` : free ? `${allowance} mailboxes free` : "Unlimited mailboxes"}
                         </span>
                         <h2 className="mt-3 text-[20px] font-semibold tracking-[-0.02em] text-slate-900">Start warming your mailboxes</h2>
                         <p className="mt-1.5 text-[13px] text-slate-500 max-w-md mx-auto leading-relaxed">
-                            Gmail, Microsoft 365 or any SMTP/IMAP account. Warmup starts on its own in a pool of real mailboxes, replies and spam rescue included.
+                            {partner
+                                ? copy.body
+                                : "Gmail, Microsoft 365 or any SMTP/IMAP account. Warmup starts on its own in a pool of real mailboxes, replies and spam rescue included."}
                         </p>
                         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                            <button
-                                type="button"
-                                onClick={onAdd}
-                                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-medium transition-colors"
-                            >
-                                <PlusIcon className="w-3.5 h-3.5" /> Add account
-                            </button>
+                            <BuyMailboxesButton />
+                            {copy.connectLabel && (
+                                <button
+                                    type="button"
+                                    onClick={onAdd}
+                                    className={
+                                        storeOn
+                                            ? "inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-slate-800 text-[12.5px] font-medium transition-colors"
+                                            : "inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-medium transition-colors"
+                                    }
+                                >
+                                    <PlusIcon className="w-3.5 h-3.5" /> {copy.connectLabel}
+                                </button>
+                            )}
                             {canBuy && (
                                 <Link to="/app/settings/billing/{-$tab}" params={{ tab: undefined }} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 hover:border-slate-300 text-[12.5px] font-medium text-slate-800 transition-colors">
                                     <InboxIcon className="w-3.5 h-3.5 text-sky-600" /> Premium pool on a paid plan

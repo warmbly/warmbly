@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
@@ -113,7 +114,7 @@ func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) 
 			continue
 		}
 		if s.featureGate != nil {
-			canWarmup, xerr := s.featureGate.CanUseWarmup(ctx, *account.OrganizationID)
+			canWarmup, xerr := feature.CanWarmMailbox(ctx, s.featureGate, *account.OrganizationID, account.ID)
 			if !canWarmup {
 				// Only a definite "not entitled" evicts.
 				if s.warmupHealth != nil && xerr == nil {

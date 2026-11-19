@@ -107,6 +107,40 @@ type featureGateService struct {
 	overrides LimitOverrideReader
 	// agencyPool decides the daily cap of an agency's client workspaces. Nil when not wired.
 	agencyPool AgencyPool
+	// purchased keeps the inbox open for a workspace holding mailboxes it bought. Nil when not wired.
+	purchased PurchasedMailboxes
+	// partnerHold stops warmup in a workspace its reseller suspended. Nil when not wired.
+	partnerHold PartnerHold
+}
+
+// PurchasedMailboxes reports a workspace holding mailboxes bought in the store,
+// which it keeps reading and replying from whatever its plan.
+type PurchasedMailboxes interface {
+	HoldsPurchasedMailboxes(ctx context.Context, orgID uuid.UUID) bool
+}
+
+// WirePurchasedMailboxes attaches the store's mailbox check after construction.
+func (s *featureGateService) WirePurchasedMailboxes(p PurchasedMailboxes) { s.purchased = p }
+
+// WithPurchasedMailboxes wires p into a gate built by NewService and returns it.
+func WithPurchasedMailboxes(g FeatureGateService, p PurchasedMailboxes) FeatureGateService {
+	if w, ok := g.(*featureGateService); ok {
+		w.purchased = p
+	}
+	return g
+}
+
+// StoreMailboxes reads PurchasedMailboxes from the store's tables, which exist whether or not the store is on.
+type StoreMailboxes struct {
+	Repo interface {
+		HasLiveMailboxes(ctx context.Context, orgID uuid.UUID) (bool, error)
+	}
+}
+
+// HoldsPurchasedMailboxes reports a workspace with a purchased mailbox it still has; a failed read says no.
+func (m StoreMailboxes) HoldsPurchasedMailboxes(ctx context.Context, orgID uuid.UUID) bool {
+	ok, err := m.Repo.HasLiveMailboxes(ctx, orgID)
+	return err == nil && ok
 }
 
 // AgencyPool is the shared monthly send pool of agency clients. ok false
@@ -188,6 +222,9 @@ func (s *featureGateService) CanSendCampaignEmail(ctx context.Context, orgID uui
 // Free-trial users get warmup access for the 14-day window via the
 // `free` pool; once the trial expires they must upgrade.
 func (s *featureGateService) CanUseWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if held, xerr := s.heldByPartner(ctx, orgID); held {
+		return false, xerr
+	}
 	if s.selfHost {
 		return true, nil
 	}
@@ -215,10 +252,11 @@ func (s *featureGateService) CanUseUnibox(ctx context.Context, orgID uuid.UUID) 
 	if err != nil {
 		return false, errx.New(errx.Internal, "failed to get subscription")
 	}
-	if sub == nil {
-		return false, nil
+	if sub != nil && sub.CanUseUnibox() {
+		return true, nil
 	}
-	return sub.CanUseUnibox(), nil
+	// Mailboxes bought in the store bill on their own: a lapsed plan stops their sending and warmup, not their inbox.
+	return s.purchased != nil && s.purchased.HoldsPurchasedMailboxes(ctx, orgID), nil
 }
 
 // CanAddInbox: paid workspaces are uncapped, free ones get their FreeMailboxLimit.

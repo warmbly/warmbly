@@ -25,11 +25,12 @@ import { errorMessage } from "@/lib/errors/message";
 import { signatureToPlain } from "@/lib/email/signaturePlain";
 import {
     SIGNATURE_PLACEHOLDERS,
-    resolveSignature,
+    fillSignature,
     senderFields,
     unknownPlaceholders,
 } from "@/lib/email/signaturePlaceholders";
 import { cn } from "@/lib/utils";
+import UnknownPlaceholders from "./UnknownPlaceholders";
 
 // Enough to finish a large selection quickly without bursting the API rate limit.
 const CONCURRENCY = 4;
@@ -104,10 +105,7 @@ function Dialog({ mailboxes, onClose }: { mailboxes: Inbox[]; onClose: () => voi
         return () => window.removeEventListener("keydown", onKey);
     }, [requestClose]);
 
-    const resolved = (m: Inbox) => {
-        const h = resolveSignature(html, m, { html: true });
-        return { html: h, plain: plainSync ? signatureToPlain(h) : resolveSignature(plain, m, { html: false }) };
-    };
+    const resolved = (m: Inbox) => fillSignature({ html, plain, plainSync }, m);
 
     // At the caret when the editor has one, otherwise at the end of the signature.
     function insert(token: string) {
@@ -261,16 +259,7 @@ function Dialog({ mailboxes, onClose }: { mailboxes: Inbox[]; onClose: () => voi
                                         These are the same sender fields campaign emails use. Each mailbox gets its own values when you apply,
                                         and stores the finished signature. Contact fields and spintax are not filled in inside a signature.
                                     </p>
-                                    {unknown.length > 0 && (
-                                        <p className="flex items-start gap-1.5 text-[11px] text-amber-700 leading-relaxed">
-                                            <AlertTriangleIcon className="w-3 h-3 mt-0.5 shrink-0" />
-                                            <span>
-                                                {unknown.join(", ")} {unknown.length === 1 ? "is" : "are"} not filled in a signature and{" "}
-                                                {unknown.length === 1 ? "is" : "are"} sent exactly as written. For the mailbox's own name, use{" "}
-                                                <code className="font-mono">{"{{.Sender.FirstName}}"}</code>.
-                                            </span>
-                                        </p>
-                                    )}
+                                    <UnknownPlaceholders unknown={unknown} />
                                 </div>
 
                                 <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 px-3 py-2.5">

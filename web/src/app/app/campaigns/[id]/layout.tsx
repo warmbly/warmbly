@@ -32,6 +32,7 @@ import { CAMPAIGN_DELETED_EVENT, type CampaignDeletedDetail } from "@/lib/realti
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { useAccessRestricted, usePermission } from "@/hooks/usePermission";
+import useWorkspaceWritable from "@/hooks/useWorkspaceWritable";
 
 // `scoped` tabs read only the campaign's own data, so a restricted member sees them.
 const TABS = [
@@ -62,6 +63,7 @@ export default function CampaignLayout() {
     const [launchOpen, setLaunchOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const canSend = usePermission("SEND_CAMPAIGNS");
+    const { writable } = useWorkspaceWritable();
     const restricted = useAccessRestricted();
     const onSteps = pathname.replace(/\/$/, "").endsWith("/steps");
     const { data: steps } = useQuery({ ...sequencesQuery(id), enabled: onSteps });
@@ -73,7 +75,7 @@ export default function CampaignLayout() {
     // the launch dialog once the campaign has loaded, then leaves the URL clean.
     useEffect(() => {
         if (!launchRequested || !loadedStatus) return;
-        if (canSend && canStartCampaign(loadedStatus)) setLaunchOpen(true);
+        if (canSend && writable && canStartCampaign(loadedStatus)) setLaunchOpen(true);
         setSearchParams(
             (prev) => {
                 const next = new URLSearchParams(prev);
@@ -82,7 +84,7 @@ export default function CampaignLayout() {
             },
             { replace: true },
         );
-    }, [launchRequested, loadedStatus, canSend, setSearchParams]);
+    }, [launchRequested, loadedStatus, canSend, writable, setSearchParams]);
 
     // Collaboration: claim this campaign while it's open so teammates see
     // who's already in here (header pill + the org-wide presence stack).

@@ -84,6 +84,13 @@ type Deps struct {
 	Cache     *cache.Cache
 	// Updates is the release and updater state; nil skips the update checks.
 	Updates *updates.Service
+	// Store reports purchases the store cannot reach; nil skips the check.
+	Store StorePurchases
+}
+
+// StorePurchases counts live purchases while GraphKit is not configured.
+type StorePurchases interface {
+	UnreachablePurchases(ctx context.Context) (mailboxes, domains int, err error)
 }
 
 type check struct {
@@ -107,6 +114,7 @@ func New(deps Deps) *Registry {
 	r.checks = append(r.checks, infraChecks()...)
 	r.checks = append(r.checks, fleetChecks()...)
 	r.checks = append(r.checks, updateChecks()...)
+	r.checks = append(r.checks, storeChecks()...)
 	return r
 }
 

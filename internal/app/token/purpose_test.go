@@ -50,6 +50,7 @@ func TestTokenPurposeIsEnforced(t *testing.T) {
 		PurposeTwoFAPending,
 		PurposeSSOLink,
 		PurposeInitialPassword,
+		PurposePartnerLogin,
 	}
 
 	for _, minted := range purposes {

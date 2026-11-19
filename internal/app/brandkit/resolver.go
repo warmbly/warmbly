@@ -106,9 +106,10 @@ type cached struct {
 
 // DBResolver resolves brands from the database, briefly cached per workspace.
 type DBResolver struct {
-	store Store
-	ent   Entitlements
-	now   func() time.Time
+	store  Store
+	groups GroupBrands
+	ent    Entitlements
+	now    func() time.Time
 
 	mu    sync.Mutex
 	cache map[uuid.UUID]cached
@@ -154,6 +155,13 @@ func (r *DBResolver) Resolve(ctx context.Context, orgID uuid.UUID) (Resolution, 
 		}
 	}
 	res := Compose(Default(), workspace, agency, entitled)
+	if r.groups != nil && res.Source == SourceDeployment {
+		group, err := r.groups.GroupBrandForOrganization(ctx, orgID)
+		if err != nil {
+			return fallback, err
+		}
+		res = composeGroup(res, Default(), group)
+	}
 
 	r.mu.Lock()
 	if len(r.cache) >= maxCached {
@@ -182,4 +190,38 @@ func (r *DBResolver) InvalidateAll() {
 	r.mu.Lock()
 	r.cache = map[uuid.UUID]cached{}
 	r.mu.Unlock()
+}
+
+// SourceGroup is a brand a partner set for the group a managed workspace belongs to.
+const SourceGroup Source = "group"
+
+// GroupBrands reads the brand a reseller's group gives each of its workspaces; nil when the workspace has none.
+type GroupBrands interface {
+	GroupBrandForOrganization(ctx context.Context, orgID uuid.UUID) (*models.BrandSettings, error)
+}
+
+// WireGroups adds partner group brands under a workspace's own and its agency's.
+func (r *DBResolver) WireGroups(g GroupBrands) {
+	if r != nil {
+		r.groups = g
+	}
+}
+
+// composeGroup puts a group brand where neither the workspace nor an agency set one; its partner decides "Powered by".
+func composeGroup(res Resolution, deployment Brand, group *models.BrandSettings) Resolution {
+	if res.Source != SourceDeployment || !group.Set() {
+		return res
+	}
+	res.Source, res.FullWhiteLabel = SourceGroup, true
+	res.Brand = Brand{
+		Name:        displayname.Displayable(group.DisplayName),
+		LogoURL:     group.LogoURL,
+		AccentColor: group.AccentColor,
+		WebsiteURL:  group.WebsiteURL,
+		PoweredBy:   deployment.PoweredBy,
+	}
+	if group.HidePoweredBy {
+		res.Brand.PoweredBy = nil
+	}
+	return res
 }

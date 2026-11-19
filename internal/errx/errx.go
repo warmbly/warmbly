@@ -1,6 +1,7 @@
 package errx
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -120,8 +121,16 @@ func Handle(c *gin.Context, err error) {
 	Handle(c, InternalError())
 }
 
+// StatusClientClosedRequest answers a request whose caller hung up first.
+const StatusClientClosedRequest = 499
+
 // JSON sends a business error as JSON response.
 func JSON(c *gin.Context, err *Error) {
+	// A query cut short because the caller went away is the caller's doing, not a server error.
+	if err.Code == Internal && c.Request != nil && errors.Is(c.Request.Context().Err(), context.Canceled) {
+		c.AbortWithStatus(StatusClientClosedRequest)
+		return
+	}
 	httpCode, httpError := err.resolve()
 	if err.RetryAfter > 0 {
 		c.Header("Retry-After", strconv.Itoa(err.RetryAfter))

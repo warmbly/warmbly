@@ -543,6 +543,9 @@ func main() {
 
 	cloudLinkC := cloudlink.NewService(repository.NewCloudLinkRepository(primaryDB.Pool, credEncrypter, primaryDB.ConnectSession), emailRepo, nil)
 
+	// Mailboxes bought in the store keep their inbox when the plan lapses.
+	uniboxAccess := feature.WithPurchasedMailboxes(feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
+		feature.StoreMailboxes{Repo: repository.NewStoreRepository(primaryDB)})
 	jobsService := &jobs.JobsService{
 		CampaignIsolationEnabled:    config.CampaignSendIsolationEnabled(),
 		DBConns:                     primaryDB.Pool.Config().MaxConns,
@@ -579,7 +582,7 @@ func main() {
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,
 		Notifier:                    notificationService,
-		UniboxAccess:                feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
+		UniboxAccess:                uniboxAccess,
 		OpsNotifier:                 opsNotifierC,
 		TaskRepo:                    taskRepo,
 		CampaignRepo:                campaignRepo,

@@ -18,6 +18,7 @@ import {
     Loader2Icon,
     PaletteIcon,
     PlusIcon,
+    ShoppingBagIcon,
     UsersIcon,
     XIcon,
     type LucideIcon,
@@ -27,6 +28,7 @@ import { AddClientDialog } from "@/components/app/agency/AddClientDialog";
 import { ClientAvatar } from "@/components/app/agency/home/AgencyHome";
 import { useAgencyClients } from "@/lib/api/hooks/app/agency/useAgency";
 import { useAgencyOverview, useOpenClient } from "@/lib/api/hooks/app/agency/useAgencyHome";
+import { useAgencyStoreEnabled } from "@/lib/api/hooks/app/agency/useAgencyStore";
 import type { Agency } from "@/lib/api/models/app/agency/Agency";
 import type { AgencyClientAccess } from "@/lib/api/models/app/agency/AgencyHome";
 import { useAppStore } from "@/stores";
@@ -37,6 +39,7 @@ type ItemPath =
     | "/app/agency"
     | "/app/agency/clients"
     | "/app/agency/mailboxes"
+    | "/app/agency/store"
     | "/app/agency/inbox"
     | "/app/agency/usage"
     | "/app/agency/billing"
@@ -45,10 +48,11 @@ type ItemPath =
     | "/app/agency/api-keys"
     | "/app/agency/migrate";
 
-const ITEMS: { to: ItemPath; label: string; icon: LucideIcon; exact?: boolean; badge?: "replies" }[] = [
+const ITEMS: { to: ItemPath; label: string; icon: LucideIcon; exact?: boolean; badge?: "replies"; store?: true }[] = [
     { to: "/app/agency", label: "Overview", icon: LayoutDashboardIcon, exact: true },
     { to: "/app/agency/clients", label: "Clients", icon: Building2Icon },
     { to: "/app/agency/mailboxes", label: "Mailboxes", icon: MailIcon },
+    { to: "/app/agency/store", label: "Domains & mailboxes", icon: ShoppingBagIcon, store: true },
     { to: "/app/agency/inbox", label: "Inbox", icon: InboxIcon, badge: "replies" },
     { to: "/app/agency/usage", label: "Usage", icon: GaugeIcon },
     { to: "/app/agency/billing", label: "Billing", icon: CreditCardIcon },
@@ -79,6 +83,9 @@ export function AgencyNav({ agency, open, onClose }: { agency: Agency; open: boo
     const reduceMotion = useReducedMotion();
     const [adding, setAdding] = React.useState(false);
     const canManage = agency.role === "owner" || agency.role === "admin";
+    // Purchased infrastructure shows only while the instance sells it.
+    const storeOn = useAgencyStoreEnabled(agency.id);
+    const items = ITEMS.filter((i) => !i.store || storeOn);
 
     const entries = React.useMemo<ClientEntry[]>(() => {
         if (overview) {
@@ -134,7 +141,7 @@ export function AgencyNav({ agency, open, onClose }: { agency: Agency; open: boo
 
                 <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2">
                     <div className="space-y-px">
-                        {ITEMS.map((item) => {
+                        {items.map((item) => {
                             const active = item.exact ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + "/");
                             const Icon = item.icon;
                             return (

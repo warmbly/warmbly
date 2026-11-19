@@ -193,7 +193,8 @@ func buildReplyPrompt(history, contactCtx, instruction string) string {
 func mapCreditError(c *gin.Context, err error) {
 	switch {
 	case isInsufficientCredits(err):
-		paymentRequiredJSON(c, "The workspace balance is too low. Add funds to keep using AI features.")
+		code, msg := credits.PaymentRefusal(err)
+		paymentRequiredJSON(c, code, msg)
 	case isCapExceeded(err):
 		errx.JSON(c, errx.New(errx.TooManyRequests, "AI usage limit reached, please try again later."))
 	default:

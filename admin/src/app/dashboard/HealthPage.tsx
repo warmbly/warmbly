@@ -1,16 +1,17 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { Activity, ListChecks } from "lucide-react";
+import { Activity, ListChecks, Plug } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PageTabs } from "@/components/layout/PageTabs";
 import { Button } from "@/components/ui/button";
 import { useInstanceHealth } from "@/hooks/useInstanceHealth";
 import { FindingsTab } from "./health/FindingsTab";
 import { ServicesTab } from "./health/ServicesTab";
+import { IntegrationsTab } from "./health/IntegrationsTab";
 import { InstanceMonitoringPanel } from "./InstanceMonitoringPanel";
 import { useAdminPerm } from "@/hooks/useAdminPerm";
 import { AdminPerm } from "@/lib/auth/permissions";
 
-const TAB_IDS = ["findings", "services", "operations"] as const;
+const TAB_IDS = ["findings", "services", "operations", "integrations"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 function isTabId(v: string | null): v is TabId {
@@ -21,7 +22,8 @@ export default function HealthPage() {
     const canConfigure = useAdminPerm(AdminPerm.ManageSettings);
     const [params, setParams] = useSearchParams();
     const raw = params.get("tab");
-    const tab: TabId = isTabId(raw) ? raw : "findings";
+    // Integrations hold write-only credentials, so the tab exists only for manage-settings.
+    const tab: TabId = isTabId(raw) && (raw !== "integrations" || canConfigure) ? raw : "findings";
 
     // The findings count comes from the shared cache the sidebar badge reads,
     // so the tab badge and the nav badge never disagree.
@@ -61,12 +63,21 @@ export default function HealthPage() {
                     },
                     { id: "services", label: "Services", icon: Activity },
                     { id: "operations", label: "Operations", icon: Activity },
+                    ...(canConfigure ? [{ id: "integrations", label: "Integrations", icon: Plug }] : []),
                 ]}
                 value={tab}
                 onChange={setTab}
             />
 
-            {tab === "findings" ? <FindingsTab /> : tab === "services" ? <ServicesTab /> : <InstanceMonitoringPanel />}
+            {tab === "findings" ? (
+                <FindingsTab />
+            ) : tab === "services" ? (
+                <ServicesTab />
+            ) : tab === "integrations" ? (
+                <IntegrationsTab />
+            ) : (
+                <InstanceMonitoringPanel />
+            )}
         </div>
     );
 }

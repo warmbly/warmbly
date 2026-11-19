@@ -242,6 +242,7 @@ Run `warmbly <command> --help` for the flags, and `warmbly <command> <subcommand
 | `contact` | list, view, create, edit, delete, lookup, timeline, notes, import, export, verify |
 | `mailbox` | list, view, edit, health checks, sync state, send-as addresses, sending behaviour, warmup, hold, send |
 | `inbox` | list, view, threads, read, reply, compose, drafts, scheduled sends, snoozes |
+| `store` | [buy domains and mailboxes](#buying-domains-and-mailboxes): search, status, quote, buy, orders and `order watch`, domains (renew, auto-renew, forwarding, transfer-out, DNS, connect), purchased mailboxes, the registrant |
 | `suppression` | the addresses and domains that get no campaign mail |
 | `segment` | live audiences and their conditions |
 | `template` | reply templates |
@@ -334,6 +335,55 @@ Every other command acts in one client when you name it with `--organization`, o
 warmbly campaign list --organization CLIENT_ID
 WARMBLY_ORGANIZATION=CLIENT_ID warmbly mailbox list
 ```
+
+## Buying domains and mailboxes
+
+`warmbly store` is the [store](/guides/buy-mailboxes/) from the terminal: search for a domain, price a cart, buy it, follow the order, then look after what you bought.
+
+```bash
+warmbly store status
+warmbly store search getacme --tlds com,io
+warmbly store quote --domain getacme.com --mailbox ada@getacme.com --mailbox grace@getacme.com \
+  --provider google --first-name Ada --last-name Lovelace
+warmbly store buy --domain getacme.com --mailbox ada@getacme.com --mailbox grace@getacme.com \
+  --provider google --first-name Ada --last-name Lovelace --forwarding-url https://acme.com
+warmbly store order watch ORDER_ID
+```
+
+A cart is built from flags:
+
+| Flag | What it adds |
+|---|---|
+| `--domain NAME[:YEARS]` | registers a new domain; `--years` sets the term for every domain without its own |
+| `--mailbox ADDRESS[:FIRST:LAST]` | a mailbox, on a domain in the same cart or one the workspace already has |
+| `--provider google\|microsoft` | who hosts the mailboxes; `DOMAIN=PROVIDER` sets it for one domain |
+| `--first-name`, `--last-name` | the name on mailboxes that do not carry their own |
+| `--admin ADDRESS` | the mailbox that administers its domain, at most one per domain |
+
+For full control, pass the `POST /store/quotes` body instead: `--input @cart.json` or `--input -` for stdin, as `{"items": [...]}`.
+
+`store buy` quotes the cart, prints every line, the total due now and what recurs each month and year, then asks before it charges. It pays from the workspace balance first, then the card on file, and the order carries the total you agreed to: if the price moved in between, nothing is charged and the CLI shows the new total and asks again. With no terminal it refuses unless `--yes` is passed, and under `--yes` a price change stops the buy rather than paying a total nobody saw. When the balance does not cover the order and there is no card, it prints the link to add one.
+
+Setting up mailboxes can take a few hours. `store order watch` redraws the order's steps every `--interval` (5 seconds by default) until it completes or fails, and gives up after `--timeout` (one hour by default, `0` for no limit). Ctrl-C stops watching; the order carries on either way.
+
+```bash
+warmbly store domains list
+warmbly store domains renew DOMAIN_ID
+warmbly store domains auto-renew DOMAIN_ID off
+warmbly store domains forwarding DOMAIN_ID https://acme.com
+warmbly store domains dns add DOMAIN_ID --type TXT --name @ --content "v=spf1 include:_spf.google.com ~all"
+warmbly store domains dns delete DOMAIN_ID RECORD_ID
+warmbly store domains connect acme.com --method nameservers
+warmbly store mailboxes list
+warmbly store mailboxes rename MAILBOX_ID --first Ada --last Lovelace
+warmbly store mailboxes cancel MAILBOX_ID
+warmbly store registrant set --first-name Ada --last-name Lovelace --email ada@acme.com \
+  --phone +44.2071234567 --address1 "1 Main St" --city London --postal-code N1 --country GB
+```
+
+Like a send, `domains renew`, `domains transfer-out`, `mailboxes cancel`, `mailboxes resume` and `mailboxes sign-in` ask first and refuse without a terminal unless `--yes` is passed: the first four charge the workspace or change what it is charged, and `sign-in` prints the mailbox's password. Every write takes `--idempotency-key`.
+
+The key needs `READ_STORE` to read and `MANAGE_STORE` to change anything ([permissions](/api/permissions/)). Buying, renewing, turning auto-renew on or off, cancelling or resuming a mailbox, getting a transfer code and saving the registrant also need the member behind the key to hold `manage_billing`, checked on every call.
 
 ## What needs the dashboard
 

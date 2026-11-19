@@ -8,7 +8,8 @@ import {
     useDeleteUserAvatar,
     useUploadUserAvatar,
 } from "@/lib/api/hooks/app/avatar/useUserAvatar";
-import { Row, Section, SectionShell, initials } from "../_components/SectionShell";
+import { userInitials } from "@/lib/userDisplay";
+import { Row, Section, SectionShell } from "../_components/SectionShell";
 import SaveStatus from "../_components/SaveStatus";
 import { useAutosave, type AutosaveStatus } from "@/hooks/useAutosave";
 import { useRegisterUnsaved } from "@/hooks/context/unsaved";
@@ -120,12 +121,17 @@ export default function ProfileSettingsPage() {
                 </div>
                 <Row
                     label="Email"
-                    description="Email changes go through support for now."
+                    description={
+                        user.partner_account
+                            ? "Kept up to date by the service that signs you in."
+                            : "Email changes go through support for now."
+                    }
                     align="start"
                 >
                     <input
                         type="email"
                         value={user.email}
+                        placeholder="Not provided"
                         readOnly
                         className="w-full max-w-[280px] h-7 px-2.5 rounded-md border border-slate-200 bg-slate-50 text-[12.5px] text-slate-500 font-mono"
                     />
@@ -167,7 +173,7 @@ export default function ProfileSettingsPage() {
             >
                 <AvatarUploader
                     current={user.avatar_url}
-                    fallbackInitials={initials(user.email)}
+                    fallbackInitials={userInitials(user)}
                     shape="circle"
                     onUpload={async (blob) => {
                         await uploadAvatar.mutateAsync(blob);

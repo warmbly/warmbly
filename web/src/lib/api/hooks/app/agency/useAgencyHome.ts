@@ -128,6 +128,8 @@ export function useAgencyLive(agencyId: string | undefined) {
         const key = ["agency", agencyId];
         coalescer.add([key], isAgencyView(agencyId, "overview"));
         if (inbox) coalescer.add([key], isAgencyView(agencyId, "inbox"));
+        const store = event.startsWith("STORE_") || (event.includes("AUDIT") && String(payload.entity_type ?? "").startsWith("store_"));
+        if (store) coalescer.add([key], isAgencyView(agencyId, "store"));
     };
 
     useChannelEvent(user?.id ? `user:${user.id}` : "", "*", onEvent, [agencyId]);

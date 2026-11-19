@@ -83,9 +83,12 @@ func (s *emailService) ConnectDelegated(ctx context.Context, userID string, orgI
 	if ref != nil {
 		return s.adoptDelegated(ctx, *orgID, ref, data)
 	}
-	allowance, xerr := s.guardInboxLimit(ctx, orgID)
-	if xerr != nil {
-		return nil, xerr
+	var allowance *models.MailboxAllowance
+	if !data.Purchased {
+		allowance, xerr = s.guardInboxLimit(ctx, orgID)
+		if xerr != nil {
+			return nil, xerr
+		}
 	}
 	data.OrganizationID, data.Allowance = orgID, allowance
 	acc, xerr := s.emailRepository.NewDelegatedAccount(ctx, userID, data)

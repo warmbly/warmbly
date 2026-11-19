@@ -375,6 +375,10 @@ func Run(
 	// of this file stays for non-versioned callers.
 	v1.GET("/invitations/lookup", m.PublicIPRateLimitMiddleware(), h.PreviewInvitation)
 
+	// GraphKit's store webhook: no session; every delivery is verified against
+	// the configured webhook secret (or the previous one) before it is read.
+	v1.POST("/webhooks/graphkit", h.GraphKitWebhook)
+
 	// The branded dashboard on a verified agency portal domain: its brand, and the challenge its sign-in embeds.
 	v1.GET("/auth/portal", m.PublicIPRateLimitMiddleware(), h.PortalInfo)
 	v1.GET("/auth/captcha-frame", m.PublicIPRateLimitMiddleware(), h.CaptchaFrame)
@@ -491,6 +495,8 @@ func Run(
 
 		// A portal whose agency signs clients in on the main address trades its one-time code here.
 		auth.POST("/portal/exchange", h.PortalExchange)
+		// A reseller's one-time login link is spent here for a session in the workspace it names.
+		auth.POST("/partner/exchange", h.PartnerLoginExchange)
 	}
 
 	protectedAuth := auth.Group("")
@@ -515,9 +521,9 @@ func Run(
 		protectedAuth.PUT("/me/product-tour", h.CompleteProductTour)
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
-		protectedAuth.POST("/me/password", m.RateLimitMiddleware(models.RateLimitWrite), h.ChangePassword)
+		protectedAuth.POST("/me/password", h.RefusePartnerBound(), m.RateLimitMiddleware(models.RateLimitWrite), h.ChangePassword)
 		// No Idempotency-Key: a repeat mails another single-use link on the capped reset budget.
-		protectedAuth.POST("/me/password/link", m.RateLimitMiddleware(models.RateLimitWrite), h.SendPasswordLink)
+		protectedAuth.POST("/me/password/link", h.RefusePartnerBound(), m.RateLimitMiddleware(models.RateLimitWrite), h.SendPasswordLink)
 		// Removing a sign-in method changes who can get in. A repeat converges, so it takes no Idempotency-Key.
 		protectedAuth.GET("/me/identities", h.LinkedIdentities)
 		protectedAuth.DELETE("/me/identities/:provider", middleware.RequireFreshAuth(), m.RateLimitMiddleware(models.RateLimitWrite), h.UnlinkIdentity)
@@ -538,8 +544,8 @@ func Run(
 		// 2FA enrollment + management (user-scoped, behind a live session).
 		protectedAuth.GET("/2fa/status", h.TwoFAStatus)
 		// Enrollment needs a fresh proof of identity; allowEnrollment checks it in the handler.
-		protectedAuth.POST("/2fa/enroll/start", h.TwoFAEnrollStart)
-		protectedAuth.POST("/2fa/enroll/confirm", h.TwoFAEnrollConfirm)
+		protectedAuth.POST("/2fa/enroll/start", h.RefusePartnerBound(), h.TwoFAEnrollStart)
+		protectedAuth.POST("/2fa/enroll/confirm", h.RefusePartnerBound(), h.TwoFAEnrollConfirm)
 		protectedAuth.DELETE("/2fa", h.TwoFADisable)
 		// No Idempotency-Key: the proof code is single-use, so a retry is refused rather than rotating twice.
 		protectedAuth.POST("/2fa/recovery-codes", h.TwoFARegenerateRecoveryCodes)
@@ -560,8 +566,8 @@ func Run(
 		// Passkey enrollment + management require an authenticated session.
 		//
 		// Adding or removing a passkey changes who can get in, so it needs a fresh confirmation; listing and renaming do not.
-		protectedAuth.POST("/passkey/register/begin", middleware.RequireFreshAuth(), h.PasskeyRegisterBegin)
-		protectedAuth.POST("/passkey/register/finish", middleware.RequireFreshAuth(), h.PasskeyRegisterFinish)
+		protectedAuth.POST("/passkey/register/begin", h.RefusePartnerBound(), middleware.RequireFreshAuth(), h.PasskeyRegisterBegin)
+		protectedAuth.POST("/passkey/register/finish", h.RefusePartnerBound(), middleware.RequireFreshAuth(), h.PasskeyRegisterFinish)
 		protectedAuth.GET("/passkey/credentials", h.PasskeyListCredentials)
 		protectedAuth.PATCH("/passkey/credentials/:id", h.PasskeyRenameCredential)
 		protectedAuth.DELETE("/passkey/credentials/:id", middleware.RequireFreshAuth(), h.PasskeyDeleteCredential)
@@ -588,7 +594,7 @@ func Run(
 		// long-lived API key (billing, org governance, websocket bootstrap, and
 		// the email onboarding flow that writes user-encrypted secrets).
 		jwtOnly := base.Group("")
-		jwtOnly.Use(m.AuthMiddleware(), m.ResourceScopeGate())
+		jwtOnly.Use(m.AuthMiddleware(), m.ResourceScopeGate(), h.PartnerReadOnlyGate())
 
 		// Warmbly MCP server: exposes the shared tool registry over the MCP
 		// streamable-HTTP transport. Accepts an API key (static header) or an OAuth
@@ -607,12 +613,14 @@ func Run(
 		protected := base.Group("")
 		// ResourceScopeGate holds a restricted member, and every key or app acting
 		// for one, to the routes that filter to their grants.
-		protected.Use(m.CombinedAuthMiddleware(), m.ResourceScopeGate(), m.APIKeyUsageMiddleware(), m.IdempotencyMiddleware(), h.ForgetUniboxOverviewOnWrite)
+		protected.Use(m.CombinedAuthMiddleware(), m.ResourceScopeGate(), h.PartnerReadOnlyGate(), m.APIKeyUsageMiddleware(), m.IdempotencyMiddleware(), h.ForgetUniboxOverviewOnWrite)
 		{
 			emails := protected.Group("/emails")
 			emails.Use(m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"))
 			{
 				emails.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.EmailsSearch)
+				// A managed workspace's per-mailbox enablement, read-only; its partner sets it.
+				emails.GET("/partner", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.WorkspacePartnerMailboxes)
 				emails.GET("/:id", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireEmailAccountParam("id"), h.GetEmail)
 				emails.PATCH("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireEmailAccountParam("id"), h.UpdateEmail)
 				// Bulk tag add/remove across many mailboxes (set semantics,
@@ -745,6 +753,59 @@ func Run(
 				mailboxGrants.DELETE("/:id", middleware.RequireFreshAuth(), h.DeleteMailboxGrant)
 				mailboxGrants.GET("/:id/users", h.ListMailboxGrantUsers)
 				mailboxGrants.POST("/:id/connect", middleware.RequireFreshAuth(), h.RefuseOnPartnership, h.ConnectMailboxGrantUsers)
+			}
+
+			// Domains and mailboxes bought through the instance's GraphKit account, for a
+			// session, an API key or an OAuth app. Reads take READ_STORE; changes take
+			// MANAGE_STORE. Anything that charges or changes what is charged also holds
+			// the member to manage_billing, and a session to a fresh sign-in.
+			// The protected group already applies Idempotency-Key to every write.
+			storeRoutes := protected.Group("/store")
+			storeRoutes.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"))
+			{
+				read := m.RequireAccess(models.PermManageEmails, models.APIPermReadStore)
+				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageStore)
+				billing := m.RequireAccess(models.PermManageBilling, models.APIPermManageStore)
+				storeRoutes.GET("/status", read, h.GetStoreStatus)
+				storeRoutes.GET("/domains/search", read, h.SearchStoreDomains)
+				storeRoutes.PUT("/registrant", manage, billing, h.PutStoreRegistrant)
+				storeRoutes.POST("/quotes", manage, h.CreateStoreQuote)
+				storeRoutes.POST("/orders", manage, billing, middleware.RequireFreshAuth(), h.CreateStoreOrder)
+				storeRoutes.GET("/orders", read, h.ListStoreOrders)
+				storeRoutes.GET("/orders/:id", read, h.GetStoreOrder)
+				storeRoutes.GET("/domains", read, h.ListStoreDomains)
+				storeRoutes.GET("/domains/:id", read, h.GetStoreDomain)
+				// auto_renew is checked for manage_billing and, for a session, a fresh sign-in inside the handler.
+				storeRoutes.PATCH("/domains/:id", manage, h.PatchStoreDomain)
+				storeRoutes.POST("/domains/:id/renew", manage, billing, middleware.RequireFreshAuth(), h.RenewStoreDomain)
+				// Domains registered elsewhere, and DNS records on any store domain. Nothing here is charged.
+				storeRoutes.POST("/domains/connect", manage, h.ConnectStoreDomain)
+				storeRoutes.POST("/domains/:id/connection/check", manage, h.CheckStoreDomainConnection)
+				storeRoutes.POST("/domains/:id/connection/regenerate", manage, h.RegenerateStoreDomainConnection)
+				storeRoutes.DELETE("/domains/:id", manage, h.RemoveStoreDomain)
+				storeRoutes.POST("/domains/:id/dns", manage, h.AddStoreDNSRecord)
+				storeRoutes.PATCH("/domains/:id/dns/:record_id", manage, h.UpdateStoreDNSRecord)
+				storeRoutes.DELETE("/domains/:id/dns/:record_id", manage, h.DeleteStoreDNSRecord)
+				storeRoutes.POST("/domains/:id/dns/check", read, h.CheckStoreDNS)
+				storeRoutes.GET("/mailboxes", read, h.ListStoreMailboxes)
+				storeRoutes.PATCH("/mailboxes/:id", manage, h.PatchStoreMailbox)
+				// Profile photos: uploaded once (or copied from the caller's own), then named by an order line or a mailbox.
+				storeRoutes.POST("/photos", manage, h.UploadStorePhoto)
+				storeRoutes.GET("/photos/:id", read, h.GetStorePhoto)
+				storeRoutes.PUT("/mailboxes/:id/photo", manage, h.SetStoreMailboxPhoto)
+				storeRoutes.DELETE("/mailboxes/:id", manage, billing, middleware.RequireFreshAuth(), h.CancelStoreMailbox)
+				storeRoutes.POST("/mailboxes/:id/resume", manage, billing, middleware.RequireFreshAuth(), h.ResumeStoreMailbox)
+			}
+			// Transfer-out and sign-in answer with a secret shown once, so they take no Idempotency-Key and no copy of
+			// the answer is stored; repeating either returns the same secret again and charges nothing.
+			storeSecrets := base.Group("/store")
+			storeSecrets.Use(m.CombinedAuthMiddleware(), m.ResourceScopeGate(), h.PartnerReadOnlyGate(), m.APIKeyUsageMiddleware(),
+				m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"))
+			{
+				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageStore)
+				storeSecrets.POST("/domains/:id/transfer-out", manage, m.RequireAccess(models.PermManageBilling, models.APIPermManageStore), middleware.RequireFreshAuth(), h.TransferOutStoreDomain)
+				// The admin mailbox's sign-in opens the whole Workspace or tenant, so a session needs a fresh sign-in.
+				storeSecrets.POST("/mailboxes/:id/sign-in", manage, middleware.RequireFreshAuth(), h.StoreMailboxSignIn)
 			}
 
 			// Sending domains: tracking host per domain and the bare-domain redirect.
@@ -1815,6 +1876,8 @@ func Run(
 				// The agency home and the cross-client inbox read each client through the caller's own membership in it.
 				agencyRoutes.GET("/:agencyId/overview", read, h.GetAgencyOverview)
 				agencyRoutes.GET("/:agencyId/mailboxes", read, h.ListAgencyMailboxes)
+				// Purchased domains and mailboxes across the clients whose mailboxes the caller manages.
+				agencyRoutes.GET("/:agencyId/store", middleware.RequireAgencyAccess(models.APIPermAgencyRead|models.APIPermReadStore), h.GetAgencyStore)
 				// Client accounts migrated in from another outreach tool; the service checks staff and each client membership.
 				migrate := middleware.RequireAgencyAccess(models.APIPermAgencyMigrate)
 				agencyRoutes.GET("/:agencyId/migrations/providers", migrate, h.ListToolMigrationProviders)
@@ -2038,7 +2101,7 @@ func Run(
 			}
 
 			subscriptions := jwtOnly.Group("/subscription")
-			subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+			subscriptions.Use(m.RateLimitMiddleware(models.RateLimitWrite), h.PartnerBillingGate())
 			{
 				subscriptions.GET("", h.GetSubscription)
 				subscriptions.GET("/limits", h.GetSubscriptionLimits)
@@ -2073,6 +2136,8 @@ func Run(
 				subscriptions.POST("/balance/top-up", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.TopUpBalance)
 				subscriptions.POST("/balance/checkout", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreateBalanceCheckout)
 				subscriptions.POST("/balance/payment-method", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreatePaymentMethodSetup)
+				subscriptions.POST("/balance/setup-intent", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreateCardSetupIntent)
+				subscriptions.POST("/balance/setup-intent/default", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.AdoptCardSetup)
 				subscriptions.PATCH("/balance/auto-reload", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.UpdateAutoReload)
 				subscriptions.GET("/balance/invoices", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListBalanceInvoices)
 
@@ -2083,6 +2148,9 @@ func Run(
 
 	// Single versioned mount. No unversioned alias.
 	mountPublicAPI(v1)
+	// The reseller API: partner keys only, answering 401 until an operator creates a partner.
+	h.MountPartnerAPI(v1)
+	r.NoRoute(h.NoRoute)
 
 	// Admin routes (requires admin permissions)
 	adminRoutes := r.Group("/admin")
@@ -2137,6 +2205,18 @@ func Run(
 
 		// Organization (Workspace) Management
 		adminRoutes.GET("/agencies", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListAgencies)
+		// Resellers that run managed workspaces through /v1/partner.
+		adminRoutes.GET("/partners", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListPartners)
+		adminRoutes.GET("/partners/:id", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetPartner)
+		adminRoutes.GET("/partners/:id/organizations", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListPartnerOrganizations)
+		adminRoutes.POST("/partners", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminCreatePartner)
+		adminRoutes.PATCH("/partners/:id", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminUpdatePartner)
+		adminRoutes.POST("/partners/:id/webhook-secret", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminRotatePartnerWebhookSecret)
+		adminRoutes.PUT("/partners/:id/callback-key", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminSetPartnerCallbackKey)
+		adminRoutes.POST("/partners/:id/keys", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminCreatePartnerKey)
+		adminRoutes.DELETE("/partners/:id/keys/:keyId", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminRevokePartnerKey)
+		adminRoutes.GET("/partners/:id/statements", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminPartnerStatements)
+		adminRoutes.GET("/partners/:id/statements/:month", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminPartnerStatement)
 		adminRoutes.GET("/agencies/:id", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetAgency)
 		// What an operator sets on an agency: a plan held without Stripe, a pool and AI allowance of its own, and credits.
 		adminRoutes.POST("/agencies", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminCreateAgency)
@@ -2293,6 +2373,31 @@ func Run(
 		adminRoutes.GET("/instance/limits", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminInstanceLimits)
 		adminRoutes.GET("/instance/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetInstanceSettings)
 		adminRoutes.PUT("/instance/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminPutInstanceSettings)
+		// GraphKit's live wholesale prices and this instance's retail, for the store settings preview.
+		adminRoutes.GET("/store/pricing", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminStorePricing)
+		// The GraphKit API key the store runs on, when GRAPHKIT_* does not set one. Secrets are write-only.
+		adminRoutes.GET("/store/connection", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetStoreConnection)
+		adminRoutes.PUT("/store/connection", middleware.RequireAdminPermission(models.AdminPermManageSettings), middleware.RequireFreshAuth(), h.AdminPutStoreConnection)
+		adminRoutes.POST("/store/connection/test", middleware.RequireAdminPermission(models.AdminPermManageSettings), middleware.RequireFreshAuth(), h.AdminTestStoreConnection)
+		adminRoutes.DELETE("/store/connection", middleware.RequireAdminPermission(models.AdminPermManageSettings), middleware.RequireFreshAuth(), h.AdminDeleteStoreConnection)
+		// The Store section: instance-wide purchases and health to read, repairs to run. Every action is audited.
+		adminRoutes.GET("/store/health", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminStoreHealth)
+		adminRoutes.GET("/store/economics", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminStoreEconomics)
+		adminRoutes.GET("/store/orders", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListStoreOrders)
+		adminRoutes.GET("/store/orders/:id", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetStoreOrder)
+		adminRoutes.GET("/store/domains", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListStoreDomains)
+		adminRoutes.GET("/store/mailboxes", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListStoreMailboxes)
+		adminRoutes.GET("/store/workspaces/:orgId", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetStoreWorkspace)
+		adminRoutes.POST("/store/orders/:id/refresh", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRefreshStoreOrder)
+		adminRoutes.POST("/store/orders/:id/place", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminPlaceStoreOrder)
+		adminRoutes.POST("/store/orders/:id/refund", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRefundStoreOrder)
+		adminRoutes.POST("/store/mailboxes/:id/refresh", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRefreshStoreMailbox)
+		adminRoutes.POST("/store/mailboxes/:id/connect", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminConnectStoreMailbox)
+		adminRoutes.POST("/store/mailboxes/:id/cancel", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminCancelStoreMailbox)
+		adminRoutes.POST("/store/mailboxes/:id/resume", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminResumeStoreMailbox)
+		adminRoutes.POST("/store/domains/:id/refresh", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRefreshStoreDomain)
+		adminRoutes.POST("/store/domains/:id/renew", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRenewStoreDomain)
+		adminRoutes.PATCH("/store/domains/:id", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminPatchStoreDomain)
 		// Operator notification channels: the channels themselves are part of
 		// the settings document above; these two are the event catalog the
 		// panel renders and the on-demand delivery probe.

@@ -205,6 +205,22 @@ export interface InstanceSettings {
     // What a workspace's balance is charged for usage: the provider price
     // below plus the markup. Absent on a backend from before the balance.
     usage?: UsageSettings;
+    // Retail prices for domains and mailboxes bought in the dashboard. Absent
+    // on a backend from before the store.
+    store?: StoreSettings;
+}
+
+export interface StoreSettings {
+    /** What a workspace pays per mailbox per month, any provider, in micro-USD. */
+    mailbox_monthly_micros: number;
+    /** Added to the wholesale domain price, as a whole percent. */
+    domain_markup_percent: number;
+    /** Added to every domain price after the percent, in micro-USD. */
+    domain_markup_fixed_micros: number;
+    /** Days before a workspace's billing day its mailbox months are collected, 2 to 10. */
+    mailbox_bill_lead_days?: number;
+    /** The least a store charge puts on a card, topping the balance up, in micro-USD. */
+    min_card_charge_micros?: number;
 }
 
 export interface UsageSettings {

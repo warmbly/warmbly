@@ -38,11 +38,11 @@ type generationWriteRequest struct {
 // paymentRequiredJSON emits the standard error envelope with a 402 status.
 // errx has no PaymentRequired code, so this endpoint writes the 402 directly
 // while keeping the same {error, message, code, request_id} shape.
-func paymentRequiredJSON(c *gin.Context, message string) {
+func paymentRequiredJSON(c *gin.Context, code, message string) {
 	c.JSON(http.StatusPaymentRequired, gin.H{
 		"error":      "Payment Required",
 		"message":    message,
-		"code":       "insufficient_credits",
+		"code":       code,
 		"request_id": c.GetString("request_id"),
 	})
 }

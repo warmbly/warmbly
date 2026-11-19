@@ -29,6 +29,17 @@ vi.mock("@/lib/api/hooks/app/emails/useSendingDomains", () => ({
     useSendingDomains: () => ({ data: { data: domains }, isLoading: false }),
 }));
 vi.mock("@tanstack/react-router", () => ({ Link: ({ children }: { children: ReactNode }) => <a>{children}</a> }));
+vi.mock("@/lib/api/hooks/app/store/useStore", () => ({
+    useStoreState: () => ({ kind: "hidden" }),
+    storeListable: () => false,
+    storeDisconnected: () => null,
+    useStoreDomains: () => ({ data: undefined }),
+}));
+vi.mock("@/hooks/usePartnerManaged", () => ({ default: () => null }));
+vi.mock("@/hooks/useWorkspaceWritable", () => ({
+    default: () => ({ writable: true, reason: undefined }),
+    showWorkspaceReadOnly: () => {},
+}));
 vi.mock("@/components/app/emails/domains/RedirectRescue", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/domains/BulkSetupDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/domains/DomainSelectionBar", () => ({ default: () => null }));

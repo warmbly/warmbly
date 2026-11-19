@@ -41,11 +41,11 @@ func NewDomainGrantRepository(database *db.DB) DomainGrantRepository {
 
 const grantColumns = `g.id, g.organization_id, g.provider, g.tenant, g.admin_email, g.domains, g.status, g.last_error,
 	g.verified_at, g.created_at,
-	(SELECT count(*) FROM email_accounts ea WHERE ea.domain_grant_id = g.id)`
+	(SELECT count(*) FROM email_accounts ea WHERE ea.domain_grant_id = g.id), g.purchased`
 
 func scanGrant(row pgx.Row, g *models.DomainGrant) error {
 	return row.Scan(&g.ID, &g.OrganizationID, &g.Provider, &g.Tenant, &g.AdminEmail, &g.Domains, &g.Status, &g.LastError,
-		&g.VerifiedAt, &g.CreatedAt, &g.Mailboxes)
+		&g.VerifiedAt, &g.CreatedAt, &g.Mailboxes, &g.Purchased)
 }
 
 func (r *domainGrantRepository) Upsert(ctx context.Context, g *models.DomainGrant, createdBy uuid.UUID) error {
@@ -54,13 +54,13 @@ func (r *domainGrantRepository) Upsert(ctx context.Context, g *models.DomainGran
 		lowered = append(lowered, strings.ToLower(strings.TrimSpace(d)))
 	}
 	query := `
-		INSERT INTO mailbox_domain_grants (id, organization_id, provider, tenant, admin_email, domains, status, last_error, verified_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', '', now(), $7)
+		INSERT INTO mailbox_domain_grants (id, organization_id, provider, tenant, admin_email, domains, status, last_error, verified_at, created_by, purchased)
+		VALUES ($1, $2, $3, $4, $5, $6, 'active', '', now(), $7, $8)
 		ON CONFLICT (organization_id, provider, tenant) DO UPDATE
 		SET admin_email = EXCLUDED.admin_email, domains = EXCLUDED.domains, status = 'active', last_error = '',
-		    verified_at = now(), updated_at = now()
+		    verified_at = now(), updated_at = now(), purchased = EXCLUDED.purchased
 		RETURNING id`
-	if err := r.DB.QueryRow(ctx, query, g.ID, g.OrganizationID, g.Provider, g.Tenant, g.AdminEmail, lowered, createdBy).Scan(&g.ID); err != nil {
+	if err := r.DB.QueryRow(ctx, query, g.ID, g.OrganizationID, g.Provider, g.Tenant, g.AdminEmail, lowered, createdBy, g.Purchased).Scan(&g.ID); err != nil {
 		db.CaptureError(err, query, nil, "queryrow")
 		return err
 	}

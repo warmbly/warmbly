@@ -547,7 +547,10 @@ func (r *renderer) emit(ev aiagent.StreamEvent) {
 		}
 	case "error":
 		r.errMsg = ev.Message
-		r.bill = ev.Code == "insufficient_credits" || ev.Code == "usage_cap_exceeded"
+		switch ev.Code {
+		case "insufficient_credits", "usage_cap_exceeded", "ai_allowance_used", "ai_overage_limit_reached":
+			r.bill = true
+		}
 	default:
 		return
 	}

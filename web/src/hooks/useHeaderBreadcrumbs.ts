@@ -3,6 +3,7 @@ import { useMatches, useRouter } from "@tanstack/react-router";
 const labelMap: Record<string, string> = {
     emails: "Accounts",
     domains: "Sending domains",
+    buy: "Buy mailboxes",
     unibox: "Inbox",
     contacts: "Contacts",
     segments: "Segments",

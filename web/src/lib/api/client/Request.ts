@@ -11,6 +11,9 @@ import { announceSessionEnded, endSession } from "@/lib/auth";
 import { isInsufficientBalance, openInsufficientBalance } from "@/lib/insufficientBalance";
 import type Token from "@/lib/api/models/auth/Token";
 import { askForReauth } from "@/lib/reauthPrompt";
+import { queryClient } from "@/lib/queryClient";
+import { currentOrganizationQuery } from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
+import { isPartnerPausedCode, partnerPauseMessage, pausedFromRefusal } from "@/lib/partnerPause";
 
 interface AuthRequestConfig extends AxiosRequestConfig {
     authorization?: boolean
@@ -139,6 +142,13 @@ export async function ensureValidToken(): Promise<Token> {
     }
 }
 
+// explainPartnerPause swaps the API's sentence for the banner's and refetches the workspace, whose cached state may say active.
+function explainPartnerPause(appErr: AppError) {
+    const partner = queryClient.getQueryData(currentOrganizationQuery.queryKey)?.partner;
+    if (partner && appErr.code) appErr.message = partnerPauseMessage(pausedFromRefusal(partner, appErr.code));
+    void queryClient.invalidateQueries({ queryKey: currentOrganizationQuery.queryKey });
+}
+
 export default async function Request<T>(config: AuthRequestConfig): Promise<T> {
     if (config.authorization) {
         const token = await ensureValidToken();
@@ -196,6 +206,9 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
 
         // The balance ran out: one app-wide dialog offers to add money in place.
         if (config.authorization && isInsufficientBalance(appErr)) openInsufficientBalance();
+
+        // A write the reseller's pause refused reads like the banner, and the banner catches up with the server.
+        if (config.authorization && isPartnerPausedCode(appErr?.code)) explainPartnerPause(appErr);
 
         // A denied WRITE action (edit/save/delete) gets one clear, app-wide
         // popup explaining the missing permission (or plan). Reads that 403 are

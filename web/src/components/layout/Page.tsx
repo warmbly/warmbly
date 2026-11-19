@@ -23,6 +23,7 @@ import { Link } from "@tanstack/react-router";
 import { hrefTarget } from "@/lib/routerSearch";
 import { cn } from "@/lib/utils";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import useWorkspaceWritable, { showWorkspaceReadOnly } from "@/hooks/useWorkspaceWritable";
 
 // Internal app paths navigate client-side (router Link, no full reload);
 // external URLs (http..., mailto:, //) stay as a plain anchor.
@@ -88,18 +89,7 @@ export function PageTopbar({
     );
 }
 
-/**
- * Primary topbar action — solid sky pill at 28px tall.
- */
-export function TopbarAction({
-    children,
-    onClick,
-    href,
-    icon,
-    variant = "primary",
-    disabled = false,
-    className,
-}: {
+interface TopbarActionProps {
     children: React.ReactNode;
     onClick?: () => void;
     href?: string;
@@ -107,7 +97,35 @@ export function TopbarAction({
     variant?: "primary" | "ghost";
     disabled?: boolean;
     className?: string;
-}) {
+    /** The action writes to the workspace: held, with the reason, while the workspace takes no writes. */
+    writes?: boolean;
+    /** Set by `writes`: why the action is held. A held action stays focusable and explains itself on click. */
+    heldReason?: string;
+}
+
+/**
+ * Primary topbar action — solid sky pill at 28px tall.
+ */
+export function TopbarAction({ writes, ...props }: TopbarActionProps) {
+    return writes ? <WritingTopbarAction {...props} /> : <TopbarActionView {...props} />;
+}
+
+function WritingTopbarAction(props: Omit<TopbarActionProps, "writes">) {
+    const workspace = useWorkspaceWritable();
+    if (workspace.writable) return <TopbarActionView {...props} />;
+    return <TopbarActionView {...props} href={undefined} heldReason={workspace.reason} onClick={() => showWorkspaceReadOnly(workspace.reason)} />;
+}
+
+function TopbarActionView({
+    children,
+    onClick,
+    href,
+    icon,
+    variant = "primary",
+    disabled = false,
+    className,
+    heldReason,
+}: Omit<TopbarActionProps, "writes">) {
     const cls =
         variant === "primary"
             ? "bg-sky-600 hover:bg-sky-700 text-white"
@@ -137,8 +155,11 @@ export function TopbarAction({
         <button
             onClick={onClick}
             disabled={disabled}
+            aria-disabled={heldReason ? true : undefined}
+            title={heldReason}
             className={cn(
                 "h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed",
+                heldReason && "opacity-60 cursor-not-allowed",
                 cls,
                 className,
             )}

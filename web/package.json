@@ -49,6 +49,7 @@
     "@remixicon/react": "^4.9.0",
     "@sentry/react": "^10.75.0",
     "@simplewebauthn/browser": "^13.3.0",
+    "@stripe/stripe-js": "10.2.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.104.1",
     "@tanstack/react-query-devtools": "^5.104.1",

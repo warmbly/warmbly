@@ -57,6 +57,10 @@ curl -X GET "https://api.warmbly.com/v1/api-keys" \
 
 For mutation retries, include an `Idempotency-Key` header with a unique value per logical operation. Warmbly stores completed mutation responses for 24 hours per organization and key, then replays matching retries instead of performing the operation again. A key belongs to the credential and the exact request that first used it, resource ids included; see [retry safety](/api/endpoints/#retry-safety) for how refusals and server errors are handled.
 
+### Recent confirmation
+
+Some changes ask a dashboard session to have confirmed the account holder in the last five minutes; see [actions that need a recent confirmation](/api/endpoints/#actions-that-need-a-recent-confirmation). An API key or an OAuth access token presents its credential on every call, so it passes that check. It still needs the route's scope, and the member it acts for still needs the matching role permission. For example, a key with `MANAGE_STORE` can [pay for a store order](/api/endpoints/#domains-and-mailboxes), renew a domain or cancel a mailbox without a confirmation step, but only while the member behind it holds `manage_billing`, which is checked on every request.
+
 ## Verifying a credential
 
 To check that a credential is valid and see who it belongs to, call `GET /v1/me`. It works with an API key, an OAuth access token, or a dashboard session, requires no specific permission, and returns the caller's identity:

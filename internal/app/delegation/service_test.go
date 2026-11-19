@@ -32,6 +32,8 @@ type memGrants struct {
 	grants map[uuid.UUID]*models.DomainGrant
 	// awaiting is a domain with imported mailboxes waiting on their grant.
 	awaiting bool
+	// inactive are each grant's mailboxes a failure took out of work.
+	inactive map[uuid.UUID][]uuid.UUID
 }
 
 func (m *memGrants) Upsert(_ context.Context, g *models.DomainGrant, _ uuid.UUID) error {
@@ -94,20 +96,24 @@ func (m *memGrants) ForDomain(_ context.Context, org uuid.UUID, provider, domain
 	return nil, nil
 }
 func (m *memGrants) ListActive(context.Context) ([]models.DomainGrant, error) { return nil, nil }
-func (m *memGrants) InactiveMailboxes(context.Context, uuid.UUID) ([]uuid.UUID, error) {
-	return nil, nil
+func (m *memGrants) InactiveMailboxes(_ context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	return m.inactive[id], nil
 }
 func (m *memGrants) AwaitsGoogleGrant(context.Context, uuid.UUID, string) (bool, error) {
 	return m.awaiting, nil
 }
 
-type fakeMailboxes struct{ connected []models.NewDelegatedAccount }
+type fakeMailboxes struct {
+	connected   []models.NewDelegatedAccount
+	reactivated []uuid.UUID
+}
 
 func (f *fakeMailboxes) ConnectDelegated(_ context.Context, _ string, _ *uuid.UUID, d models.NewDelegatedAccount) (*models.Email, *errx.Error) {
 	f.connected = append(f.connected, d)
 	return &models.Email{ID: uuid.New(), Email: d.Email, Provider: string(d.Provider)}, nil
 }
-func (f *fakeMailboxes) ReactivateDelegated(context.Context, uuid.UUID) (*models.Email, *errx.Error) {
+func (f *fakeMailboxes) ReactivateDelegated(_ context.Context, id uuid.UUID) (*models.Email, *errx.Error) {
+	f.reactivated = append(f.reactivated, id)
 	return nil, nil
 }
 func (f *fakeMailboxes) Update(context.Context, string, string, string, *models.UpdateEmail) (*models.Email, *errx.Error) {
@@ -115,13 +121,17 @@ func (f *fakeMailboxes) Update(context.Context, string, string, string, *models.
 }
 
 type fakeStore struct {
-	delegation *models.DelegatedMailbox
-	refs       map[string]models.EmailRef
-	retiring   []models.MigrationMailbox
+	delegation  *models.DelegatedMailbox
+	delegations map[uuid.UUID]*models.DelegatedMailbox
+	refs        map[string]models.EmailRef
+	retiring    []models.MigrationMailbox
 }
 
 func (f *fakeStore) GetByID(context.Context, uuid.UUID) (*models.Email, *errx.Error) { return nil, nil }
-func (f *fakeStore) GetDelegation(context.Context, uuid.UUID) (*models.DelegatedMailbox, *errx.Error) {
+func (f *fakeStore) GetDelegation(_ context.Context, id uuid.UUID) (*models.DelegatedMailbox, *errx.Error) {
+	if d, ok := f.delegations[id]; ok {
+		return d, nil
+	}
 	return f.delegation, nil
 }
 func (f *fakeStore) FindManyInOrganization(context.Context, uuid.UUID, []string) (map[string]models.EmailRef, *errx.Error) {
