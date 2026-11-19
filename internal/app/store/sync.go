@@ -362,12 +362,21 @@ func (s *Service) PushDelegation(ctx context.Context) error {
 	if d.Empty() {
 		return nil
 	}
-	raw, _ := json.Marshal(d)
-	if err := s.api().PutDelegation(ctx, d, "store:delegation:"+digest(raw)+":"+s.now().Format("2006-01-02")); err != nil {
-		logUpstream("delegation", err)
-		return err
+	err := s.putDelegation(ctx, d)
+	if ge, ok := graphkit.AsError(err); ok && ge.Code == graphkit.CodeInvalidRequest && d.Google != nil && d.Microsoft != nil {
+		// A refused Microsoft identity must not keep Google mailboxes from connecting.
+		logUpstream("delegation.microsoft", err)
+		err = s.putDelegation(ctx, graphkit.Delegation{Google: d.Google})
 	}
-	return nil
+	if err != nil {
+		logUpstream("delegation", err)
+	}
+	return err
+}
+
+func (s *Service) putDelegation(ctx context.Context, d graphkit.Delegation) error {
+	raw, _ := json.Marshal(d)
+	return s.api().PutDelegation(ctx, d, "store:delegation:"+digest(raw)+":"+s.now().Format("2006-01-02"))
 }
 
 // GoogleToken brokers a Google access token for a purchased mailbox through
