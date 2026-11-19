@@ -29,6 +29,9 @@ var (
 	localRe  = regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$`)
 )
 
+// chargeWindow is how long an order's own request may still be charging it.
+const chargeWindow = 2 * time.Minute
+
 // quoteMargin treats a quote this close to expiry as expired, so GraphKit never sees it lapse mid-order.
 const quoteMargin = 30 * time.Second
 
@@ -391,6 +394,10 @@ func (s *Service) charge(ctx context.Context, row *models.StoreOrder, snap quote
 		if prior == nil {
 			owed += l.AmountMicros
 		}
+	}
+	if !created && owed > 0 && s.now().Sub(row.UpdatedAt) < chargeWindow {
+		// The request that started this order may still be charging it.
+		return errx.NewWithIdentifier(errx.Conflict, CodeChargeInProgress, "This order is already being placed. Try again in a minute.")
 	}
 	if err := s.collect(ctx, orgID, owed, row.ChargeKey, describe(snap.Lines, row.CreatedAt), false); err != nil {
 		// A card payment still going through keeps the order, so the retry resumes the same charge.

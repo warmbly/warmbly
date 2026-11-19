@@ -245,17 +245,21 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 	}
 	defer tx.Rollback(ctx)
 
-	if key != "" {
+	replay := func() (*models.CreditTransaction, error) {
+		if key == "" {
+			return nil, nil
+		}
 		existing, err := replayByKey(ctx, tx, key)
+		if err != nil || existing == nil {
+			return nil, err
+		}
+		return existing, tx.Commit(ctx)
+	}
+	if existing, err := replay(); err != nil || existing != nil {
 		if err != nil {
 			return 0, nil, false, err
 		}
-		if existing != nil {
-			if cerr := tx.Commit(ctx); cerr != nil {
-				return 0, nil, false, cerr
-			}
-			return existing.MonthlyAfter + existing.PurchasedAfter, existing, true, nil
-		}
+		return existing.MonthlyAfter + existing.PurchasedAfter, existing, true, nil
 	}
 
 	// The row lock serializes concurrent debits; a missing ledger is an empty one.
@@ -280,6 +284,13 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 		if monthly, purchased, _, err = lockOrgLedger(ctx, tx, orgID, true); err != nil {
 			return 0, nil, false, err
 		}
+	}
+	// A same-key debit that committed while this one waited on the lock replays.
+	if existing, err := replay(); err != nil || existing != nil {
+		if err != nil {
+			return 0, nil, false, err
+		}
+		return existing.MonthlyAfter + existing.PurchasedAfter, existing, true, nil
 	}
 	var agency models.AgencyAILedger
 	var agencyAvail models.Micro

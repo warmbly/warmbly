@@ -237,12 +237,27 @@ func (r *organizationRepository) UpdateAvatar(ctx context.Context, orgID uuid.UU
 var ErrOrganizationCloudLinked = errors.New("disconnect workspace Cloud link before deleting")
 
 func (r *organizationRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, id)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// The row lock holds off new store rows until the delete commits.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM organizations WHERE id = $1 FOR UPDATE`, id); err != nil {
+		return err
+	}
+	if err := storePurchasesEnded(ctx, tx, []uuid.UUID{id}); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, id)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.ConstraintName == "cloud_link_organization_id_fkey" {
 		return ErrOrganizationCloudLinked
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // GetUserOrganizations retrieves all organizations a user is a member of

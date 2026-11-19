@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -139,7 +140,12 @@ func (s *Service) RenewNow(ctx context.Context, orgID, id uuid.UUID) (*Domain, e
 // attempts already refunded, so a retry replays the same charge and a refused
 // attempt is never confused with the next one.
 func renewKey(d *models.StoreDomain) string {
-	return "store:renew:" + d.ID.String() + ":" + strconv.FormatInt(d.ExpiresAt.Unix(), 10) + ":" + strconv.Itoa(d.RenewalFailures)
+	return renewPrefix(d) + strconv.Itoa(d.RenewalFailures)
+}
+
+// renewPrefix is the part of a renewal key naming the expiry it renews from.
+func renewPrefix(d *models.StoreDomain) string {
+	return "store:renew:" + d.ID.String() + ":" + strconv.FormatInt(d.ExpiresAt.Unix(), 10) + ":"
 }
 
 // renew charges the current renewal price and renews from the stored expiry.
@@ -152,19 +158,31 @@ func (s *Service) renew(ctx context.Context, d *models.StoreDomain, manual bool)
 	if d.Source == models.StoreDomainConnected {
 		return nil, registeredElsewhere()
 	}
-	if d.ExpiresAt == nil || (d.Status != graphkit.DomainActive && d.Status != graphkit.DomainExpired) {
-		return nil, errx.NewWithIdentifier(errx.Conflict, CodeDomainNotRenewable, "This domain can't be renewed.")
+	notRenewable := errx.NewWithIdentifier(errx.Conflict, CodeDomainNotRenewable, "This domain can't be renewed.")
+	if d.ExpiresAt == nil {
+		return nil, notRenewable
 	}
 	key := renewKey(d)
-	if d.RenewalChargeKey != nil && *d.RenewalChargeKey != key {
-		// The expiry moved since that charge: the renewal it paid for happened.
-		if err := s.Repo.SetRenewalCharge(ctx, orgID, d.ID, nil); err != nil {
-			return nil, err
+	if d.RenewalChargeKey != nil {
+		if !strings.HasPrefix(*d.RenewalChargeKey, renewPrefix(d)) {
+			// The expiry moved since that charge: the renewal it paid for happened.
+			if err := s.Repo.SetRenewalCharge(ctx, orgID, d.ID, nil); err != nil {
+				return nil, err
+			}
+			d.RenewalChargeKey = nil
+			if !manual {
+				return nil, nil
+			}
+		} else {
+			// A charge in flight is settled under its own key.
+			key = *d.RenewalChargeKey
 		}
-		d.RenewalChargeKey = nil
-		if !manual {
-			return nil, nil
+	}
+	if d.Status != graphkit.DomainActive && d.Status != graphkit.DomainExpired {
+		if d.RenewalChargeKey != nil {
+			s.abandonRenewal(ctx, d, key)
 		}
+		return nil, notRenewable
 	}
 	live, gerr := s.api().GetDomain(ctx, d.GraphKitDomainID)
 	if gerr != nil {
@@ -271,6 +289,23 @@ func (s *Service) chargeRenewal(ctx context.Context, d *models.StoreDomain, pric
 		return refused(err)
 	}
 	return nil
+}
+
+// abandonRenewal settles a charged renewal on a domain that can no longer be
+// renewed: adopted when GraphKit renewed it, refunded otherwise.
+func (s *Service) abandonRenewal(ctx context.Context, d *models.StoreDomain, key string) {
+	live, gerr := s.api().GetDomain(ctx, d.GraphKitDomainID)
+	if gerr != nil {
+		logUpstream("domain.renew.read", gerr)
+		return
+	}
+	if live.ExpiresAt != nil && live.ExpiresAt.After(*d.ExpiresAt) {
+		if err := s.Repo.RecordDomainRenewal(context.WithoutCancel(ctx), d.OrganizationID, d.ID, *live.ExpiresAt); err == nil {
+			_, _ = s.upsertDomain(ctx, d.OrganizationID, nil, live)
+		}
+		return
+	}
+	s.refundRenewal(ctx, d, key, "Domain renewal · "+d.Name+" · 1 year")
 }
 
 // refundRenewal gives back an attempt's charge and moves on to the next attempt's key.

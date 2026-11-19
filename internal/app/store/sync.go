@@ -310,7 +310,7 @@ func (s *Service) recoverStranded(ctx context.Context, row *models.StoreOrder) e
 		if err != nil {
 			return err
 		}
-		if prior != nil {
+		if prior != nil && prior.Refunded < prior.Taken {
 			debited++
 			taken += prior.Taken
 		}
