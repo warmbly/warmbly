@@ -131,6 +131,11 @@ func (r *dangerZoneRepository) CreatePending(ctx context.Context, d *models.Sche
 			return ErrOrganizationCloudLinked
 		}
 	}
+	if d.ResourceType == models.DeletionResourceOrganization {
+		if err := storePurchasesEnded(ctx, tx, []uuid.UUID{d.ResourceID}); err != nil {
+			return err
+		}
+	}
 	if d.ResourceType == models.DeletionResourceUser {
 		owned, err := ownedWorkspaces(ctx, tx, d.ResourceID, false)
 		if err != nil {
@@ -387,6 +392,12 @@ func (r *dangerZoneRepository) HardDeleteOrganization(ctx context.Context, orgID
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM organizations WHERE id = $1 FOR UPDATE`, orgID); err != nil {
+		return nil, err
+	}
+	if err := storePurchasesEnded(ctx, tx, []uuid.UUID{orgID}); err != nil {
+		return nil, err
+	}
 	placements, err := eraseAndDelete(ctx, tx, `a.organization_id = $1`, []any{orgID},
 		deletion{`DELETE FROM organizations WHERE id = $1`, []any{orgID}})
 	if err != nil {
@@ -499,7 +510,30 @@ func ownedWorkspaces(ctx context.Context, tx pgx.Tx, userID uuid.UUID, lock bool
 	return owned, err
 }
 
+// ErrStorePurchasesActive refuses deleting a workspace that still holds store
+// mailboxes, domains or orders that are not cancelled, ended or failed.
+var ErrStorePurchasesActive = errors.New("workspace has active store purchases")
+
+// storePurchasesEnded refuses while any of the workspaces holds a running store purchase.
+func storePurchasesEnded(ctx context.Context, q queryRower, orgs []uuid.UUID) error {
+	var active bool
+	err := q.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM store_mailboxes m WHERE m.organization_id = ANY($1)
+				AND m.status NOT IN ('cancelled', 'cancelling', 'failed') AND m.cancels_at IS NULL)
+			OR EXISTS (SELECT 1 FROM store_domains d WHERE d.organization_id = ANY($1) AND d.source = 'purchased'
+				AND (d.renewal_charge_key IS NOT NULL OR (d.auto_renew AND d.status IN ('registering', 'active'))))
+			OR EXISTS (SELECT 1 FROM store_orders o WHERE o.organization_id = ANY($1) AND o.status IN ('charging', 'processing'))`,
+		orgs).Scan(&active)
+	if err == nil && active {
+		return ErrStorePurchasesActive
+	}
+	return err
+}
+
 func accountDeletable(ctx context.Context, tx pgx.Tx, userID uuid.UUID, owned []uuid.UUID) error {
+	if err := storePurchasesEnded(ctx, tx, owned); err != nil {
+		return err
+	}
 	var shared, billed, agencyBilled bool
 	err := tx.QueryRow(ctx, `
 		SELECT

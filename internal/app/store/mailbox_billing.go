@@ -70,7 +70,7 @@ func (s *Service) ensureAnchor(ctx context.Context, orgID uuid.UUID) (*models.St
 	if acct.BillDay > 0 && acct.NextBillAnchor != nil {
 		return acct, nil
 	}
-	boxes, err := s.Repo.ListMailboxes(ctx, orgID, nil, maxPageLimit*5)
+	boxes, err := s.Repo.OpenMailboxes(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +105,20 @@ func (s *Service) billMailboxes(ctx context.Context) error {
 		return err
 	}
 	var errs []error
+	billed := map[uuid.UUID]bool{}
 	for _, orgID := range orgs {
+		billed[orgID] = true
 		errs = append(errs, s.billOrg(ctx, orgID, false))
+	}
+	// A workspace whose last mailboxes ended still gets back a month they paid for.
+	unsettled, err := s.Repo.OrgsWithUnsettledCancels(ctx, 10_000)
+	if err != nil {
+		return errors.Join(append(errs, err)...)
+	}
+	for _, orgID := range unsettled {
+		if !billed[orgID] {
+			errs = append(errs, s.settleCancels(ctx, orgID))
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -440,14 +452,18 @@ func (s *Service) enforceUnpaid(ctx context.Context, orgID uuid.UUID) error {
 // once that month is paid, while the cancellation can still be undone, and
 // gives back a month collected for a period a cancellation keeps from starting.
 func (s *Service) settleCancels(ctx context.Context, orgID uuid.UUID) error {
-	boxes, err := s.Repo.ListMailboxes(ctx, orgID, nil, maxPageLimit*5)
+	boxes, err := s.Repo.OpenMailboxes(ctx, orgID)
 	if err != nil {
 		return err
 	}
 	for i := range boxes {
 		m := &boxes[i]
 		switch {
-		case m.PendingChargeKey != nil || m.CancelsAt == nil:
+		case m.PendingChargeKey != nil:
+		case m.UnpaidCancel && m.BillingFailures == 0 && endedStatus(m.Status):
+			// The cancellation took effect, so the month paid late never starts.
+			s.refundMonth(ctx, m)
+		case m.CancelsAt == nil:
 		case m.UnpaidCancel && m.BillingFailures == 0 && m.Status == graphkit.MailboxCancelling:
 			s.resumePaid(ctx, m)
 		case !m.UnpaidCancel:

@@ -566,6 +566,9 @@ func (s *organizationService) Delete(ctx context.Context, orgID uuid.UUID) *errx
 		if errors.Is(err, repository.ErrOrganizationCloudLinked) {
 			return errx.NewWithIdentifier(errx.Conflict, "organization_cloud_connected", "Disconnect this workspace from Warmbly Cloud before deleting it.")
 		}
+		if errors.Is(err, repository.ErrStorePurchasesActive) {
+			return errx.NewWithIdentifier(errx.Conflict, "store_purchases_active", "Cancel this workspace's purchased mailboxes and turn off renewal on its purchased domains before deleting it.")
+		}
 		errs.CaptureException(err)
 		return errx.New(errx.Internal, "failed to delete organization")
 	}

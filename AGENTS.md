@@ -43,6 +43,7 @@ Other CI-touching rules:
 - the frontend trees (`admin/`, `web/`, `site/`, `qa/`) each have their own CI jobs; run `pnpm typecheck` in any tree you touched and `pnpm lint` when the rules are non-trivial
 - never push without first re-running the relevant `*build*` / `*typecheck*` / `*lint*` step on the affected tree
 - a `make lint` (or `gofmt -l`) failure is always a real CI failure; do not push hoping it will pass
+- keep CI fast and minimal. A feature's tests run inside the existing jobs; do not add a job, a matrix entry, a step or a named live-test list for it. Touch `.github/` only to fix CI itself
 
 Migrations are numbered against `main`, not against your branch:
 

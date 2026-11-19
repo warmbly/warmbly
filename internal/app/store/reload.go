@@ -75,7 +75,7 @@ func neverConfigured(cfg *models.AISpendSettings) bool {
 
 // monthlyMailboxes is what the workspace's mailboxes cost a month, the size of its next bundle.
 func (s *Service) monthlyMailboxes(ctx context.Context, orgID uuid.UUID) int64 {
-	boxes, err := s.Repo.ListMailboxes(ctx, orgID, nil, maxPageLimit*5)
+	boxes, err := s.Repo.OpenMailboxes(ctx, orgID)
 	if err != nil {
 		return 0
 	}

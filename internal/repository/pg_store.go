@@ -160,6 +160,10 @@ type StoreRepository interface {
 	ClearBillingRetry(ctx context.Context, orgID uuid.UUID) error
 	// OrgsWithLiveMailboxes are the workspaces holding a purchased mailbox that is not cancelled or failed.
 	OrgsWithLiveMailboxes(ctx context.Context, limit int) ([]uuid.UUID, error)
+	// OrgsWithUnsettledCancels are the workspaces holding an ended mailbox whose unpaid cancellation still holds a paid month.
+	OrgsWithUnsettledCancels(ctx context.Context, limit int) ([]uuid.UUID, error)
+	// OpenMailboxes is every mailbox of the workspace not cancelled or failed, plus an ended one still holding an unpaid cancellation, newest first.
+	OpenMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.StoreMailbox, error)
 	HasLiveMailboxes(ctx context.Context, orgID uuid.UUID) (bool, error)
 	// CreatePhoto records an uploaded photo whose bytes are already stored.
 	CreatePhoto(ctx context.Context, p *models.StorePhoto) error
@@ -630,7 +634,9 @@ func (r *storeRepository) ListDomainsByOrder(ctx context.Context, orgID, orderID
 }
 
 func (r *storeRepository) SetDomainAutoRenew(ctx context.Context, orgID, id uuid.UUID, on bool) error {
-	return r.exec(ctx, `UPDATE store_domains SET auto_renew = $3, renewal_failures = CASE WHEN $3 THEN 0 ELSE renewal_failures END,
+	// A renewal in flight keeps its attempt count, which its charge key carries.
+	return r.exec(ctx, `UPDATE store_domains SET auto_renew = $3,
+		renewal_failures = CASE WHEN $3 AND renewal_charge_key IS NULL THEN 0 ELSE renewal_failures END,
 		renewal_attempt_at = CASE WHEN $3 THEN NULL ELSE renewal_attempt_at END, updated_at = now()
 		WHERE organization_id = $1 AND id = $2`, orgID, id, on)
 }
@@ -684,8 +690,8 @@ func (r *storeRepository) SetRenewalCharge(ctx context.Context, orgID, id uuid.U
 
 func (r *storeRepository) DueDomainRenewals(ctx context.Context, horizon, attemptedBefore, noticedBefore, urgent time.Time, limit int) ([]models.StoreDomain, error) {
 	return r.domains(ctx, `SELECT `+storeDomainColumns+` FROM store_domains d
-		WHERE d.status IN ('active', 'expired') AND d.expires_at IS NOT NULL
-		  AND (d.renewal_charge_key IS NOT NULL OR (d.auto_renew AND d.expires_at <= $1
+		WHERE d.expires_at IS NOT NULL
+		  AND (d.renewal_charge_key IS NOT NULL OR (d.status IN ('active', 'expired') AND d.auto_renew AND d.expires_at <= $1
 		    AND (d.renewal_attempt_at IS NULL OR d.renewal_attempt_at < $2)
 		    AND (d.renewal_notice_at <= $3 OR d.expires_at <= $4)))
 		ORDER BY d.expires_at LIMIT $5`, horizon, attemptedBefore, noticedBefore, urgent, limit)
@@ -1009,6 +1015,19 @@ const storeLiveMailbox = `status IN ('provisioning', 'active', 'suspended', 'can
 
 func (r *storeRepository) OrgsWithLiveMailboxes(ctx context.Context, limit int) ([]uuid.UUID, error) {
 	return r.uuids(ctx, `SELECT DISTINCT organization_id FROM store_mailboxes WHERE `+storeLiveMailbox+` LIMIT $1`, limit)
+}
+
+// storeUnsettledCancel is an ended mailbox whose unpaid cancellation is not settled, with nothing left unpaid.
+const storeUnsettledCancel = `(unpaid_cancel AND billing_failures = 0 AND ` + storeEndedMailbox + `)`
+
+func (r *storeRepository) OrgsWithUnsettledCancels(ctx context.Context, limit int) ([]uuid.UUID, error) {
+	return r.uuids(ctx, `SELECT DISTINCT organization_id FROM store_mailboxes WHERE `+storeUnsettledCancel+` LIMIT $1`, limit)
+}
+
+func (r *storeRepository) OpenMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.StoreMailbox, error) {
+	return r.mailboxes(ctx, `SELECT `+storeMailboxColumns+` FROM store_mailboxes
+		WHERE organization_id = $1 AND (NOT `+storeEndedMailbox+` OR `+storeUnsettledCancel+`)
+		ORDER BY created_at DESC, id DESC`, orgID)
 }
 
 func (r *storeRepository) HasLiveMailboxes(ctx context.Context, orgID uuid.UUID) (bool, error) {

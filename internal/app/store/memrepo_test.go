@@ -439,6 +439,12 @@ func (r *memRepo) SetDomainAutoRenew(_ context.Context, orgID, id uuid.UUID, on 
 	defer r.mu.Unlock()
 	if d := r.domain(orgID, id); d != nil {
 		d.AutoRenew = on
+		if on {
+			if d.RenewalChargeKey == nil {
+				d.RenewalFailures = 0
+			}
+			d.RenewalAttemptAt = nil
+		}
 	}
 	return nil
 }
@@ -542,7 +548,7 @@ func (r *memRepo) DueDomainRenewals(_ context.Context, horizon, attemptedBefore,
 		due := d.AutoRenew && !d.ExpiresAt.After(horizon) &&
 			(d.RenewalAttemptAt == nil || d.RenewalAttemptAt.Before(attemptedBefore)) &&
 			((d.RenewalNoticeAt != nil && !d.RenewalNoticeAt.After(noticedBefore)) || !d.ExpiresAt.After(urgent))
-		if (d.Status == "active" || d.Status == "expired") && d.ExpiresAt != nil && (due || d.RenewalChargeKey != nil) {
+		if d.ExpiresAt != nil && ((due && (d.Status == "active" || d.Status == "expired")) || d.RenewalChargeKey != nil) {
 			out = append(out, *r.withCount(d))
 		}
 	}
@@ -646,6 +652,16 @@ func (r *memRepo) GetMailboxByEmail(_ context.Context, orgID uuid.UUID, email st
 	return nil, nil
 }
 
+// newestFirst orders mailboxes as the repository does: created_at, then id, descending.
+func newestFirst(out []models.StoreMailbox) {
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID.String() > out[j].ID.String()
+	})
+}
+
 func (r *memRepo) ListMailboxes(_ context.Context, orgID uuid.UUID, _ *models.StorePage, limit int) ([]models.StoreMailbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -655,7 +671,39 @@ func (r *memRepo) ListMailboxes(_ context.Context, orgID uuid.UUID, _ *models.St
 			out = append(out, *m)
 		}
 	}
+	newestFirst(out)
 	return out[:min(limit, len(out))], nil
+}
+
+func unsettledCancel(m *models.StoreMailbox) bool {
+	return m.UnpaidCancel && m.BillingFailures == 0 && endedMailbox(m)
+}
+
+func (r *memRepo) OpenMailboxes(_ context.Context, orgID uuid.UUID) ([]models.StoreMailbox, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []models.StoreMailbox
+	for _, m := range r.mailboxes {
+		if m.OrganizationID == orgID && (!endedMailbox(m) || unsettledCancel(m)) {
+			out = append(out, *m)
+		}
+	}
+	newestFirst(out)
+	return out, nil
+}
+
+func (r *memRepo) OrgsWithUnsettledCancels(context.Context, int) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	seen := map[uuid.UUID]bool{}
+	out := []uuid.UUID{}
+	for _, m := range r.mailboxes {
+		if unsettledCancel(m) && !seen[m.OrganizationID] {
+			seen[m.OrganizationID] = true
+			out = append(out, m.OrganizationID)
+		}
+	}
+	return out, nil
 }
 
 func (r *memRepo) ListMailboxesByOrder(_ context.Context, orgID, orderID uuid.UUID) ([]models.StoreMailbox, error) {
