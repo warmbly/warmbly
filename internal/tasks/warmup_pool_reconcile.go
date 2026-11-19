@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -118,6 +119,13 @@ func (s *tasksService) ReconcileWarmupPoolMembership(ctx context.Context) (moved
 				}
 				ok = canWarmup
 				entitled[org] = ok
+			}
+			if ok {
+				held, xerr := feature.MailboxWarmupHeld(ctx, s.featureGate, org, m.EmailAccountID)
+				if xerr != nil {
+					continue
+				}
+				ok = !held
 			}
 			if !ok {
 				if xerr := s.warmupHealth.RemoveFromAllPools(ctx, m.EmailAccountID); xerr != nil {

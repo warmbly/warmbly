@@ -807,6 +807,7 @@ export default function ContactsTable({
                             </TopbarAction>
                         )}
                         <TopbarAction
+                            writes
                             variant={canReenrol ? "ghost" : "primary"}
                             icon={<UsersIcon className="w-3 h-3" />}
                             onClick={() => setFromContactsOpen(true)}
@@ -821,6 +822,7 @@ export default function ContactsTable({
                             {linkedSegments.length > 0 || campaignSegments.isError ? "Manage segments" : "Link a segment"}
                         </TopbarAction>
                         <TopbarAction
+                            writes
                             variant="ghost"
                             icon={<UploadIcon className="w-3 h-3" />}
                             onClick={() => setImportOpen(true)}
@@ -831,12 +833,14 @@ export default function ContactsTable({
                 ) : segment ? (
                     <div className="flex flex-wrap items-center justify-center gap-1.5">
                         <TopbarAction
+                            writes
                             icon={<UsersIcon className="w-3 h-3" />}
                             onClick={() => setFromContactsOpen(true)}
                         >
                             Add contacts
                         </TopbarAction>
                         <TopbarAction
+                            writes
                             variant="ghost"
                             icon={<UploadIcon className="w-3 h-3" />}
                             onClick={() => setImportOpen(true)}
@@ -844,6 +848,7 @@ export default function ContactsTable({
                             Import file
                         </TopbarAction>
                         <TopbarAction
+                            writes
                             variant="ghost"
                             icon={<UserPlusIcon className="w-3 h-3" />}
                             onClick={() => setNewOpen(true)}
@@ -853,6 +858,7 @@ export default function ContactsTable({
                     </div>
                 ) : (
                     <TopbarAction
+                        writes
                         icon={<UserPlusIcon className="w-3 h-3" />}
                         onClick={() => setNewOpen(true)}
                     >
@@ -889,6 +895,7 @@ export default function ContactsTable({
                         {(campaignSegments.data?.length ?? 0) > 0 ? ` (${campaignSegments.data?.length})` : ""}
                     </TopbarAction>
                     <TopbarAction
+                        writes
                         variant="ghost"
                         icon={<UsersIcon className="w-3 h-3" />}
                         onClick={() => setFromContactsOpen(true)}
@@ -896,6 +903,7 @@ export default function ContactsTable({
                         From contacts
                     </TopbarAction>
                     <TopbarAction
+                        writes
                         variant="ghost"
                         icon={<UploadIcon className="w-3 h-3" />}
                         onClick={() => setImportOpen(true)}
@@ -926,6 +934,7 @@ export default function ContactsTable({
                         Export
                     </TopbarAction>
                     <TopbarAction
+                        writes
                         icon={<UserPlusIcon className="w-3 h-3" />}
                         onClick={() => setNewOpen(true)}
                     >
@@ -1077,6 +1086,7 @@ export default function ContactsTable({
             >
                 {segment && (
                     <TopbarAction
+                        writes
                         variant="ghost"
                         icon={<UsersIcon className="w-3 h-3" />}
                         onClick={() => setFromContactsOpen(true)}
@@ -1092,6 +1102,7 @@ export default function ContactsTable({
                 />
                 <div className="hidden md:contents">
                     <TopbarAction
+                        writes
                         variant="ghost"
                         icon={<UploadIcon className="w-3 h-3" />}
                         onClick={() => setImportOpen(true)}
@@ -1152,6 +1163,7 @@ export default function ContactsTable({
                     </PopoverMenu>
                 </div>
                 <TopbarAction
+                    writes
                     icon={<UserPlusIcon className="w-3 h-3" />}
                     onClick={() => setNewOpen(true)}
                 >

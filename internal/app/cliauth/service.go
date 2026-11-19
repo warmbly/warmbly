@@ -198,7 +198,7 @@ func (s *service) PollCode(ctx context.Context, deviceCode string) (*models.CLIA
 		res.APIKeyID = &key.ID
 		res.UserID = &key.UserID
 		if u, uerr := s.users.GetUser(ctx, key.UserID); uerr == nil && u != nil {
-			res.UserEmail = u.Email
+			res.UserEmail = u.VisibleEmail()
 			res.UserName = strings.TrimSpace(u.FirstName + " " + u.LastName)
 		}
 	}

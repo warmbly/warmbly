@@ -18,6 +18,8 @@ const STANDING_TITLES: Record<string, string> = {
     account_sending_suspended: "Sending is turned off for your account",
     account_workspace_create_suspended: "You can't create workspaces",
     workspace_sending_suspended: "Sending is paused for this workspace",
+    organization_suspended: "This workspace is paused",
+    organization_cancelled: "This workspace is paused",
 };
 
 export default function PermissionDeniedModal() {

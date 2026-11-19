@@ -30,6 +30,15 @@ type Transport struct {
 
 // NewTransport builds the platform mail sender selected by MAIL_TRANSPORT.
 func NewTransport(ctx context.Context, cfg *config.Config, name, address string) (*Transport, error) {
+	t, err := newTransport(ctx, cfg, name, address)
+	if err != nil {
+		return nil, err
+	}
+	t.EmailNotificationService = skipUndeliverable{t.EmailNotificationService}
+	return t, nil
+}
+
+func newTransport(ctx context.Context, cfg *config.Config, name, address string) (*Transport, error) {
 	kind := config.MailTransport()
 
 	switch kind {
@@ -82,7 +91,11 @@ func (t *Transport) Preflight(ctx context.Context) error {
 	if t.Kind != config.MailTransportSMTP || t.smtp == nil {
 		return nil
 	}
-	svc, ok := t.EmailNotificationService.(*smtpEmailNotificationService)
+	inner := t.EmailNotificationService
+	if w, wrapped := inner.(skipUndeliverable); wrapped {
+		inner = w.EmailNotificationService
+	}
+	svc, ok := inner.(*smtpEmailNotificationService)
 	if !ok {
 		return nil
 	}

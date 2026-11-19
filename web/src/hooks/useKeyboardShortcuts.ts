@@ -14,6 +14,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useAppStore } from '@/stores'
 import { useComposeStore } from '@/hooks/useComposeStore'
 import { checkPermission, isAccessRestricted } from '@/hooks/usePermission'
+import { checkWorkspaceWritable, showWorkspaceReadOnly } from '@/hooks/useWorkspaceWritable'
 import { shortcutAction, type ShortcutActions } from '@/hooks/useShortcutActions'
 
 export type ShortcutGroupId = 'navigation' | 'list' | 'actions' | 'assistant'
@@ -232,6 +233,8 @@ export const globalShortcuts: GlobalShortcut[] = [
     match: plain('n'),
     run: () => {
       if (isAccessRestricted(useAppStore.getState().currentOrganization)) return
+      const workspace = checkWorkspaceWritable()
+      if (!workspace.writable) return showWorkspaceReadOnly(workspace.reason)
       useComposeStore.getState().openCompose()
     },
   },

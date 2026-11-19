@@ -48,3 +48,20 @@ describe("code-confirmation paths", () => {
         }
     });
 });
+
+describe("store order routes", () => {
+    const found = (path: string) => router.getMatchedRoutes(path)[2]?.fullPath;
+
+    it("opens the order history as its own page, beside the buy layout", () => {
+        expect(found("/app/emails/buy/orders")).toBe("/app/emails/buy/orders");
+    });
+
+    it("keeps one order inside the buy layout", () => {
+        expect(found("/app/emails/buy/orders/0b6f2c4e-1111-4222-8333-444455556666")).toBe("/app/emails/buy/orders/$id");
+        expect(found("/app/emails/buy")).toBe("/app/emails/buy/");
+    });
+
+    it("routes the agency's purchased infrastructure", () => {
+        expect(found("/app/agency/store")).toBe("/app/agency/store");
+    });
+});

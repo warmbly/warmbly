@@ -101,11 +101,18 @@ type SavedCardCharge struct {
 	// Legacy marks a credit-pack charge the previous release started; it
 	// settles through its own payment intent and is never resumed.
 	Legacy bool
+	// ChargeKey ties a store charge to the purchase it pays for, so a retry
+	// finds this charge instead of charging the card again. Empty for others.
+	ChargeKey string
+	// Description is the receipt line, for a store charge.
+	Description string
 }
 
 const (
 	SavedCardAutoReload = "auto_reload"
 	SavedCardTopUp      = "top_up"
+	// SavedCardStore pays the part of a store purchase or renewal the balance does not cover.
+	SavedCardStore = "store"
 )
 
 // Auto reload failure codes, stored on the settings row when a reload turns
@@ -149,8 +156,12 @@ type AISpendSettings struct {
 	AutoReloadMonthlyMax  Micro      `json:"-"`
 	AutoReloadFailureCode string     `json:"-"`
 	AutoReloadFailedAt    *time.Time `json:"-"`
-	CreatedAt             time.Time  `json:"-"`
-	UpdatedAt             time.Time  `json:"-"`
+	// AIOverageEnabled lets AI spend money the workspace added once the plan's allowance is used up.
+	AIOverageEnabled bool `json:"-"`
+	// AIOverageMonthlyLimit is the most AI may take from added money per calendar month (UTC); nil is no cap.
+	AIOverageMonthlyLimit *Micro    `json:"-"`
+	CreatedAt             time.Time `json:"-"`
+	UpdatedAt             time.Time `json:"-"`
 }
 
 // CreditUsagePoint is one day of spend for the usage chart.
@@ -185,6 +196,18 @@ type CreditDebit struct {
 	IdempotencyKey string
 	// AgencyAllowance is true where agency plans are billed, so an agency's per-period allowance is in force.
 	AgencyAllowance bool
+	// PurchasedOnly pays from money the workspace added (the purchased pool) and nothing else: never the plan's AI allowance, never agency funding.
+	PurchasedOnly bool
+	// AllowanceOnly leaves the purchased pool out (AI with overage off): the allowance, then agency funding.
+	AllowanceOnly bool
+	// OverageMonthlyLimit caps what AI debits take from the purchased pool per calendar month (UTC); nil is no cap.
+	OverageMonthlyLimit *Micro
+}
+
+// KeyedCharge is a debit already on the ledger under a key, and what its own refund gave back.
+type KeyedCharge struct {
+	Taken    Micro
+	Refunded Micro
 }
 
 // CreditTransaction is one append-only row in the credit audit trail. Amount is

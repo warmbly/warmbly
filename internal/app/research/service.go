@@ -102,7 +102,10 @@ func (s *service) RunResearch(ctx context.Context, inv aitools.Invocation, conta
 	// agent loop).
 	if err := s.credits.Reserve(ctx, inv.OrgID, credits.EstimateResearchRun); err != nil {
 		var xerr *errx.Error
+		var refusal *credits.AIRefusal
 		switch {
+		case errors.As(err, &refusal):
+			return nil, errx.NewWithIdentifier(errx.PaymentRequired, refusal.Code, refusal.Message)
 		case errors.Is(err, credits.ErrInsufficientCredits):
 			return nil, errx.New(errx.PaymentRequired, "the workspace balance is too low for research")
 		case errors.Is(err, credits.ErrCapExceeded):

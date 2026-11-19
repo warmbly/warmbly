@@ -19,6 +19,7 @@ import {
     Network,
     Send,
     SlidersHorizontal,
+    Store,
     Terminal,
     TicketPercent,
     UserCog,
@@ -110,7 +111,13 @@ export const NAV_GROUPS: NavGroup[] = [
                     { to: "/organizations", label: "Organizations", perm: AdminPerm.ViewOrganizations },
                     { to: "/limit-requests", label: "Limit requests", perm: AdminPerm.ViewOrganizations },
                     { to: "/agencies", label: "Agencies", perm: AdminPerm.ViewOrganizations },
+                    { to: "/partners", label: "Partners", perm: AdminPerm.ViewOrganizations },
                 ],
+            },
+            {
+                label: "Store",
+                icon: Store,
+                pages: [{ to: "/store", label: "Store", title: "Domain and mailbox store", perm: AdminPerm.ViewOrganizations }],
             },
             {
                 label: "Growth",

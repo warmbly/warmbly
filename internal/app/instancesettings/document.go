@@ -312,6 +312,7 @@ type Document struct {
 	Notifications  Notifications  `json:"notifications"`
 	MailboxSignin  MailboxSignin  `json:"mailbox_signin"`
 	Usage          Usage          `json:"usage"`
+	Store          StoreRetail    `json:"store"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -331,6 +332,7 @@ func Defaults() Document {
 		Placement:      DefaultPlacement(),
 		MailboxSignin:  MailboxSignin{AutoVendorReconnect: true},
 		Usage:          DefaultUsage(),
+		Store:          DefaultStoreRetail(),
 	}
 }
 
@@ -425,6 +427,7 @@ func (d *Document) Normalize() {
 	d.Placement.Normalize()
 	d.Notifications.Normalize()
 	d.Usage.Normalize()
+	d.Store.Normalize()
 }
 
 // Normalize clamps the grace window. Zero and negative resolve to the compiled
@@ -534,6 +537,13 @@ type Patch struct {
 		Models        *[]ModelPrice       `json:"models"`
 		Units         *map[string]float64 `json:"units"`
 	} `json:"usage"`
+	Store *struct {
+		MailboxMonthlyMicros    *int64 `json:"mailbox_monthly_micros"`
+		DomainMarkupPercent     *int   `json:"domain_markup_percent"`
+		DomainMarkupFixedMicros *int64 `json:"domain_markup_fixed_micros"`
+		MailboxBillLeadDays     *int   `json:"mailbox_bill_lead_days"`
+		MinCardChargeMicros     *int64 `json:"min_card_charge_micros"`
+	} `json:"store"`
 }
 
 // Apply merges a patch onto a document.
@@ -667,6 +677,28 @@ func (p Patch) Apply(doc Document) Document {
 			for k, v := range *p.Usage.Units {
 				doc.Usage.Units[k] = v
 			}
+		}
+	}
+	if p.Store != nil {
+		if v := p.Store.MailboxMonthlyMicros; v != nil {
+			n := *v
+			doc.Store.MailboxMonthlyMicros = &n
+		}
+		if v := p.Store.DomainMarkupPercent; v != nil {
+			n := *v
+			doc.Store.DomainMarkupPercent = &n
+		}
+		if v := p.Store.DomainMarkupFixedMicros; v != nil {
+			n := *v
+			doc.Store.DomainMarkupFixedMicros = &n
+		}
+		if v := p.Store.MailboxBillLeadDays; v != nil {
+			n := *v
+			doc.Store.MailboxBillLeadDays = &n
+		}
+		if v := p.Store.MinCardChargeMicros; v != nil {
+			n := *v
+			doc.Store.MinCardChargeMicros = &n
 		}
 	}
 	return doc

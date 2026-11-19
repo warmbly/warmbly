@@ -38,6 +38,7 @@ import { hrefTarget } from "@/lib/routerSearch";
 import { rememberAgency, useAgencies } from "@/lib/api/hooks/app/agency/useAgency";
 import { AgencyMark } from "@/components/app/agency/AgencyMark";
 import { groupWorkspaces } from "@/lib/agencyView";
+import { userDisplayName } from "@/lib/userDisplay";
 import type Organization from "@/lib/api/models/app/organizations/Organization";
 
 function relativeAge(d: Date | string): string {
@@ -306,7 +307,7 @@ function SelectOrgPageInner() {
                     <div className="px-4 h-10 border-t border-slate-200 bg-slate-50/60 flex items-center gap-2">
                         <span className="text-[11px] text-slate-500 truncate flex-1 min-w-0">
                             Signed in as{" "}
-                            <span className="text-slate-700 font-medium">{user.email}</span>
+                            <span className="text-slate-700 font-medium">{user.email || userDisplayName(user)}</span>
                         </span>
                         <button
                             type="button"

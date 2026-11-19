@@ -183,6 +183,15 @@ warmblyctl admin recovery replay --id <dead-letter-uuid> --server laptop \
 
 Acknowledging risk does not prove the message was not delivered or override server recovery guards. Never replay an uncertain send solely because a CLI diagnostic has no evidence. Webhook lease recovery is separately available as `admin recovery reclaim-webhooks`, with exact confirmation for `POST /admin/webhooks/reclaim`.
 
+### Store diagnostics
+
+The store's admin views have read helpers: `admin store health` (mode, partner balance, last webhook, reconciler and billing loops, stuck orders, failed connects, recent alerts) and `admin store orders`, `admin store domains` and `admin store mailboxes`, which take `--status`, `--q`, `--limit` (at most 100) and `--cursor`. Repairs such as a refund or a retried connect go through `admin api` with `--write` and an exact `--confirm`; an amount refund also needs an `Idempotency-Key`, so run it from the admin panel's Store section.
+
+```bash
+warmblyctl admin store health --server laptop
+warmblyctl admin store orders --server laptop --status open
+```
+
 ### Cataloged admin API requests
 
 ```bash
@@ -678,6 +687,18 @@ The command accepts archive format versions supported by this binary, including 
 The input path must resolve to a regular file before opening, and the opened descriptor must identify the same regular file. Linux, macOS and supported BSD builds use a nonblocking open so descriptor verification also covers a path changed to a FIFO. These checks and the archive fingerprints detect ordinary file changes; they do not create a filesystem snapshot or interrupt a source read already in progress.
 
 This is an inventory observation, not malware certification, import approval or send eligibility. It does not change archives, stored rows, private bytes, MIME metadata, duplication, restore or queued sends. It does not inspect live storage, retained queue messages, orphan objects, other archives or concurrent writes. Any later eligibility transition needs its own compatible migration stage covering old readers, retained messages, portability and rollback.
+
+## partner
+
+Adds and lists the [partners](/development/partners/) that run workspaces through the partner API, which answers nothing until one exists, and issues their keys.
+
+```bash
+docker compose -p warmbly exec backend warmblyctl partner create --slug graphkit --name GraphKit --allowed-hosts app.graphkit.com
+docker compose -p warmbly exec backend warmblyctl partner list
+docker compose -p warmbly exec backend warmblyctl partner key --partner graphkit --mode live
+```
+
+`partner key` prints the key once on standard output and nothing else there, so it can be piped into a secret store. `--display-name` sets what the partner's workspaces show as "Billed through"; it defaults to `--name`. Webhook, token callback and price settings are in the admin panel's **Partners** page.
 
 ## The API commands
 

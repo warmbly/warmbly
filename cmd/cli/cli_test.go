@@ -60,8 +60,16 @@ func TestEverySpecPathMatchesItsArguments(t *testing.T) {
 				t.Errorf("%s %s path %q must be /v1-relative", r.Name, e.Name, e.Path)
 			}
 			placeholders := strings.Count(e.Path, "{")
-			if placeholders != len(e.Args) {
-				t.Errorf("%s %s has %d placeholders and %d arguments", r.Name, e.Name, placeholders, len(e.Args))
+			pathArgs := 0
+			for _, a := range e.Args {
+				if a.Field == "" {
+					pathArgs++
+				} else if a.Toggle && e.Method == http.MethodGet {
+					t.Errorf("%s %s toggles a query parameter", r.Name, e.Name)
+				}
+			}
+			if placeholders != pathArgs {
+				t.Errorf("%s %s has %d placeholders and %d path arguments", r.Name, e.Name, placeholders, pathArgs)
 			}
 			args := make([]string, len(e.Args))
 			for i := range e.Args {

@@ -122,6 +122,12 @@ type SendAdmission struct {
 	HeldSince *time.Time
 	// PauseReason is why RetryAt was set, empty when an earlier release wrote it.
 	PauseReason string
+	// ColdHold is why a managing partner keeps campaigns off the mailbox (ColdHoldPartner*), empty when none.
+	ColdHold string
+	// ColdRoom is what the partner's daily cap leaves today, nil when no partner caps the mailbox.
+	ColdRoom *int
+	// ColdReopensAt is when a capped mailbox's UTC day turns over.
+	ColdReopensAt *time.Time
 }
 
 type SendRecoveryHold struct {
@@ -207,6 +213,9 @@ func (r *taskRepository) GetSendAdmission(ctx context.Context, orgID, mailboxID 
 		return nil, err
 	}
 	a.Allowed = active && current == string(provider) && !a.RecoveryHold && (a.RetryAt == nil || !a.RetryAt.After(now))
+	if err := r.partnerColdHold(ctx, a, orgID, mailboxID, now); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 

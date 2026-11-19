@@ -61,6 +61,10 @@ var remoteAdminHelpers = []remoteAdminHelper{
 	{"health instance", "GET", "/admin/instance/health", ""},
 	{"health monitoring", "GET", "/admin/instance/monitoring", ""},
 	{"health limits", "GET", "/admin/instance/limits", ""},
+	{"store health", "GET", "/admin/store/health", ""},
+	{"store orders", "GET", "/admin/store/orders", ""},
+	{"store domains", "GET", "/admin/store/domains", ""},
+	{"store mailboxes", "GET", "/admin/store/mailboxes", ""},
 }
 
 func remoteAdminUsage() {
@@ -309,7 +313,7 @@ func runRemoteAdminHelper(ctx context.Context, helper remoteAdminHelper, args []
 	query := url.Values{}
 	var limit *int
 	var cursor, q, state, status, level, after, before, mailbox *string
-	if helper.Method == "GET" && (helper.Command == "logs" || helper.Command == "sync list" || helper.Command == "mailbox list" || helper.Command == "sends in-flight" || helper.Command == "recovery dead-letters" || helper.Command == "recovery failures") {
+	if helper.Method == "GET" && (helper.Command == "logs" || helper.Command == "sync list" || helper.Command == "mailbox list" || helper.Command == "sends in-flight" || helper.Command == "recovery dead-letters" || helper.Command == "recovery failures" || storeList(helper.Command)) {
 		limit = fs.Int("limit", 100, "Maximum rows, 1 to 200 (server may apply a lower endpoint cap)")
 	}
 	switch helper.Command {
@@ -328,6 +332,10 @@ func runRemoteAdminHelper(ctx context.Context, helper remoteAdminHelper, args []
 	case "recovery dead-letters":
 		status = fs.String("status", "", "pending, replayed or failed")
 		cursor = fs.String("cursor", "", "Cursor UUID from the preceding page")
+	case "store orders", "store domains", "store mailboxes":
+		status = fs.String("status", "", "Exact status, for example processing, active or failed")
+		q = fs.String("q", "", "Order id, workspace name, domain or address substring")
+		cursor = fs.String("cursor", "", "Cursor from the preceding page")
 	}
 	var write bool
 	var confirm string
@@ -349,6 +357,9 @@ func runRemoteAdminHelper(ctx context.Context, helper remoteAdminHelper, args []
 			return remoteFailure(2, "invalid_id", "This helper requires a nonzero canonical UUID target.")
 		}
 		requestPath = strings.ReplaceAll(requestPath, ":id", id)
+	}
+	if limit != nil && storeList(helper.Command) && *limit > 100 {
+		*limit = 100
 	}
 	if limit != nil {
 		if *limit < 1 || *limit > 200 {
@@ -402,4 +413,9 @@ func runRemoteAdminHelper(ctx context.Context, helper remoteAdminHelper, args []
 		return err
 	}
 	return executeRemoteAdmin(ctx, sel, helper.Method, requestPath, validated, nil, write, confirm, risk)
+}
+
+// storeList is a store list helper; those lists page at most 100 rows.
+func storeList(command string) bool {
+	return command == "store orders" || command == "store domains" || command == "store mailboxes"
 }

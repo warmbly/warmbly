@@ -226,6 +226,24 @@ func TestIdempotencyOutcomeIsRecordedAfterTheClientHangsUp(t *testing.T) {
 	}
 }
 
+func TestIdempotencyAbandonedInternalErrorLeavesTheOutcomeUncertain(t *testing.T) {
+	svc := &fakeIdempotencyService{state: idempotency.StateStarted}
+	ctx, cancel := context.WithCancel(context.Background())
+	r := idempotentRouter(svc, uuid.New(), asUser(uuid.NewString()), func(c *gin.Context) {
+		// The client goes away while the side effect is in flight.
+		cancel()
+		errx.Handle(c, errx.InternalError())
+	})
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/contacts", nil)
+	req.Header.Set(IdempotencyKeyHeader, "idem_123")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if svc.finish != "uncertain" {
+		t.Fatalf("finish = %q status = %d, want uncertain so a retry is not answered with an empty stored reply", svc.finish, svc.status)
+	}
+}
+
 func TestIdempotencyOutcomeFollowsTheResponse(t *testing.T) {
 	cases := []struct {
 		status int
@@ -241,6 +259,7 @@ func TestIdempotencyOutcomeFollowsTheResponse(t *testing.T) {
 		{http.StatusInternalServerError, "uncertain"},
 		{http.StatusBadGateway, "uncertain"},
 		{http.StatusServiceUnavailable, "uncertain"},
+		{errx.StatusClientClosedRequest, "uncertain"},
 	}
 	for _, tc := range cases {
 		svc := &fakeIdempotencyService{state: idempotency.StateStarted}

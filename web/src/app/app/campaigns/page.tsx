@@ -344,6 +344,7 @@ export default function CampaignsPage() {
                             Folders
                         </TopbarAction>
                         <TopbarAction
+                            writes
                             icon={<PlusIcon className="w-3 h-3" />}
                             onClick={() => setNewOpen(true)}
                         >
@@ -502,6 +503,7 @@ export default function CampaignsPage() {
                             cta={
                                 restricted ? undefined : (
                                     <TopbarAction
+                                        writes
                                         icon={<PlusIcon className="w-3 h-3" />}
                                         onClick={() => setNewOpen(true)}
                                     >

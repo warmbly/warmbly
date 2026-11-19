@@ -34,6 +34,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/appattest"
 	"github.com/warmbly/warmbly/internal/app/attachmentdownload"
 	"github.com/warmbly/warmbly/internal/app/unsublink"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -112,6 +113,7 @@ import (
 	orgrisk "github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
 	"github.com/warmbly/warmbly/internal/app/owndomain"
+	"github.com/warmbly/warmbly/internal/app/partner"
 	"github.com/warmbly/warmbly/internal/app/partners"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/pipedrive"
@@ -133,6 +135,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/slackapp"
 	"github.com/warmbly/warmbly/internal/app/socialauth"
 	"github.com/warmbly/warmbly/internal/app/socket"
+	"github.com/warmbly/warmbly/internal/app/store"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
 	"github.com/warmbly/warmbly/internal/app/sysstatus"
@@ -268,12 +271,15 @@ func main() {
 	var aiSettingsRepository repository.AISettingsRepository
 	var creditService credits.CreditService
 	var balanceService *balance.Service
+	var storeService *store.Service
 	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
 	var aiProvider generation.Provider
 	var aiSearch generation.SearchClient
 	var webReader webread.Reader
 	var aiToolRegistry *aitools.Registry
+	// Set once the partner and store services exist; the AI tools read it per call.
+	var aiMailboxLock func(ctx context.Context, orgID, accountID uuid.UUID) *errx.Error
 	var aiAgentService aiagent.Service
 	var slackService *slackapp.Service
 	var researchService research.Service
@@ -398,6 +404,8 @@ func main() {
 	var brandService *brandkit.Service
 	// A portal session is held to its agency's clients; sign-in on the main address hands a portal its session.
 	var portalHandoffService *portalhandoff.Service
+	// partnerService runs the reseller API; it does nothing until an operator creates a partner.
+	var partnerService *partner.Service
 	var portalClients middleware.PortalClients
 	// agencyMembers holds keyed requests on agency routes to the agency's staff.
 	var agencyMembers middleware.AgencyMembers
@@ -934,6 +942,8 @@ func main() {
 		}); ok {
 			g.WireLimitOverrides(organizationRepository)
 		}
+		// Mailboxes bought in the store keep their inbox when the plan lapses.
+		featureGateService = feature.WithPurchasedMailboxes(featureGateService, feature.StoreMailboxes{Repo: repository.NewStoreRepository(primaryDB)})
 		workerAssignmentService = worker.NewAssignmentService(workerRepository, subscriptionRepository, planRepository)
 		subscriptionService = subscription.NewService(subscriptionRepository, planRepository)
 		planOfferService = planoffer.New(repository.NewPlanOfferRepository(primaryDB.Pool), planRepository)
@@ -1810,6 +1820,7 @@ func main() {
 		// never exceed the caller's permissions. Built once here with the same
 		// service instances the HTTP handlers use.
 		aiToolRegistry = aitools.BuildRegistry(aitools.Deps{
+			MailboxLock: &aiMailboxLock,
 			Contacts:    contactService,
 			CRM:         crmService,
 			Campaigns:   campaignService,
@@ -2169,6 +2180,65 @@ func main() {
 		}
 		go delegationService.StartHealth(ctx)
 
+		// The store: domains and mailboxes bought through GraphKit. GRAPHKIT_* wins; otherwise the API key saved in the admin panel turns it on.
+		storeCfg := config.LoadGraphKit()
+		if err := storeCfg.Validate(); err != nil {
+			errs.CaptureFatal(err)
+			log.Fatal("Store: ", err)
+		}
+		storeDeps := store.Deps{
+			Repo: repository.NewStoreRepository(primaryDB), Credits: creditService, Retail: instanceSettings,
+			Billing:   store.StripeBilling{Subs: subscriptionRepository, Customers: stripeService},
+			People:    store.Directory{Users: userRepostory, Orgs: organizationRepository},
+			Delegator: delegationService, Mailboxes: emailService, Publisher: streamingPublisher,
+			// Buying needs a paid plan; the gate answers yes on a self-host.
+			Plans: featureGateService, Ops: opsNotifier,
+			// Mailbox photos are private objects; a new domain forwards to the workspace's brand website by default.
+			Blobs: s3ForHandler, Websites: brandRepository,
+			// Only a self-host shows an unconfigured store as locked; hosted keeps it hidden until the key is added.
+			SelfHosted: config.SelfHosted(),
+		}
+		if balanceService != nil {
+			storeDeps.Cards = balanceService
+		}
+		if notificationService != nil {
+			storeDeps.Notifier = notificationService
+		}
+		storeService = store.New(storeDeps)
+		storeService.WireConnectionSettings(repository.NewStoreConnectionRepository(primaryDB.Pool, credEncrypter), storeCfg)
+		delegationService.WirePurchasedTokens(storeService)
+		// A card saved after a refused store charge pays what is unpaid at once.
+		if cs, ok := stripeService.(interface {
+			WireCardSaved(func(context.Context, uuid.UUID))
+		}); ok {
+			cs.WireCardSaved(func(ctx context.Context, orgID uuid.UUID) {
+				if err := storeService.RetryUnpaid(ctx, orgID); err != nil {
+					log.Printf("Store: retrying unpaid charges after a card update failed: %v", err)
+				}
+			})
+		}
+		storeService.Start(ctx)
+		if storeCfg.Enabled() {
+			if err := storeService.Connect(storeCfg, store.SourceEnvironment); err != nil {
+				errs.CaptureFatal(err)
+				log.Fatal("Store: ", err)
+			}
+			if storeCfg.Fake() {
+				log.Printf("Store: using the in-process GraphKit simulator")
+			}
+		} else if err := storeService.LoadConnection(ctx); err != nil {
+			log.Printf("Store: reading the GraphKit connection saved in the admin panel failed: %v", err)
+		}
+		go storeService.WatchConnection(ctx)
+		aitools.RegisterStoreTools(aiToolRegistry, storeService, auditService)
+		if storeService.Enabled() {
+			log.Printf("Store: on (%s, from the %s)", storeService.Mode(), storeService.Source())
+		} else if live, err := storeService.PurchasesWithoutConnection(ctx, nil); err == nil && live != nil {
+			log.Printf("WARNING Store: GraphKit is not configured, but %d purchased mailboxes and %d domains bought here are still live. "+
+				"Their renewals, monthly billing and Google mailbox connections are paused until GraphKit is configured: set GRAPHKIT_API_KEY "+
+				"or add the API key under Setup and health > Integrations in the admin panel.", live.Mailboxes, live.Domains)
+		}
+
 		// Inbox vendor accounts: keys sealed per workspace, mailboxes imported by API.
 		var sandboxVendors func(string, map[string]string) (mailvendor.Client, error)
 		if u := config.MailvendorSandboxURL(); u != "" {
@@ -2245,6 +2315,8 @@ func main() {
 		if s3ForHandler != nil {
 			mailboxAvatars := mailboxavatar.New(repository.NewMailboxAvatarRepository(primaryDB), s3ForHandler, delegationService, vendorConnService)
 			emailService.WireAvatars(mailboxAvatars)
+			// A purchased mailbox's chosen photo shows in the dashboard as soon as it connects.
+			storeService.WireAvatars(mailboxAvatars)
 			go mailboxAvatars.Start(ctx)
 		}
 		vendorConnService.SetImporter(mailboxImportService)
@@ -2252,7 +2324,13 @@ func main() {
 		vendorConnService.WireSigninSwitch(auditService, func(ctx context.Context) bool {
 			return instanceSettings == nil || instanceSettings.AutoVendorReconnect(ctx)
 		})
-		sendingDomainService.WireVendors(vendorConnService)
+		if storeService != nil {
+			// Store domains are a vendor too: their tracking CNAME and forwarding go through the store's DNS.
+			sendingDomainService.WireVendors(sendingdomain.Vendors{vendorConnService, store.DomainVendor{S: storeService}})
+			storeService.WireSendingDomains(sendingDomainService)
+		} else {
+			sendingDomainService.WireVendors(vendorConnService)
+		}
 		go vendorConnService.StartReconnect(ctx)
 		go mailboxImportService.Start(ctx)
 		tasksService.SetAISearch(aiSearch)
@@ -2423,6 +2501,56 @@ func main() {
 			dangerZoneBilling(stripeService),
 		)
 		dangerZoneJob := jobs.NewDangerZoneJob(dangerZoneService)
+
+		// Resellers: managed workspaces, their people and their events.
+		partnerDeps := partner.Deps{
+			Repo: repository.NewPartnerRepository(primaryDB.Pool), Orgs: organizationRepository, Counts: organizationService,
+			Balances: creditRepository, APIKeys: apiKeyService, Sessions: tokenService, Bans: userRepostory,
+			Deletions: dangerZoneService, Audit: auditService, Codes: portalhandoff.RedisStore{Cache: cache}, Cache: cache,
+			Seeders: []func(context.Context, uuid.UUID){inboxtag.SeedLabels(repository.NewTagCategoryStore(primaryDB.Pool))},
+		}
+		if credEncrypter != nil {
+			partnerDeps.Sealer = credEncrypter
+		}
+		partnerService = partner.NewService(partnerDeps)
+		aiMailboxLock = handler.MailboxLock(partnerService, storeService)
+		feature.WithPartnerHold(featureGateService, partnerService)
+		// A partner-managed workspace buys through its partner, so the store is off there.
+		storeService.WireManaged(store.ManagedBy(partnerService.IsPartnerManaged))
+		go jobrun.Loop(ctx, "partner_webhooks", 5*time.Second, true, partnerService.DeliverDue)
+		go jobrun.Loop(ctx, "partner_deleted_sweep", 10*time.Minute, true, partnerService.SweepDeleted)
+		// The mailbox half: attach, per-mailbox enablement, connect links, usage and the group brand.
+		partnerMailboxes := partner.MailboxDeps{
+			Repo: repository.NewPartnerMailboxRepository(primaryDB.Pool), Emails: emailService, Accounts: emailRepostory,
+			Warmup: tasksService, Credits: creditService,
+		}
+		if delegationService != nil {
+			partnerMailboxes.Delegator = delegationService
+		}
+		if connectLinkService != nil {
+			partnerMailboxes.Links = connectLinkService
+			connectLinkService.WirePartnerLinks(partnerService)
+		}
+		if customHosts != nil {
+			partnerMailboxes.Portals = customHosts
+		}
+		if brandService != nil {
+			partnerMailboxes.BrandsChanged = brandService.Resolver().InvalidateAll
+			brandService.Resolver().WireGroups(partnerService)
+		}
+		partnerService.WireMailboxes(partnerMailboxes)
+		if delegationService != nil {
+			// One token source for purchased Google mailboxes: a partner's callback for what it attached, else the store.
+			tokens := partner.TokenRouter{Partners: partnerService}
+			if storeService != nil {
+				tokens.Fallback = storeService
+			}
+			delegationService.WirePurchasedTokens(tokens)
+		}
+		go jobrun.Loop(ctx, "partner_mailboxes", 20*time.Second, true, partnerService.SyncMailboxes)
+		go jobrun.Loop(ctx, "partner_connects", 10*time.Second, true, partnerService.ConnectDue)
+		go jobrun.Loop(ctx, "partner_portals", 5*time.Minute, true, partnerService.CheckPortals)
+		go jobrun.Loop(ctx, "partner_statements", time.Hour, true, partnerService.CloseStatements)
 		dangerZoneScheduler := jobs.NewDangerZoneScheduler(dangerZoneJob, 1*time.Hour)
 		go dangerZoneScheduler.Start(ctx)
 
@@ -2758,14 +2886,18 @@ func main() {
 		Policy:            authPolicy,
 		WebsocketURL:      os.Getenv("WEBSOCKET_URL"),
 	}
-	instanceChecks := instancecheck.New(instancecheck.Deps{
+	checkDeps := instancecheck.Deps{
 		Runtime:   instanceRuntime,
 		Transport: mailTransport,
 		Policy:    authPolicy,
 		DB:        instanceChecksDB,
 		Cache:     authCache,
 		Updates:   updatesService,
-	})
+	}
+	if storeService != nil {
+		checkDeps.Store = storeService
+	}
+	instanceChecks := instancecheck.New(checkDeps)
 
 	h := &handler.Handler{
 		AuthService:           authService,
@@ -2890,6 +3022,7 @@ func main() {
 		// AI writing assistant + credit ledger
 		CreditService:    creditService,
 		BalanceService:   balanceService,
+		StoreService:     storeService,
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		TypeSafe:         typeSafeAsker(typeSafeClient),
@@ -2953,6 +3086,7 @@ func main() {
 		CustomHosts:            customHosts,
 		BrandService:           brandService,
 		PortalHandoffs:         portalHandoffService,
+		Partners:               partnerService,
 		WebsiteTrackingService: websiteTrackingService,
 		UserRepo:               userRepoForHandler,
 		OrgRepo:                organizationRepoForHandler,

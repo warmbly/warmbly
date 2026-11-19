@@ -116,13 +116,19 @@ func (f *Factory) Printer() *output.Printer {
 // wire. Without a terminal it refuses rather than sending, because a script
 // that forgot --yes must not discover the omission by mailing strangers.
 func (f *Factory) ConfirmSend(what string) error {
+	return f.ConfirmConsequence(what, "sends real mail")
+}
+
+// ConfirmConsequence is ConfirmSend for any consequence worth a yes: spending
+// money, revealing a secret. It refuses without a terminal for the same reason.
+func (f *Factory) ConfirmConsequence(what, consequence string) error {
 	if f.AssumeYes {
 		return nil
 	}
 	if !f.IO.IsStdinTTY() {
-		return fmt.Errorf("%s sends real mail, and there is no terminal to confirm on.\nPass --yes to go ahead.", what)
+		return fmt.Errorf("%s %s, and there is no terminal to confirm on.\nPass --yes to go ahead.", what, consequence)
 	}
-	ok, err := f.IO.Confirm(f.IO.Yellow("! ")+what+" sends real mail. Continue?", false)
+	ok, err := f.IO.Confirm(f.IO.Yellow("! ")+what+" "+consequence+". Continue?", false)
 	if err != nil {
 		return err
 	}

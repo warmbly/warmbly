@@ -107,6 +107,21 @@ func (s *Service) memberships(ctx context.Context, agencyID, userID uuid.UUID) (
 	return list, nil
 }
 
+// ClientsWith is the agency's clients where the caller's own membership holds perm, after checking agency staff.
+func (s *Service) ClientsWith(ctx context.Context, agencyID, userID uuid.UUID, perm models.OrganizationPermission) ([]models.AgencyClientMembership, *errx.Error) {
+	list, xerr := s.memberships(ctx, agencyID, userID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	out := make([]models.AgencyClientMembership, 0, len(list))
+	for _, m := range list {
+		if m.Can(perm) {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 // metricOrgs splits the clients by which overview sections the caller may read in each.
 type metricOrgs struct {
 	campaigns, inbox, advisor []uuid.UUID

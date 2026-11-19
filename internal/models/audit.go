@@ -62,10 +62,14 @@ const (
 	AuditEntityMailboxGrant   AuditEntityType = "mailbox_grant"
 	AuditEntityMailboxVendor  AuditEntityType = "mailbox_vendor"
 	AuditEntityDomainRedirect AuditEntityType = "domain_redirect"
-	AuditEntityAPIKey         AuditEntityType = "api_key"
-	AuditEntitySequence       AuditEntityType = "step"
-	AuditEntityUser           AuditEntityType = "user"
-	AuditEntityOrganization   AuditEntityType = "organization"
+	// Store purchases: an order, a domain and a mailbox bought through GraphKit.
+	AuditEntityStoreOrder   AuditEntityType = "store_order"
+	AuditEntityStoreDomain  AuditEntityType = "store_domain"
+	AuditEntityStoreMailbox AuditEntityType = "store_mailbox"
+	AuditEntityAPIKey       AuditEntityType = "api_key"
+	AuditEntitySequence     AuditEntityType = "step"
+	AuditEntityUser         AuditEntityType = "user"
+	AuditEntityOrganization AuditEntityType = "organization"
 	// AuditEntityOrgRisk carries a risk-posture transition. It rides the audit
 	// spine like every other entity, so a change reaches every teammate's
 	// dashboard without a bespoke emit site.

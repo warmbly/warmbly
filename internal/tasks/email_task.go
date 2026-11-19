@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -97,7 +98,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	if account.Status != "active" || (!activelyWarming && !inCampaign) {
 		if s.warmupHealth != nil {
 			if account.Status == "active" && account.OrganizationID != nil && s.featureGate != nil {
-				canWarmup, xerr := s.featureGate.CanUseWarmup(ctx, *account.OrganizationID)
+				canWarmup, xerr := feature.CanWarmMailbox(ctx, s.featureGate, *account.OrganizationID, account.ID)
 				switch {
 				case xerr != nil:
 					// Entitlement unknown: leave the membership alone rather than let a blip evict.
@@ -140,7 +141,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 
 	// STEP 3.5: Check if organization can use warmup (only paid orgs)
 	if s.featureGate != nil {
-		canWarmup, entitlementErr := s.featureGate.CanUseWarmup(ctx, *account.OrganizationID)
+		canWarmup, entitlementErr := feature.CanWarmMailbox(ctx, s.featureGate, *account.OrganizationID, account.ID)
 		if !canWarmup {
 			// Only a definite "not entitled" evicts; the send is skipped either way.
 			if s.warmupHealth != nil && entitlementErr == nil {

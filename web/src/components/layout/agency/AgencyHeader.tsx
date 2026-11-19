@@ -23,6 +23,7 @@ import useLogout from "@/lib/api/hooks/auth/useLogout";
 import { useAppStore } from "@/stores";
 import { fmtUsd } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { userDisplayName, userInitials } from "@/lib/userDisplay";
 
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
 
@@ -156,7 +157,7 @@ function AgencyUserMenu() {
     const hasWorkspace = useAppStore((s) => !!s.currentOrganization);
     const logout = useLogout();
     if (!user) return null;
-    const name = user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : user.email;
+    const name = userDisplayName(user);
 
     const signOut = async () => {
         await logout.mutateAsync();
@@ -171,7 +172,7 @@ function AgencyUserMenu() {
                         {user.avatar_url ? (
                             <DashboardImage src={user.avatar_url} alt="" className="w-full h-full object-cover" />
                         ) : (
-                            <span className="text-[11px] font-medium text-white leading-none">{user.email.slice(0, 2).toUpperCase()}</span>
+                            <span className="text-[11px] font-medium text-white leading-none">{userInitials(user)}</span>
                         )}
                     </span>
                 </button>
@@ -179,7 +180,7 @@ function AgencyUserMenu() {
             <PopoverMenuContent minWidth={232}>
                 <div className="px-3 py-2">
                     <div className="text-[12.5px] font-medium text-slate-900 truncate">{name}</div>
-                    <div className="text-[11px] text-slate-400 truncate font-mono">{user.email}</div>
+                    {user.email && <div className="text-[11px] text-slate-400 truncate font-mono">{user.email}</div>}
                 </div>
                 <PopoverMenuSeparator />
                 <div className="flex h-8 items-center justify-between gap-3 pl-3 pr-1.5">

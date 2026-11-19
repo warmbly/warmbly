@@ -40,6 +40,34 @@ const (
 // handler maps it to HTTP 402.
 var ErrInsufficientCredits = errors.New("insufficient balance")
 
+// AIRefusal is a 402 the workspace's own choice about AI spending made, not
+// an empty balance. It wraps ErrInsufficientCredits, so every 402 mapping holds.
+type AIRefusal struct {
+	Code    string
+	Message string
+}
+
+func (e *AIRefusal) Error() string { return e.Message }
+func (e *AIRefusal) Unwrap() error { return ErrInsufficientCredits }
+
+// ErrAIAllowanceUsed refuses AI once the plan's included usage is spent and the workspace keeps its balance for other things.
+var ErrAIAllowanceUsed = &AIRefusal{Code: "ai_allowance_used",
+	Message: "This month's included AI usage is used up. To keep using AI, let it use your balance under Settings > Billing > Balance."}
+
+// ErrAIOverageLimitReached refuses AI once it took the workspace's monthly limit from the balance.
+var ErrAIOverageLimitReached = &AIRefusal{Code: "ai_overage_limit_reached",
+	Message: "AI reached this month's limit on using your balance. Raise or remove the limit under Settings > Billing > Balance."}
+
+// PaymentRefusal is the code and message for a refused balance check: the
+// workspace's AI setting when that is what refused, else insufficient_credits.
+func PaymentRefusal(err error) (code, message string) {
+	var r *AIRefusal
+	if errors.As(err, &r) {
+		return r.Code, r.Message
+	}
+	return "insufficient_credits", "The workspace balance is too low. Add funds to keep using AI features."
+}
+
 // ErrCapExceeded signals the org hit a rolling or daily generation cap. The
 // handler maps it to HTTP 429.
 var ErrCapExceeded = errors.New("generation rate cap exceeded")
@@ -67,6 +95,9 @@ type UsageOverview struct {
 	LimitDaily   *models.Micro
 	LimitWeekly  *models.Micro
 	LimitMonthly *models.Micro
+
+	// FromBalanceMonth is what metered usage took from added money this calendar month (UTC), past the allowance.
+	FromBalanceMonth models.Micro
 
 	Series   []models.CreditUsagePoint
 	ByReason []models.CreditUsageBucket
@@ -103,9 +134,23 @@ type CreditService interface {
 	// generation caps do not apply. Undo it with RefundCharge.
 	ChargeUpfront(ctx context.Context, orgID uuid.UUID, u Usage, reason, idempotencyKey string) (models.Micro, error)
 
+	// ChargeAmount takes an exact price for something bought (a domain, a
+	// month of mailboxes), once per key, from the purchased pool only (never the
+	// plan's AI allowance or agency funding), refusing when it is short.
+	// No markup applies: the buyer agreed to this amount. Undo it with RefundCharge.
+	ChargeAmount(ctx context.Context, orgID uuid.UUID, amount models.Micro, reason, idempotencyKey string) (models.Micro, error)
+	// GetPurchasedBalance is the purchased pool alone, what ChargeAmount can take.
+	GetPurchasedBalance(ctx context.Context, orgID uuid.UUID) (models.Micro, *errx.Error)
+
 	// RefundCharge gives back what a charge under chargeKey took, to the pools
 	// it came from, once. Returns the amount given back.
 	RefundCharge(ctx context.Context, orgID uuid.UUID, chargeKey, reason string) (models.Micro, error)
+	// ChargeOf is the debit already taken under key, nil when there is none (always nil when unmetered).
+	ChargeOf(ctx context.Context, orgID uuid.UUID, key string) (*models.KeyedCharge, error)
+	// RefundStore gives a store charge back to the purchased pool under refundKey, once, never past
+	// what the debits under capPrefix took less what already came back under it. spendKey sizes it
+	// to that debit; amount is used when spendKey is empty.
+	RefundStore(ctx context.Context, orgID uuid.UUID, capPrefix, spendKey, refundKey string, amount models.Micro, reason string) (models.Micro, error)
 
 	// Quote is what a usage would be charged at the current prices.
 	Quote(ctx context.Context, u Usage) models.Micro
@@ -136,10 +181,14 @@ type CreditService interface {
 	// UpdateSpendSettings validates and saves the org's spend limits and
 	// low-balance notice threshold. Automatic reload saves separately.
 	UpdateSpendSettings(ctx context.Context, orgID uuid.UUID, s *models.AISpendSettings) (*models.AISpendSettings, *errx.Error)
+	// UpdateAIOverage saves whether AI may spend added money once the allowance is used up, and its monthly limit (nil: none).
+	UpdateAIOverage(ctx context.Context, orgID uuid.UUID, enabled bool, monthlyLimit *models.Micro) (*models.AISpendSettings, *errx.Error)
 
 	// GetUsageOverview composes the usage dashboard over the last `days` days
 	// (clamped to 1..90).
 	GetUsageOverview(ctx context.Context, orgID uuid.UUID, days int) (*UsageOverview, *errx.Error)
+	// AIDailyAverage is what AI spent a day on average over the last `days` days, the store's lines left out.
+	AIDailyAverage(ctx context.Context, orgID uuid.UUID, days int) (models.Micro, *errx.Error)
 
 	// SetMonitor installs a hook invoked (async, best-effort) with the balance
 	// before and after every fresh debit, which drives the low-balance notices
@@ -148,6 +197,8 @@ type CreditService interface {
 
 	ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, *errx.Error)
 	ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, *errx.Error)
+	// ListStoreTransactionsBefore is ListTransactionsBefore limited to the store's lines: purchases, renewals, mailbox months and their refunds.
+	ListStoreTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, *errx.Error)
 }
 
 // selfHostBalance is the balance reported when billing is disabled: large
@@ -334,14 +385,57 @@ func (s *creditService) Reserve(ctx context.Context, orgID uuid.UUID, estimate m
 	if err := s.checkSpendLimits(ctx, orgID, estimate); err != nil {
 		return err
 	}
-	bal, xerr := s.GetBalance(ctx, orgID)
-	if xerr != nil {
-		return xerr
+	ledger, err := s.repo.GetBalance(ctx, orgID)
+	if err != nil {
+		return errx.New(errx.Internal, "failed to read the balance")
 	}
-	if bal < estimate && bal+s.AgencyAvailable(ctx, orgID) < estimate {
+	if ledger == nil {
+		ledger = &models.CreditLedger{}
+	}
+	allowanceOnly, limit := s.aiOverage(ctx, orgID)
+	avail, capped := ledger.Monthly, false
+	if !allowanceOnly {
+		purchased := ledger.Purchased
+		if limit != nil {
+			used, err := s.repo.AIFromPurchasedThisMonth(ctx, orgID)
+			if err != nil {
+				return errx.New(errx.Internal, "failed to read the balance")
+			}
+			if left := max(*limit-used, 0); left < purchased {
+				purchased, capped = left, true
+			}
+		}
+		avail += purchased
+	}
+	if avail+s.AgencyAvailable(ctx, orgID) < estimate {
+		switch {
+		case allowanceOnly:
+			return ErrAIAllowanceUsed
+		case capped:
+			return ErrAIOverageLimitReached
+		}
 		return ErrInsufficientCredits
 	}
 	return nil
+}
+
+// aiOverage is the workspace's choice about AI spending added money: none
+// past the allowance, or up to a monthly limit (nil: no cap).
+func (s *creditService) aiOverage(ctx context.Context, orgID uuid.UUID) (allowanceOnly bool, limit *models.Micro) {
+	if s.settings == nil {
+		return false, nil
+	}
+	cfg, err := s.settings.Get(ctx, orgID)
+	if err != nil || cfg == nil {
+		return false, nil
+	}
+	return !cfg.AIOverageEnabled, cfg.AIOverageMonthlyLimit
+}
+
+// aiDebit applies the workspace's AI spending choice to a metered debit.
+func (s *creditService) aiDebit(ctx context.Context, orgID uuid.UUID, d models.CreditDebit) models.CreditDebit {
+	d.AllowanceOnly, d.OverageMonthlyLimit = s.aiOverage(ctx, orgID)
+	return d
 }
 
 func (s *creditService) Charge(ctx context.Context, orgID uuid.UUID, u Usage, reason, idempotencyKey string) (models.Micro, error) {
@@ -352,9 +446,9 @@ func (s *creditService) Charge(ctx context.Context, orgID uuid.UUID, u Usage, re
 	if charge <= 0 {
 		return 0, nil
 	}
-	return s.debit(ctx, orgID, u, models.CreditDebit{
+	return s.debit(ctx, orgID, u, s.aiDebit(ctx, orgID, models.CreditDebit{
 		Amount: charge, Clamp: true, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey, AgencyAllowance: s.agencyBilled,
-	})
+	}))
 }
 
 func (s *creditService) ChargeUpfront(ctx context.Context, orgID uuid.UUID, u Usage, reason, idempotencyKey string) (models.Micro, error) {
@@ -368,16 +462,44 @@ func (s *creditService) ChargeUpfront(ctx context.Context, orgID uuid.UUID, u Us
 	if err := s.checkSpendLimits(ctx, orgID, charge); err != nil {
 		return 0, err
 	}
-	return s.debit(ctx, orgID, u, models.CreditDebit{
+	return s.debit(ctx, orgID, u, s.aiDebit(ctx, orgID, models.CreditDebit{
 		Amount: charge, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey, AgencyAllowance: s.agencyBilled,
+	}))
+}
+
+func (s *creditService) ChargeAmount(ctx context.Context, orgID uuid.UUID, amount models.Micro, reason, idempotencyKey string) (models.Micro, error) {
+	if s.selfHost || amount <= 0 {
+		return 0, nil
+	}
+	return s.debit(ctx, orgID, Usage{}, models.CreditDebit{
+		Amount: amount, Reason: reason, Cost: amount, IdempotencyKey: idempotencyKey, PurchasedOnly: true,
 	})
+}
+
+func (s *creditService) GetPurchasedBalance(ctx context.Context, orgID uuid.UUID) (models.Micro, *errx.Error) {
+	if s.selfHost {
+		return selfHostBalance, nil
+	}
+	ledger, err := s.repo.GetBalance(ctx, orgID)
+	if err != nil {
+		return 0, errx.New(errx.Internal, "failed to read the balance")
+	}
+	if ledger == nil {
+		return 0, nil
+	}
+	return ledger.Purchased, nil
 }
 
 func (s *creditService) debit(ctx context.Context, orgID uuid.UUID, u Usage, d models.CreditDebit) (models.Micro, error) {
 	d.Model, d.InputTokens, d.OutputTokens = u.Model, u.InputTokens, u.OutputTokens
 	d.Quantity = u.Quantity
 	after, txn, replayed, err := s.repo.Debit(ctx, orgID, d)
-	if errors.Is(err, repository.ErrInsufficientCredits) {
+	switch {
+	case errors.Is(err, repository.ErrAllowanceUsed):
+		return 0, ErrAIAllowanceUsed
+	case errors.Is(err, repository.ErrOverageLimitReached):
+		return 0, ErrAIOverageLimitReached
+	case errors.Is(err, repository.ErrInsufficientCredits):
 		return 0, ErrInsufficientCredits
 	}
 	if err != nil || txn == nil {
@@ -405,6 +527,20 @@ func (s *creditService) RefundCharge(ctx context.Context, orgID uuid.UUID, charg
 	return refunded, err
 }
 
+func (s *creditService) ChargeOf(ctx context.Context, orgID uuid.UUID, key string) (*models.KeyedCharge, error) {
+	if s.selfHost {
+		return nil, nil
+	}
+	return s.repo.KeyedCharge(ctx, orgID, key)
+}
+
+func (s *creditService) RefundStore(ctx context.Context, orgID uuid.UUID, capPrefix, spendKey, refundKey string, amount models.Micro, reason string) (models.Micro, error) {
+	if s.selfHost {
+		return 0, nil
+	}
+	return s.repo.RefundCapped(ctx, orgID, capPrefix, spendKey, refundKey, amount, reason)
+}
+
 // DefaultSpendSettings is what an org that never saved settings runs with.
 func DefaultSpendSettings(orgID uuid.UUID) *models.AISpendSettings {
 	return &models.AISpendSettings{
@@ -413,7 +549,22 @@ func DefaultSpendSettings(orgID uuid.UUID) *models.AISpendSettings {
 		AutoReloadThreshold:  DefaultReloadThreshold,
 		AutoReloadAmount:     DefaultReloadAmount,
 		AutoReloadMonthlyMax: DefaultReloadMonthlyLimit,
+		AIOverageEnabled:     true,
 	}
+}
+
+func (s *creditService) UpdateAIOverage(ctx context.Context, orgID uuid.UUID, enabled bool, monthlyLimit *models.Micro) (*models.AISpendSettings, *errx.Error) {
+	if s.settings == nil {
+		return nil, errx.New(errx.Internal, "spend settings unavailable")
+	}
+	if monthlyLimit != nil && (*monthlyLimit <= 0 || *monthlyLimit > ReloadMonthlyLimitMax) {
+		return nil, errx.New(errx.BadRequest, "the monthly limit on AI using the balance must be between $0.01 and $50,000 (omit it for no limit)")
+	}
+	out, err := s.settings.UpsertOverage(ctx, orgID, enabled, monthlyLimit)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to save spend settings")
+	}
+	return out, nil
 }
 
 func (s *creditService) GetSpendSettings(ctx context.Context, orgID uuid.UUID) (*models.AISpendSettings, *errx.Error) {
@@ -472,8 +623,12 @@ func (s *creditService) GetUsageOverview(ctx context.Context, orgID uuid.UUID, d
 	if err != nil {
 		return nil, errx.New(errx.Internal, "failed to read the usage breakdown")
 	}
+	fromBalance, err := s.repo.AIFromPurchasedThisMonth(ctx, orgID)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to read spend")
+	}
 	out := &UsageOverview{
-		SpentToday: day, SpentWeek: week, SpentMonth: month,
+		SpentToday: day, SpentWeek: week, SpentMonth: month, FromBalanceMonth: fromBalance,
 		Series: series, ByReason: byReason, ByModel: byModel,
 	}
 	if s.settings != nil {
@@ -572,6 +727,28 @@ func (s *creditService) ListTransactions(ctx context.Context, orgID uuid.UUID, l
 
 func (s *creditService) ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, *errx.Error) {
 	txns, err := s.repo.ListTransactionsBefore(ctx, orgID, limit, beforeCreatedAt, beforeID)
+	if err != nil {
+		return nil, errx.New(errx.Internal, "failed to list balance activity")
+	}
+	return txns, nil
+}
+
+func (s *creditService) AIDailyAverage(ctx context.Context, orgID uuid.UUID, days int) (models.Micro, *errx.Error) {
+	if days < 1 {
+		days = 30
+	}
+	spent, err := s.repo.SpentOutsideSince(ctx, orgID, time.Now().Add(-time.Duration(days)*24*time.Hour), StoreKeyPrefix)
+	if err != nil {
+		return 0, errx.New(errx.Internal, "failed to read spend")
+	}
+	return spent / models.Micro(days), nil
+}
+
+// StoreKeyPrefix starts the idempotency key of every ledger line the store writes.
+const StoreKeyPrefix = repository.StoreKeyPrefix
+
+func (s *creditService) ListStoreTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, *errx.Error) {
+	txns, err := s.repo.ListTransactionsByKeyBefore(ctx, orgID, StoreKeyPrefix, limit, beforeCreatedAt, beforeID)
 	if err != nil {
 		return nil, errx.New(errx.Internal, "failed to list balance activity")
 	}

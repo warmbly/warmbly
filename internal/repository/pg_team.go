@@ -80,7 +80,7 @@ func (r *teamRepository) ListTeams(ctx context.Context, orgID uuid.UUID) ([]mode
 	}
 
 	memberRows, err := r.db.Query(ctx, `
-		SELECT tm.team_id, tm.user_id, u.email,
+		SELECT tm.team_id, tm.user_id, u.email, COALESCE(u.contact_email, ''),
 		       TRIM(CONCAT(u.first_name, ' ', u.last_name)), tm.added_at
 		FROM team_members tm
 		JOIN users u ON u.id = tm.user_id
@@ -95,9 +95,11 @@ func (r *teamRepository) ListTeams(ctx context.Context, orgID uuid.UUID) ([]mode
 	for memberRows.Next() {
 		var teamID uuid.UUID
 		var m models.TeamMember
-		if err := memberRows.Scan(&teamID, &m.UserID, &m.Email, &m.Name, &m.AddedAt); err != nil {
+		var contact string
+		if err := memberRows.Scan(&teamID, &m.UserID, &m.Email, &contact, &m.Name, &m.AddedAt); err != nil {
 			return nil, err
 		}
+		m.Email = models.VisibleEmail(m.Email, contact)
 		if idx, ok := indexByID[teamID]; ok {
 			teams[idx].Members = append(teams[idx].Members, m)
 		}
@@ -137,7 +139,7 @@ func (r *teamRepository) GetTeam(ctx context.Context, orgID, teamID uuid.UUID) (
 // listMembers loads the hydrated member rows for a single team.
 func (r *teamRepository) listMembers(ctx context.Context, teamID uuid.UUID) ([]models.TeamMember, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT tm.user_id, u.email,
+		SELECT tm.user_id, u.email, COALESCE(u.contact_email, ''),
 		       TRIM(CONCAT(u.first_name, ' ', u.last_name)), tm.added_at
 		FROM team_members tm
 		JOIN users u ON u.id = tm.user_id
@@ -152,9 +154,11 @@ func (r *teamRepository) listMembers(ctx context.Context, teamID uuid.UUID) ([]m
 	members := []models.TeamMember{}
 	for rows.Next() {
 		var m models.TeamMember
-		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &m.AddedAt); err != nil {
+		var contact string
+		if err := rows.Scan(&m.UserID, &m.Email, &contact, &m.Name, &m.AddedAt); err != nil {
 			return nil, err
 		}
+		m.Email = models.VisibleEmail(m.Email, contact)
 		members = append(members, m)
 	}
 	return members, rows.Err()

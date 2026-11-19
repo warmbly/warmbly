@@ -1,12 +1,12 @@
-// How a mailbox is connected: the inbox vendor it came from, the admin grant it signs in through, or its host.
+// How a mailbox is connected: bought in the store, the inbox vendor it came from, the admin grant it signs in through, or its host.
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import { vendorLabel } from "@/lib/api/models/app/emails/MailboxSources";
 import { mailboxConnectionLabel, mailHostLogo } from "@/lib/mailHost";
 
-export type MailboxSourceBox = Pick<Inbox, "provider" | "mail_host" | "auth_method" | "vendor">;
+export type MailboxSourceBox = Pick<Inbox, "provider" | "mail_host" | "auth_method" | "vendor" | "purchased">;
 
 export interface MailboxSource {
-    kind: "vendor" | "grant" | "host";
+    kind: "purchased" | "vendor" | "grant" | "host";
     /** The id ProviderLogo draws. */
     logo: string;
     label: string;
@@ -15,6 +15,11 @@ export interface MailboxSource {
 
 export function mailboxSource(box: MailboxSourceBox): MailboxSource {
     const connection = mailboxConnectionLabel(box);
+    if (box.purchased) {
+        const brand = mailboxBrand(box);
+        const logo = brand === "smtp_imap" ? box.mail_host || box.provider || "" : brand;
+        return { kind: "purchased", logo, label: "Purchased", title: `Bought in Warmbly${connection ? ` · ${connection}` : ""}` };
+    }
     if (box.vendor) {
         const name = vendorLabel(box.vendor);
         return { kind: "vendor", logo: box.vendor, label: `via ${name}`, title: `Imported from ${name}${connection ? ` · ${connection}` : ""}` };

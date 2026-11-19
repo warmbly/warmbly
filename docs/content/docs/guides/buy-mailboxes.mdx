@@ -1,0 +1,496 @@
+---
+title: Buy mailboxes
+description: "Buy domains and Google Workspace or Microsoft 365 mailboxes inside Warmbly. Domains at cost, mailboxes $3 a month, set up and connected for you with warmup on."
+---
+
+Buy new sending domains and Google Workspace or Microsoft 365 mailboxes on them without leaving Warmbly, or put new mailboxes on a domain you already own. Warmbly registers the domain, publishes its mail records, creates the mailboxes and connects them to your workspace with warmup on.
+
+## Buy mailboxes
+
+Buying is one screen: search, your senders and your order across the page, the order summary and **Pay** in a column on the right (on a phone, the summary is a bar at the bottom that opens upward).
+
+<Steps>
+
+<Step>
+
+On **Mailboxes**, open **Add** and choose **Buy new mailboxes**.
+
+</Step>
+
+<Step>
+
+Search for a domain and add the ones you want. Each result shows its price and what it costs to renew. To use a domain you already have, open **Use a domain I already own** under the search; see [a domain you already own](#a-domain-you-already-own).
+
+</Step>
+
+<Step>
+
+Set up your **Senders** once: the people the mailboxes send as, each with a first and last name and a profile photo. It starts with you. Each domain you add appears under **Your order** with mailboxes for your senders, named after them and carrying their photo: three for one sender, two each for two senders, and one each for three or more. One line under the senders sums up what every domain gets; the defaults make a complete order, and **Customize** there changes the addresses, provider, count and signature. Switch a domain between Google and Microsoft on its card, or open **Customize** on the card to change that domain's mailboxes on their own; see [senders](#senders).
+
+</Step>
+
+<Step>
+
+Check the summary and select **Pay**. Until the order can be paid, a short checklist above the button says what is missing (a domain, a sender's name, the registrant details) and ticks each item off as you complete it. It is paid from the workspace balance, and your saved card covers anything the balance does not. With no saved card, enter one in the summary; it is saved for the monthly charges in the same step, with any check your bank asks for shown right there.
+
+</Step>
+
+<Step>
+
+The summary turns into the setup as it happens. The new mailboxes appear on **Mailboxes**, connected and warming up.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Buying needs a Warmbly plan. Without one, the buy page offers the plans instead of the checkout. See [billing](/guides/billing/).
+- Domains are sold at cost. Mailboxes are $3 per mailbox per month, Google or Microsoft alike.
+- Some domain endings register for at least two years, such as `.ai`. The price shown covers that whole first term.
+- A domain you already own can take mailboxes too, with nothing charged for the domain.
+- Domain prices can change over time. You always see the price, and what the domain renews at, before you pay.
+- A renewal charges the renewal price current at the time. A notice 37 days before the domain expires tells you that price, at least 7 days ahead of the charge.
+- Domains renew automatically by default, charged 30 days before they expire. You can turn this off per domain.
+- Purchased mailboxes carry a **Purchased** chip on **Mailboxes** and in their drawer.
+- Mailboxes are billed monthly from the workspace balance.
+- Cancelling a mailbox takes effect at the end of the month you paid for, and you can resume it until then. When it ends it is switched off in Warmbly and its history stays until you disconnect it.
+- A purchased mailbox you still pay for has no **Disconnect**: removing it would not stop its billing. Cancel it, or switch it off to pause it.
+- A domain can leave Warmbly whenever you want: you get its transfer code on request.
+- If your plan ends, purchased mailboxes stay yours and keep billing. Reading and replying keep working; campaign sending and warmup on them pause until a plan is active again. See [when your plan ends](#when-your-plan-ends).
+- Viewing needs **Manage mailboxes**. Paying, renewing and cancelling need **Manage billing** and a recent sign-in.
+- Every purchase is kept under [**Orders**](#orders), and store charges have their own filter in the billing history.
+- The store works from the [API and the CLI](#managing-by-api-and-cli) too, and agencies get an [overview across clients](#for-agencies).
+
+<Fold>
+
+## What you can buy
+
+| Item | Price | When you pay |
+|------|-------|--------------|
+| A domain | At cost, the price shown in search | Its first term when you order, then each yearly renewal |
+| A Google Workspace mailbox | $3 per month | The first month when you order, then monthly |
+| A Microsoft 365 mailbox | $3 per month | The first month when you order, then monthly |
+
+The summary shows what is due today and what you pay each month after it, line by line. It is priced again as you change the order, and each price is held for 15 minutes, so what you see is what you are charged. Domain prices are set by the registries and change from time to time; if one changed before you paid, Warmbly shows the new total and asks you to confirm it, and nothing is charged until you do.
+
+A domain is registered for its extension's shortest term, which is one year for most and two for some, such as `.ai`. Search shows the term next to the price, the price covers the whole term, and the renewal price is per year after it. Privacy is turned on wherever the extension allows it, so your contact details are not published in the public registration record. Premium names, which a registry prices above its standard rate, are not offered.
+
+Each domain uses one mail provider. To have both Google and Microsoft mailboxes, buy them on separate domains. You can add more mailboxes to a domain you already bought later, up to 5 on that domain, and nothing is charged for the domain again.
+
+</Fold>
+
+<Fold>
+
+## Finding a domain
+
+Type your brand or a keyword. The exact name comes first, marked **Exact match** when it is available, followed by available variations: the keyword with a short prefix or suffix (`get`, `try`, `hq`, `team` and similar) and on other extensions. Extensions are limited to ones with a good reputation for mail (`.com`, `.co`, `.io`, `.net`, `.org`, `.ai`). A taken exact match is still shown, with the reason it cannot be bought.
+
+Buy two or three domains per brand rather than one, with about three mailboxes on each. Cold outreach is safer spread across many mailboxes sending a modest amount each than concentrated on a few, and spreading those mailboxes across domains means a problem with one domain's reputation or records does not stop the others. Keep your main company domain out of cold outreach entirely; the bare domain of each new one can forward visitors to your website.
+
+Neither the number of domains nor how they are named guarantees inbox placement. Mailbox providers judge each sender on how its mail is received, so new mailboxes still need warmup and a gradual start. See [deliverability](/guides/deliverability/).
+
+</Fold>
+
+<Fold>
+
+## A domain you already own
+
+A domain registered somewhere else can take Google Workspace or Microsoft 365 mailboxes bought here. The domain stays registered where it is, you keep renewing it there, and nothing is charged for it in Warmbly.
+
+On **Buy new mailboxes**, open **Use a domain I already own** under the search, type the domain, and pick how to connect it:
+
+| Method | What you do | What Warmbly does |
+|--------|-------------|-------------------|
+| **Change nameservers** (recommended) | At your registrar, replace the domain's nameservers with the two Warmbly shows, and turn DNSSEC off if it is on, or the change does not take | Copies the records the domain serves today, so your website and other services keep working, then keeps every mail record right from then on |
+| **Add DNS records** | Keep your DNS where it is and add the records Warmbly lists at your DNS provider, starting with the ownership record | Watches for the records and tells you which ones it has seen |
+
+The domain's page shows where the connection stands and updates live: waiting for the nameservers or records, connected, or moved away. Warmbly checks on its own, often at first, and **Check now** checks straight away. Members with **Manage mailboxes** get a notification when the domain connects.
+
+The instructions last 48 hours. If the change has not shown up by then, the connection times out, you get a notification, and **Start again** on the domain gives you a fresh set of nameservers or a fresh ownership record. Anything you already changed for the old set has to be changed again.
+
+Once the domain is connected, add it to your order and set its mailboxes as you would for a new domain. Mailboxes can be bought on it when both of these are true:
+
+- **It is connected.** A domain still waiting for its nameservers or records is not ready yet.
+- **Nothing on it clashes with mail.** A record that conflicts with the mail records the domain needs, such as another provider's MX record, is listed on the domain as in the way. Delete it there when Warmbly holds the domain's DNS; otherwise remove it at your DNS provider. Mailboxes cannot be ordered until every one is gone.
+
+Some mail setups need the mail provider to hold the domain's DNS. When that applies, the summary says so: after the order, set the new nameservers shown on the domain at your registrar.
+
+If the nameservers or records later change so they no longer point at Warmbly, the domain shows as moved away and you get a notification, because its mail records may stop working. Put them back as the domain's page shows.
+
+To stop using a connected domain, choose **Remove domain** on its page. Cancel its mailboxes first; a domain that still has mailboxes cannot be removed. Removing it stops Warmbly looking after its records, and the domain stays registered where it is. A domain you bought here leaves by [transfer](#taking-a-domain-elsewhere) instead.
+
+A domain that another workspace bought or is already connecting cannot be added, and neither can one already in your workspace; the message says which.
+
+</Fold>
+
+<Fold>
+
+## Senders
+
+A sender is a person the mailboxes send as: a name and a photo. You set the senders once for the whole order, and every domain in it follows them:
+
+- **Names.** Each sender needs a first and a last name; Google and Microsoft both require one for every account. Names that look like a link, a web address or an email address are refused, as everywhere else in Warmbly. The addresses are made from these names, so to get `matt@` type Matt as the first name, or type the address you want under the domain's **Customize**.
+- **Photo.** Each sender has one profile photo, used on every mailbox of theirs on every domain. The first sender starts with your own profile photo when you have uploaded one.
+- **Add sender.** Up to 5 senders.
+
+Under the senders, one line sums up what every domain following them gets, for example `3 mailboxes per domain · matt@, matt.m@, matt.meszaros@ · Google · Signature: Default`. Nothing there needs changing to place an order. Select **Customize** on that line to change it; the page remembers whether you left it open:
+
+- **Per sender.** How many mailboxes each sender gets on every domain. Until you change it, it follows the number of senders: 3 for one sender (each in a different [address pattern](#address-patterns), such as `matt@`, `matt.m@` and `matt.meszaros@`), 2 each for two senders, and 1 each for three to five. Once you set it yourself, your number stays. A domain holds at most 5 mailboxes, so when your number times the senders would pass that, it is lowered to fit and the page says so; your number comes back when there are fewer senders. **Use the suggested** returns to the automatic count. Adding a sender is never blocked by this.
+- **Addresses.** The [address patterns](#address-patterns) that turn each name into an address, for every domain at once.
+- **Provider.** Google or Microsoft for every domain. A domain card can switch its own; the rest follow the order's choice. A domain you already own that has mailboxes keeps their provider.
+- **Signature.** **Default**, **None** or **Custom**; see [signatures](#signatures).
+
+Changing a sender's name or photo, or anything under **Customize**, updates every domain that follows the senders.
+
+### Address patterns
+
+A pattern is how a name becomes the part before the `@`. Each one shows an example made from your first sender's name:
+
+| Pattern | Matt Meszaros gets |
+|---------|--------------------|
+| first | `matt@` |
+| first.l | `matt.m@` |
+| first.last | `matt.meszaros@` |
+| firstlast | `mattmeszaros@` |
+| first_last | `matt_meszaros@` |
+| first-last | `matt-meszaros@` |
+| f.last | `m.meszaros@` |
+| flast | `mmeszaros@` |
+| firstl | `mattm@` |
+| last | `meszaros@` |
+| last.first | `meszaros.matt@` |
+| lastf | `meszarosm@` |
+
+Open **Addresses** to tick the patterns you want and put them in order with the arrows (or Alt and the arrow keys). Each sender's mailboxes on a domain take the patterns in that order: with `first`, `first.l` and `first.last`, a sender with three mailboxes gets `matt@`, `matt.m@` and `matt.meszaros@`. A sender with more mailboxes than patterns continues with the patterns you did not tick, in the order of the table.
+
+Until you choose, one sender uses `first`, `first.l` and `first.last`, and two or more senders use `first.last`. **Use the suggested** in the list goes back to that.
+
+Names are turned into plain letters first: accents are dropped (`José` makes `jose`, `Müller` makes `muller`) and letters such as `ß`, `æ`, `ø`, `ł`, `đ` and `þ` are spelled out (`ss`, `ae`, `o`, `l`, `d`, `th`). Only the first word of a first name is used, so Mary Ann makes `mary@`. A last name of several words is joined (`van der Berg` makes `vanderberg`), and a hyphenated one keeps its hyphen where the last name stands as its own word (`jose.nunez-ortiz@`) and is joined elsewhere (`josenunezortiz@`). Anything else that cannot be in an address is left out, and an address is at most 64 characters.
+
+No two mailboxes on a domain get the same address. When two senders would, the second moves on to its next pattern, and the domain card says so. Only when every pattern is taken, as with two senders of the same name, does an address get a number at the end; type another address for it under the domain's **Customize** to avoid it.
+
+### Customizing one domain
+
+Select **Customize** on a domain card to change that domain alone: how many mailboxes it has (1 to 5), which sender each one belongs to, and its addresses. The card is marked **Customized**, and later changes to the number of senders no longer change it. Addresses you have not typed there still follow the sender's name and the address patterns. Select **Follow the senders** to undo the customization.
+
+An address that is not allowed, or that appears twice on one domain, is flagged as you type, and the card stays open until it is fixed.
+
+### Website forward
+
+Anyone who visits a new domain's bare address (`getacme.com`) is sent to your company website. The card shows it as "Visitors to getacme.com go to acme.com". It starts as:
+
+- the workspace's own website, the one set under **Settings > Branding**, when there is one
+- otherwise the domain of your own email address, when it is a company domain rather than a free provider such as Gmail or Outlook
+- otherwise nothing, so the domain does not forward
+
+Select **Change** to type another address, or remove it so the domain does not forward. One forward applies to every new domain in the order. A domain you already own keeps its own website. You can change the forward later from the domain on the **Purchased** tab of **Domains**.
+
+### Profile photos
+
+The photo of each sender becomes the real Google or Microsoft profile picture of every mailbox of theirs, the one recipients see next to the sender name in Gmail and Outlook. Choose a PNG or JPG, crop it to a square, and it is saved for the order; remove it to buy that sender's mailboxes without a photo. One upload serves all of a sender's mailboxes.
+
+Warmbly sets the photo as soon as each mailbox exists, while it is still being set up, and keeps trying if the provider does not take it at first. A photo never holds up the order. The photo also shows next to the mailbox in Warmbly as soon as the mailbox connects.
+
+To change it later, open the mailbox and select **Change photo** in its **Subscription** card. To give several purchased mailboxes the same photo, select them on **Mailboxes** and choose **Set profile photo** in the selection bar; it appears only when every selected mailbox was bought here. A photo can be replaced but not removed: the provider keeps the last photo set.
+
+### Signatures
+
+Every new mailbox gets a signature, chosen under **Customize** in **Signature**:
+
+- **Default** signs with the mailbox's full name, `{{.Sender.Name}}`.
+- **None** buys the mailboxes without a signature.
+- **Custom** opens the mailbox signature editor. Write the signature once and use **Insert placeholder** for the sender fields: `{{.Sender.FirstName}}`, `{{.Sender.LastName}}`, `{{.Sender.Name}}` and `{{.Sender.Email}}`. They are the same placeholders as a [signature on many mailboxes](/guides/mailboxes/#one-signature-on-many-mailboxes), filled in the same way, and anything else in double braces, such as a contact field, is flagged and sent exactly as written.
+
+A preview shows the signature filled in for the first mailbox in the order. When you pay, each mailbox gets its own finished signature, with its sender's name and its own address.
+
+The signature is set when each mailbox connects:
+
+- **In Warmbly**, as the mailbox's signature, added to the mail Warmbly sends from it, for both providers.
+- **On the Google account**, as the Gmail signature of the mailbox's address, so mail written in Gmail signs the same way.
+- **Microsoft 365** has no way for Warmbly to set the signature in Outlook, so those mailboxes sign in Warmbly only.
+
+If setting it fails, Warmbly keeps trying in the background, and it never holds up the order. It is set once: to change it later, edit the mailbox's signature in its settings, or several at once by selecting them on **Mailboxes** and choosing **Signature** in the selection bar.
+
+### The admin mailbox
+
+Each domain's Google Workspace or Microsoft 365 account has one admin, and it is one of the mailboxes you buy on that domain. Choose it with **Admin** next to an address under **Customize**; if you do not, the first mailbox is the admin, and the card marks the admin with a shield. The admin mailbox sends and warms up like the others. Mailboxes you add to the domain later join the same account and keep the admin it already has.
+
+The admin mailbox carries an **Admin** badge in its **Subscription** card, with an **Admin sign-in** button that shows the address, username, password and sign-in page for the Google or Microsoft admin console of that domain. It asks for a recent sign-in. The details are fetched fresh each time and shown once, so copy what you need before you close the dialog.
+
+</Fold>
+
+<Fold>
+
+## Paying
+
+Every store charge is automatic. The order is paid from money you added to the workspace balance, and when that does not cover it, Warmbly charges your saved card in the same step and adds that to the balance first. The card is charged at least $10 (or your automatic reload amount, when that is larger), so a $3 shortfall adds $10: $3 pays the order and $7 stays on the balance for the next charge. Fewer, larger card charges keep card fees down. Checkout shows this before you pay, for example **Adds $10.00 to your balance · $3.00 used now, $7.00 left**. You never need to top up the balance or turn on automatic reload first. When the balance covers the order, the summary says **Paid from your balance** with what is left, and no card is asked for. When it is short, a chip such as **Add $100 instead** rounds the card charge up to a larger amount, which then stays on the balance.
+
+Store charges come only from money you added to the balance, or from your card. The monthly AI allowance your plan includes pays for AI usage and never for domains or mailboxes, so a workspace with allowance left and nothing added pays the store by card. Checkout shows the money you added as the balance it pays from. Without a saved card, the summary shows a card field: **Pay** saves the card for the monthly charges (running any 3-D Secure check your bank asks for in the page) and places the order in the same press. If the card field cannot load, for example when a browser extension blocks it, **Pay** takes you to Stripe's page to add the card, and when you come back the order is placed for you at the total you saw. If a price changed meanwhile, the new total is shown and waits for you to pay.
+
+Paying asks for a recent sign-in, like other changes that move money. See [balance and usage](/guides/ai-credits/) for how the balance and the saved card work.
+
+Registering a domain needs a registrant: the person or company the domain is registered to, with an address and phone number. Warmbly fills it in from your billing details and your account and saves it with your first order, without asking. Only when the registry needs something those do not have (a phone number or a street address, say) does the summary ask, listing just the missing fields; a field the registry did not accept is marked there too.
+
+If an order is refused before anything is set up, the charge goes back to the balance. If one part of an order fails later (a domain that could not be registered, a mailbox that could not be created), that part is refunded to the balance and the rest continues.
+
+</Fold>
+
+<Fold>
+
+## How setup works
+
+After you pay, the order page shows six steps as they happen. It updates live, so you can leave it and come back, or share the link with a teammate.
+
+| Step | What happens |
+|------|--------------|
+| Register | The domain is registered |
+| DNS | The domain's DNS is set up, with forwarding to your website if you asked for it |
+| Mail authentication | MX, SPF, DKIM and DMARC records are published |
+| Mailboxes | The mailboxes are created with their names |
+| Connect | Warmbly is given access to the mailboxes |
+| Ready | The mailboxes are connected to your workspace |
+
+Registering the domain and publishing its records usually takes a few minutes; some domain extensions take longer to register. Creating the mailboxes at Google or Microsoft can take from a few hours to a couple of days, and the **Mailboxes** step stays running until it is done. Nothing is needed from you meanwhile: the steps after it carry on by themselves, and Warmbly sends a notification when the order is ready, or when part of it could not be set up and was refunded. DMARC starts at `p=none`, the setting that reports without rejecting, which you can tighten once the mailboxes send reliably.
+
+On a [domain you already own](#a-domain-you-already-own) there is nothing to register, so the **Register** step is skipped.
+
+</Fold>
+
+<Fold>
+
+## Connected automatically, with warmup on
+
+Purchased mailboxes connect without a password or a sign-in screen. Warmbly is given access to them during setup, the same way an [admin grant](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) gives it access to a whole domain. On the rare domain where that is not possible, Warmbly connects the mailbox over IMAP and SMTP with credentials it receives once and stores encrypted.
+
+Warmup is turned on for each new mailbox with your workspace's default warmup settings, where your plan includes warmup, and each mailbox's sender name is set from its first and last name, and its [signature](#signatures) from the order. A new mailbox should warm for a few weeks before it carries cold campaigns; see [warmup](/guides/warmup/).
+
+New mailboxes start sending gently and ramp up on their own. Starting warmup puts each one under the [warmup graduation](/guides/warmup/#graduating-to-cold-sending) ceiling, so in a campaign whose ramp-up is **As replies come in**, the default, it starts cold sending at five a day and earns more as real recipients reply, up to the mailbox's daily cap of `50`. There is nothing to set up. A campaign set to ramp on a schedule or send at full volume uses that instead; see [ramp-up](/guides/campaigns/#ramp-up). No starting volume guarantees inbox placement.
+
+Purchased mailboxes show a **Purchased** chip next to their address on **Mailboxes** and in the mailbox drawer, and everything else about them works like any other mailbox. If one cannot be connected after a few attempts, its order shows it as failed; the mailbox itself is still yours and billed, so contact support.
+
+A domain bought here also gets its open and click [tracking host](/guides/sending-domains/#one-tracking-host-for-a-whole-domain), `link.` followed by the domain (such as `link.getacme.com`), when its first mailbox connects. Warmbly publishes its records itself and points every mailbox on the domain at it, including mailboxes you add to the domain later, so there is nothing to set up. If writing the records fails, Warmbly tries again every hour. The forward you chose is the domain's website redirect. The **Domains** list shows the domain as purchased, and **Finish setting up** never lists it, because its tracking host and redirect are already taken care of.
+
+</Fold>
+
+<Fold>
+
+## Your domains and mailboxes
+
+Purchased domains are listed on the **Purchased** tab of **Domains**: each with its expiry date, an **Auto-renew** switch, **Renew now**, its forwarding URL and its DNS records. Domains you connected are listed there too, marked as renewed at their registrar, with their connection status in place of the renewal controls.
+
+A purchased mailbox has a **Subscription** card in its drawer, with its monthly price, the date it is paid through, and the button to cancel or resume it. While it is live, its **Danger zone** offers **Cancel subscription** in place of **Disconnect**, and its row menu on **Mailboxes** shows **Cancel subscription** too, which opens the drawer there.
+
+### DNS records
+
+A domain's page lists its DNS records. Where Warmbly holds the domain's DNS (a domain bought here, or one connected by changing its nameservers), you can add records and edit or delete any record that is not locked, including the ones copied over when you connected the domain. Use this, for example, to verify the domain with another service. A record's type is fixed once it is created; to change it, delete it and add a new one.
+
+The records Warmbly keeps for mail and the website forward (MX, SPF, DKIM, DMARC, the provider's verification, the ownership record and the forward) are locked, so they cannot be changed by accident. A new record that would clash with them, such as a second MX, is refused.
+
+On a domain connected by adding DNS records, your DNS provider holds the records, so add or change them there; the page lists them for reference, and the locked ones are the ones mail needs.
+
+**Check records** looks the records up in public DNS and marks each one live or not seen yet, along with the nameservers that answered. A record you just changed can take a while to show up everywhere.
+
+### Owner email and transfer requests
+
+Domain registries sometimes ask the owner to confirm their email address, typically after a domain is registered or its owner details change. Members with **Manage mailboxes** get a notification naming the address and the deadline, and the domain's page shows it until it is confirmed. Open the message sent to that address and confirm before the deadline, or the domain may stop working.
+
+If another registrar asks to take a domain you bought here, members with **Manage billing** get a notification, with the date it completes unless it is cancelled at the new registrar. If you did not start the transfer, contact support before that date.
+
+</Fold>
+
+<Fold>
+
+## Orders
+
+Every purchase is kept as an order. Open **Orders** from the header of **Mailboxes**, from the **Add account** menu there, from the store, or from the **Purchased** tab of **Domains** to see them all, newest first, at `/app/emails/buy/orders`. Each order shows its status (being charged, setting up, completed, partly failed or failed), what it contained, what was charged and anything refunded to the balance.
+
+Open an order to see its lines one by one, the charge and each refund. An order that is still setting up shows the same live setup track you saw after paying, so you can follow it from here or share the link with a teammate. The track updates as each step lands, and keeps moving every couple of seconds even when the live connection to Warmbly is interrupted. Members with **Manage mailboxes** can see orders.
+
+</Fold>
+
+<Fold>
+
+## Domain renewals
+
+Auto-renew is on for every domain you buy. Each domain renews for another year on this schedule:
+
+| When | What happens |
+|------|--------------|
+| 37 days before expiry | An upcoming-renewal notice, such as "getacme.com renews on Oct 17, 2027 for $11.17", with the current renewal price. If the price went up since the last notice, it says so |
+| 30 days before expiry | The renewal is charged from the workspace balance, and your saved card pays whatever the balance does not cover. Never sooner than 7 days after the notice |
+
+A domain less than 7 days from expiry with auto-renew on is renewed straight away rather than waiting on a notice, so it is never lost to the wait. A renewal is charged at the domain's renewal price at that time, which can differ from the price shown when you bought it if the registry has changed it since. The **Purchased** tab always shows the current one.
+
+**Renew now** on a domain renews it straight away, on the same terms.
+
+When auto-renew is off, or a renewal payment did not go through, Warmbly reminds you 30, 7 and 1 day before the domain expires. A failed renewal is refunded and retried the next day. If the card was declined or your bank asked to confirm the payment, the notice links straight to updating your card, and saving a card retries the renewal at once. Once a domain expires, its mail and the mailboxes on it can stop working, so renew before the date.
+
+Renewal and payment notices go to members with **Manage billing**, as billing alerts in the app and by email when their notification settings send those.
+
+</Fold>
+
+<Fold>
+
+## Mailbox billing
+
+A mailbox's first month is paid when you buy it. After that, every mailbox in the workspace is billed together once a month, on the workspace's billing day: the day of the month you bought your first mailbox (the 28th for a first purchase on the 29th, 30th or 31st). Each month's charge is made a few days before the billing day (5 by default) and covers every mailbox whose next month starts before the following billing day, so mailboxes bought on different days still mean one charge a month, as one line such as "Mailboxes · 12 × $3.00 · Dec 2026". A mailbox's next month is always paid before it starts. The **Subscription** card shows the date it is paid through and the date of the next charge.
+
+The charge comes out of the workspace balance; when the balance falls short, your saved card tops it up, by at least $10, with nobody needing to be there.
+
+If the provider raises a mailbox's price, Warmbly tells you before the month at the new price, and that month is charged at it.
+
+### Automatic top-ups
+
+With your first purchase, Warmbly turns on [automatic reload](/guides/ai-credits/#automatic-reload) for the balance, sized to your mailboxes: it adds at least $10 when the balance falls below what your next monthly charge needs, and tops the balance up two days before that charge, so the monthly charge itself comes out of the balance. When a store charge does need the card, the card is also charged what keeps the balance at the reload threshold afterwards (at most one more reload amount), so a purchase never sets off a second card charge minutes later. As you add or cancel mailboxes, Warmbly keeps those amounts in step, within your monthly reload limit.
+
+It is not turned on if you set automatic reload up yourself, or if you untick it at checkout. Change or turn it off any time under **Settings** > **Billing** > **Balance**; once you change it by hand, Warmbly never changes it again. Without automatic reload, store charges still go through: the card is charged when one is due.
+
+</Fold>
+
+<Fold>
+
+## Store charges on your bill
+
+Store charges come out of the workspace balance, so they are listed with every other charge under **Settings** > **Billing**, one line per item: a domain registration, a month of mailboxes, a renewal, and a refund when part of an order could not be set up. Choose the **Store** filter on that history to see only those lines. The billing page needs **Manage billing**.
+
+Each time your card pays part of a store charge, you get a receipt with your other invoices, described by what it paid for, such as "Mailboxes · 3 × $3.00 · Dec 2026". Members with **Manage billing** also get a short notice: "You were charged $9.00 for …".
+
+</Fold>
+
+<Fold>
+
+## When a payment fails
+
+When neither the balance nor your card can pay the monthly charge (the card was declined, your bank asked to confirm the payment, or there is no card), Warmbly tells you why, with the date the mailboxes stop if it stays unpaid, and tries again every day, telling you each time.
+
+A day before the first unpaid month would start, the unpaid mailboxes are set to stop at their provider at the end of the month already paid, and you get one more notice: "Your mailboxes stop on Dec 16 unless your card is updated". They keep working until then. Pay before that date and they are resumed and keep running; if the provider can no longer resume one, the month you paid for it goes back to the balance. After that date they are gone, with their mail.
+
+Each notice links to updating your card. Saving a card pays what is unpaid straight away, without waiting for the next daily attempt. Adding money to the balance works too, and the next daily attempt pays from it.
+
+</Fold>
+
+<Fold>
+
+## When your plan ends
+
+Buying needs a Warmbly plan, but the mailboxes you already bought do not go away when it ends. Without an active plan:
+
+- the mailboxes stay connected and keep syncing, and the unified inbox keeps working for the whole workspace: reading, replying and drafts
+- campaign sending and warmup on the purchased mailboxes pause
+- each mailbox keeps billing at its monthly price from the workspace balance, and you can still cancel it
+- buying more domains or mailboxes, or connecting a domain you own, waits for a plan
+
+Members with **Manage billing** get one notice when this happens, in the app and by email when their notification settings send billing alerts. Each paused mailbox says so in its **Subscription** card, with a link to the plans. Choose a plan and sending and warmup turn back on. See [billing](/guides/billing/).
+
+</Fold>
+
+<Fold>
+
+## Cancelling and resuming
+
+Cancel a mailbox from its **Subscription** card. It keeps working until the end of the month it is in, and is cancelled then. Nothing more is charged for it, and the unused part of that month is not refunded. If the next month was already paid with the monthly charge, or is being charged as you cancel, that month goes back to the balance, once for each time it was paid. Cancelling a mailbox that was set to stop for an unpaid month makes it your own cancellation: saving a card afterwards no longer charges or resumes it.
+
+Until that date, **Resume** undoes the cancellation, billing continues as before and the mailbox keeps working. If its next month was not paid yet and falls before your next monthly charge, resuming charges that month first, and the month counts as paid only once the provider confirms the resume. If the provider refuses, that charge goes back to the balance. A resume while that payment is still going through answers `charge_in_progress`.
+
+On that date the mailbox is deleted at its provider, with its mail and sign-in. Warmbly then switches the mailbox off for you: campaign sending, syncing and warmup stop, and it leaves the warmup pool. Members with **Manage billing** get one notice that it was cancelled and switched off. The same happens when a mailbox is cancelled because its month went unpaid, or by support.
+
+A cancelled mailbox stays on **Mailboxes** marked **Cancelled** with the date, so its campaign history, conversations and warmup history stay readable. It cannot be switched back on or reconnected, and Warmbly never connects it again. When you no longer need its history, **Disconnect** it from its drawer to delete it.
+
+### Why a mailbox you still pay for has no Disconnect
+
+Disconnecting a connected mailbox removes Warmbly's access to it. A purchased mailbox belongs to your subscription, not to a sign-in you gave Warmbly, so disconnecting it would neither delete it nor stop its billing. While it is live, removing or reconnecting it is refused; cancel it instead, or switch it off from its drawer to pause sending, syncing and warmup while you keep it.
+
+To stop paying for a domain, turn off its **Auto-renew**. It stays yours until it expires.
+
+</Fold>
+
+<Fold>
+
+## Taking a domain elsewhere
+
+A domain is never locked to Warmbly. On its page, choose **Transfer out** in the danger zone to unlock it and get its transfer authorization code, then start the transfer at the registrar you are moving to. This needs **Manage billing** and a recent sign-in.
+
+Moving the registration does not move the mailboxes. If the new registrar's DNS replaces the records Warmbly published, mailboxes on the domain stop receiving mail and fail authentication, so copy the mail records from the domain's page first, or cancel the mailboxes before you move it.
+
+</Fold>
+
+<Fold>
+
+## Who can do what
+
+| Action | Permission |
+|--------|------------|
+| See purchased domains, mailboxes and orders | **Manage mailboxes** |
+| Rename a purchased mailbox, change its profile photo, change a forwarding URL | **Manage mailboxes** |
+| Connect, check or remove a domain you already own | **Manage mailboxes** |
+| Add, edit or delete a domain's DNS records | **Manage mailboxes** |
+| Show the admin sign-in | **Manage mailboxes** and a recent sign-in |
+| Pay for an order, renew a domain, turn auto-renew on or off | **Manage billing** and a recent sign-in |
+| Cancel or resume a mailbox | **Manage billing** and a recent sign-in |
+| Get a domain's transfer code | **Manage billing** and a recent sign-in |
+| Change the registrant | **Manage billing** |
+
+See [team roles](/guides/team-roles/) for how permissions are assigned.
+
+</Fold>
+
+<Fold>
+
+## Managing by API and CLI
+
+Everything on this page can be done from the API as well as the dashboard: search, quotes, orders, domains, DNS records and mailboxes. An API key or OAuth app needs two permissions:
+
+- **`READ_STORE`** to read the store, its orders, domains and mailboxes.
+- **`MANAGE_STORE`** to ask for quotes and make changes. Paying, renewing, turning auto-renew on or off, cancelling or resuming a mailbox and getting a transfer code also need the member who made the key to hold **Manage billing**, checked on every request.
+
+Buying by API spends the workspace balance, like buying in the dashboard. Prices are confirmed the same way: if a domain price changed before the order, nothing is charged and the answer carries the new total to confirm. See the [store endpoints](/api/endpoints/#domains-and-mailboxes) and [permissions](/api/permissions/).
+
+The [Warmbly CLI](/api/cli/#buying-domains-and-mailboxes) has the same store under `warmbly store`: `search`, `quote`, `buy`, `orders`, `order watch` to follow setup live, `domains`, `mailboxes` and `registrant`. `warmbly store buy` shows the total and asks before it charges.
+
+</Fold>
+
+<Fold>
+
+## For agencies
+
+An [agency](/guides/agencies/) sees the infrastructure it bought across all its clients in one overview: each client's domains and mailboxes, its monthly spend, renewals coming up in the next 30 days, and anything that needs attention, such as a mailbox that could not be connected, a payment that did not go through, or a domain with auto-renew off. Each client links straight into its **Purchased** domains, its mailboxes and its orders. Only clients where you can manage mailboxes are included.
+
+Agency staff working in a client workspace buy for that client: the client's plan decides whether it can buy, staff need **Manage billing** in that workspace to pay, and every charge comes out of money added to the client's own balance, then the client's saved card for the rest. The agency's shared AI balance pays for AI usage only, never for the store. A workspace a partner manages keeps the store off; see [workspaces managed by a partner](#workspaces-managed-by-a-partner).
+
+</Fold>
+
+<Fold>
+
+## Moving a workspace
+
+Purchased domains, domains you connected here, and mailbox subscriptions do not travel in a [workspace archive](/guides/workspace-export-import/), because they are bought and billed through the instance that sold them. The mailboxes they connected are ordinary mailboxes and move with the archive. To take a domain with you, [transfer it out](#taking-a-domain-elsewhere); a domain you connected is still registered where it always was.
+
+</Fold>
+
+<Fold>
+
+## Self-hosted instances
+
+On a self-hosted instance, buying needs one thing from the operator: a GraphKit API key. Until it is added, **Buy new mailboxes** shows with a lock under **Add account**, and the buy page says a key is needed. An instance admin gets a button to **Setup and health > Integrations** in the admin panel, where the key goes; anyone else can copy a short note asking their operator to add it. The operator can set `GRAPHKIT_API_KEY` in the environment instead, which takes precedence. See [configuration](/development/configuration/#adding-the-key-in-the-admin-panel). The locked state is shown only on an instance whose `DEPLOYMENT_MODE` is self-hosted (or that falls back to it with `BILLING_PROVIDER=none`); a hosted instance without a key shows no store at all.
+
+On instance that does not bill its users, the self-host default, no plan is needed to buy, so the plan rules on this page do not apply. The operator sets the mailbox price and any markup on domains, and decides whether workspaces pay: on an instance that does not bill its users, workspaces are charged nothing and the operator's own account pays for every domain and mailbox. See [configuration](/development/configuration/#domain-and-mailbox-store).
+
+</Fold>
+
+<Fold>
+
+## Workspaces managed by a partner
+
+A workspace that a Warmbly partner manages for you buys its domains and mailboxes through that partner. **Buy new mailboxes** is not shown there; ask your partner for new domains or mailboxes.
+
+</Fold>
+
+## Related guides
+
+<Cards>
+  <Card title="Mailboxes" href="/guides/mailboxes/" />
+  <Card title="Sending domains" href="/guides/sending-domains/" />
+  <Card title="Warmup" href="/guides/warmup/" />
+  <Card title="Balance and usage" href="/guides/ai-credits/" />
+</Cards>

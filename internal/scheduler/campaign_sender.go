@@ -102,6 +102,8 @@ type campaignPass struct {
 	// placement so the filter and the send enforce the same gap.
 	gapDraws  map[uuid.UUID]int
 	sendGates map[uuid.UUID]mailboxGate
+	// coldRoom is what a managing partner's daily cap leaves each mailbox today, read with its send gate.
+	coldRoom map[uuid.UUID]int
 }
 
 // healthRead is one mailbox's warmup health, as the gate reads it.
@@ -282,6 +284,10 @@ func (s *schedulerService) gateFor(ctx context.Context, p *campaignPass, acct mo
 	if gate := s.sendGate(ctx, p, acct); !gate.open() {
 		return gate, 0
 	}
+	// A managing partner's cap is counted on the UTC day; the lower of it and the mailbox's own binds.
+	if room, ok := p.coldRoom[acct.ID]; ok && room < remaining {
+		remaining = room
+	}
 	// Sending-domain authentication first, because unauthenticated mail is
 	// rejected outright by Gmail/Yahoo/Outlook: no amount of budget, window or
 	// rotation makes it deliverable. Only a SUSTAINED failure gates — "unknown"
@@ -354,6 +360,17 @@ func (s *schedulerService) sendGate(ctx context.Context, p *campaignPass, acct m
 		gate = mailboxGate{reason: gateCooldown, reopensAt: *a.RetryAt, paced: a.RetryAt.Sub(now) <= config.SendPauseWaitThreshold}
 	case !a.Allowed:
 		gate = mailboxGate{reason: gateAdmission}
+	case a.ColdHold == repository.ColdHoldPartnerDailyCap:
+		gate = mailboxGate{reason: gateBudget, paced: true, reopensAt: *a.ColdReopensAt}
+	case a.ColdHold != "":
+		// Off or warmup only at the workspace's partner: skipped like a resting mailbox, its leads move on.
+		gate = mailboxGate{reason: gateResting}
+	}
+	if a != nil && a.ColdRoom != nil {
+		if p.coldRoom == nil {
+			p.coldRoom = map[uuid.UUID]int{}
+		}
+		p.coldRoom[acct.ID] = *a.ColdRoom
 	}
 	p.sendGates[acct.ID] = gate
 	return gate

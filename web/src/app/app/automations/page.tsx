@@ -88,6 +88,7 @@ export default function AutomationsPage() {
             <PageTopbar eyebrow="Automations" subtitle="When something happens in Warmbly, do this across your integrations">
                 {canManage && (
                     <TopbarAction
+                        writes
                         onClick={newAutomation}
                         icon={create.isPending ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlusIcon className="w-3.5 h-3.5" />}
                     >
@@ -114,7 +115,7 @@ export default function AutomationsPage() {
                         body="Build a flow: pick a trigger like “meeting booked”, then connect what should happen — ping Slack, create a deal, push to your CRM, or fire a webhook."
                         cta={
                             canManage ? (
-                                <TopbarAction onClick={newAutomation} icon={<PlusIcon className="w-3.5 h-3.5" />}>
+                                <TopbarAction writes onClick={newAutomation} icon={<PlusIcon className="w-3.5 h-3.5" />}>
                                     New automation
                                 </TopbarAction>
                             ) : undefined

@@ -26,6 +26,8 @@ export default interface User {
     // Whether this session presented a second factor. Admin routes refuse a
     // session that did not, so admin actions in the dashboard gate on it too.
     session_mfa_verified?: boolean;
+    // Signs in only through the reseller managing the workspace: no password, passkey or other sign-in method.
+    partner_account?: boolean;
 
     tags: Tag[];
     categories: Category[];

@@ -71,6 +71,10 @@ type Email struct {
 	// VendorConnectionID and Vendor name the inbox vendor account a mailbox was imported from.
 	VendorConnectionID *uuid.UUID `json:"vendor_connection_id,omitempty"`
 	Vendor             string     `json:"vendor,omitempty"`
+	// Purchased is a mailbox bought in the store; the dashboard shows it as such.
+	Purchased bool `json:"purchased,omitempty"`
+	// PurchaseCancelledAt is when a purchased mailbox's subscription ended; nil while it is live.
+	PurchaseCancelledAt *time.Time `json:"purchase_cancelled_at,omitempty"`
 	// AvatarURL is the mailbox's own profile photo, empty when its provider or vendor has none we can read.
 	AvatarURL string `json:"avatar_url"`
 
@@ -692,6 +696,8 @@ type NewDelegatedAccount struct {
 	GrantID        uuid.UUID
 	// Subject is who tokens are minted for: the address (Google) or the Graph user id (Microsoft).
 	Subject string
+	// Purchased: see NewSMTPIMAPAccount.
+	Purchased bool
 }
 
 // DelegatedMailbox is what minting a token for a delegated mailbox needs.
@@ -732,6 +738,8 @@ func (r EmailRef) Movable(provider InboxProvider) bool {
 type NewSMTPIMAPAccount struct {
 	OrganizationID         *uuid.UUID
 	DisableSendingBehavior bool `json:"-"`
+	// Purchased is a mailbox bought in the store: it is billed per mailbox, so the plan's mailbox allowance does not bound it.
+	Purchased bool `json:"-"`
 	// Allowance: see NewOauthAccount.
 	Allowance *MailboxAllowance
 	Name      string

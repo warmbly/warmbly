@@ -82,13 +82,18 @@ func NewSlackRepository(database *db.DB) SlackRepository {
 
 const slackLinkCols = `l.id, l.organization_id, l.connection_id, l.slack_team_id, l.slack_user_id,
 	l.user_id, l.dm_notifications, l.created_at, l.updated_at,
-	TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), COALESCE(u.email, '')`
+	TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), COALESCE(u.email, ''), COALESCE(u.contact_email, '')`
 
 const slackLinkFrom = ` FROM slack_user_links l LEFT JOIN users u ON u.id = l.user_id `
 
 func scanSlackLink(row scanner, l *models.SlackUserLink) error {
-	return row.Scan(&l.ID, &l.OrganizationID, &l.ConnectionID, &l.SlackTeamID, &l.SlackUserID,
-		&l.UserID, &l.DMNotifications, &l.CreatedAt, &l.UpdatedAt, &l.UserName, &l.UserEmail)
+	var contact string
+	if err := row.Scan(&l.ID, &l.OrganizationID, &l.ConnectionID, &l.SlackTeamID, &l.SlackUserID,
+		&l.UserID, &l.DMNotifications, &l.CreatedAt, &l.UpdatedAt, &l.UserName, &l.UserEmail, &contact); err != nil {
+		return err
+	}
+	l.UserEmail = models.VisibleEmail(l.UserEmail, contact)
+	return nil
 }
 
 func (r *slackRepository) oneLink(ctx context.Context, where string, args ...any) (*models.SlackUserLink, error) {

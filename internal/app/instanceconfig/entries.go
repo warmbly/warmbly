@@ -90,6 +90,30 @@ var table = []Entry{
 		Resolve:    func(*Runtime) string { return config.BillingProvider() },
 	},
 	{
+		Key: "GRAPHKIT_API_URL", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The GraphKit partner API the store buys domains and mailboxes through. fake runs an in-process simulator, refused outside development.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_API_URL"),
+	},
+	{
+		Key: "GRAPHKIT_API_KEY", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The GraphKit partner key. Unset turns the store off and hides it from every workspace.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_API_KEY"),
+	},
+	{
+		Key: "GRAPHKIT_WEBHOOK_SECRET", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Verifies GraphKit's signed webhooks at /v1/webhooks/graphkit. Without it purchases still sync through the minute-by-minute reconciler.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_WEBHOOK_SECRET"),
+	},
+	{
+		Key: "GRAPHKIT_WEBHOOK_SECRET_PREVIOUS", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The secret before a rotation, still accepted until GraphKit stops signing with it.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_WEBHOOK_SECRET_PREVIOUS"),
+	},
+	{
 		Key: "TASKS_PROVIDER", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
 		Effect:     "local runs an in-process Postgres poller for campaign ticks and scheduled sends, with no external service.",
 		DocsAnchor: docsDeployment,

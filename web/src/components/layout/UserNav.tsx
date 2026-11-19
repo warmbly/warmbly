@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { ThemeSwitch } from "@/components/app/theme/ThemePicker";
 import { currentPortal } from "@/lib/portal";
 import { portalSupportLink } from "@/lib/helpLink";
+import { userDisplayName, userInitials } from "@/lib/userDisplay";
 
 export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
     const navigate = useNavigate();
@@ -46,11 +47,8 @@ export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
         navigate({ to: "/auth/login", replace: true });
     };
 
-    const initials = user.email.slice(0, 2).toUpperCase();
-    const displayName =
-        user.first_name && user.last_name
-            ? `${user.first_name} ${user.last_name}`
-            : user.email;
+    const initials = userInitials(user);
+    const displayName = userDisplayName(user);
 
     return (
         <PopoverMenu side="top" align="start">
@@ -89,9 +87,11 @@ export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
                         <div className="text-[13px] text-slate-900 truncate">
                             {displayName}
                         </div>
-                        <div className="text-[10.5px] text-slate-500 truncate">
-                            {user.email}
-                        </div>
+                        {user.email && (
+                            <div className="text-[10.5px] text-slate-500 truncate">
+                                {user.email}
+                            </div>
+                        )}
                     </div>
                 </button>
             </PopoverMenuTrigger>
@@ -104,9 +104,11 @@ export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
                     <div className="text-[12.5px] font-medium text-slate-900 truncate">
                         {displayName}
                     </div>
-                    <div className="text-[11px] text-slate-400 truncate font-mono">
-                        {user.email}
-                    </div>
+                    {user.email && (
+                        <div className="text-[11px] text-slate-400 truncate font-mono">
+                            {user.email}
+                        </div>
+                    )}
                 </div>
                 <PopoverMenuSeparator />
                 <div className="flex h-8 items-center justify-between gap-3 pl-3 pr-1.5">

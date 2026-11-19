@@ -22,6 +22,8 @@ var ErrChargeInFlight = errors.New("a charge is already in progress")
 type SavedCardChargeRepository interface {
 	Create(ctx context.Context, c *models.SavedCardCharge) (*models.SavedCardCharge, error)
 	Get(ctx context.Context, id uuid.UUID) (*models.SavedCardCharge, error)
+	// GetByKey is the workspace's charge for a store charge key, in any state, or nil.
+	GetByKey(ctx context.Context, orgID uuid.UUID, key string) (*models.SavedCardCharge, error)
 	// Pending is the workspace's in-flight charge, or nil.
 	Pending(ctx context.Context, orgID uuid.UUID) (*models.SavedCardCharge, error)
 	SetInvoice(ctx context.Context, id uuid.UUID, invoiceID string) error
@@ -58,11 +60,13 @@ func NewSavedCardChargeRepository(database *db.DB) SavedCardChargeRepository {
 }
 
 const savedCardChargeCols = `id, organization_id, kind, amount_micro, amount_cents, currency, status, invoice_id,
-	customer_id, payment_method_id, tries, retry_at, failure_code, created_at, completed_at, pack_key <> 'usd'`
+	customer_id, payment_method_id, tries, retry_at, failure_code, created_at, completed_at, pack_key <> 'usd',
+	COALESCE(charge_key, ''), description`
 
 func scanSavedCardCharge(row pgx.Row, c *models.SavedCardCharge) error {
 	return row.Scan(&c.ID, &c.OrgID, &c.Kind, &c.Amount, &c.AmountCents, &c.Currency, &c.Status, &c.InvoiceID,
-		&c.CustomerID, &c.PaymentMethodID, &c.Tries, &c.RetryAt, &c.FailureCode, &c.CreatedAt, &c.CompletedAt, &c.Legacy)
+		&c.CustomerID, &c.PaymentMethodID, &c.Tries, &c.RetryAt, &c.FailureCode, &c.CreatedAt, &c.CompletedAt, &c.Legacy,
+		&c.ChargeKey, &c.Description)
 }
 
 func (r *savedCardChargeRepository) one(ctx context.Context, query string, args ...any) (*models.SavedCardCharge, error) {
@@ -80,10 +84,11 @@ func (r *savedCardChargeRepository) Create(ctx context.Context, in *models.Saved
 	// pack_key and credits are what the previous release reads.
 	c, err := r.one(ctx, `
 		INSERT INTO credit_auto_topup_attempts
-			(organization_id, kind, pack_key, credits, amount_micro, amount_cents, currency, customer_id, payment_method_id)
-		VALUES ($1, $2, 'usd', GREATEST($3 / legacy_credit_micro(), 1), $3, $4, $5, $6, $7)
+			(organization_id, kind, pack_key, credits, amount_micro, amount_cents, currency, customer_id, payment_method_id,
+			 charge_key, description)
+		VALUES ($1, $2, 'usd', GREATEST($3 / legacy_credit_micro(), 1), $3, $4, $5, $6, $7, NULLIF($8, ''), $9)
 		RETURNING `+savedCardChargeCols,
-		in.OrgID, in.Kind, in.Amount, in.AmountCents, in.Currency, in.CustomerID, in.PaymentMethodID)
+		in.OrgID, in.Kind, in.Amount, in.AmountCents, in.Currency, in.CustomerID, in.PaymentMethodID, in.ChargeKey, in.Description)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return nil, ErrChargeInFlight
@@ -93,6 +98,11 @@ func (r *savedCardChargeRepository) Create(ctx context.Context, in *models.Saved
 
 func (r *savedCardChargeRepository) Get(ctx context.Context, id uuid.UUID) (*models.SavedCardCharge, error) {
 	return r.one(ctx, `SELECT `+savedCardChargeCols+` FROM credit_auto_topup_attempts WHERE id = $1`, id)
+}
+
+func (r *savedCardChargeRepository) GetByKey(ctx context.Context, orgID uuid.UUID, key string) (*models.SavedCardCharge, error) {
+	return r.one(ctx, `SELECT `+savedCardChargeCols+` FROM credit_auto_topup_attempts
+		WHERE organization_id = $1 AND charge_key = $2`, orgID, key)
 }
 
 func (r *savedCardChargeRepository) Pending(ctx context.Context, orgID uuid.UUID) (*models.SavedCardCharge, error) {

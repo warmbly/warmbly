@@ -94,6 +94,8 @@ func signInMethod(provider string) string {
 		return "Passkey"
 	case token.AuthProviderOIDC:
 		return "Single sign-on"
+	case token.AuthProviderPartner:
+		return "Reseller sign-in link"
 	default:
 		return provider
 	}

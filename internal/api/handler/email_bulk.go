@@ -139,6 +139,9 @@ func (h *Handler) BulkDeleteEmails(c *gin.Context) {
 		return
 	}
 	res := h.runBulkMailboxes(c, ids, func(ctx context.Context, id uuid.UUID) *errx.Error {
+		if xerr := h.mailboxLock(ctx, *orgID, id); xerr != nil {
+			return xerr
+		}
 		return h.EmailService.Delete(ctx, orgID.String(), id.String())
 	})
 	if res.Succeeded > 0 {

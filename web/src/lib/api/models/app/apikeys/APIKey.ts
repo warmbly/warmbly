@@ -1,8 +1,8 @@
 // API key shape as returned by the backend.
 //
-// `permissions` is a bitmask (uint64). JavaScript safely handles the
-// number range we use (currently 19 bits, ceiling at 53 bits without
-// switching to BigInt). Resolve names <-> bits using APIPermission.value
+// `permissions` is a bitmask (uint64) past bit 31, so test and combine it with
+// @/lib/bitmask, never `&`/`|`/`~` (32-bit in JavaScript). A number holds it
+// exactly up to bit 53. Resolve names <-> bits using APIPermission.value
 // from /api-keys/permissions.
 
 export type APIKeyStatus = "active" | "revoked" | "expired";

@@ -116,3 +116,11 @@ func TestStringifyKeepsCellsReadable(t *testing.T) {
 		t.Errorf("whole float = %q, want 4", got)
 	}
 }
+
+func TestMicrosRenderAsDollars(t *testing.T) {
+	for micros, want := range map[float64]string{0: "$0.00", 3_000_000: "$3.00", 12_495_000: "$12.50", -1_500_000: "-$1.50"} {
+		if got := render(micros, Column{Format: "micros"}); got != want {
+			t.Errorf("%v micros = %q, want %q", micros, got, want)
+		}
+	}
+}

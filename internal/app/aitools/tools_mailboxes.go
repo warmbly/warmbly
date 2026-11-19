@@ -355,6 +355,11 @@ func (d Deps) disconnectMailbox(ctx context.Context, inv Invocation, args json.R
 	if err != nil {
 		return "", err
 	}
+	if d.MailboxLock != nil && *d.MailboxLock != nil {
+		if xerr := (*d.MailboxLock)(ctx, inv.OrgID, aid); xerr != nil {
+			return "", fromErrx(xerr)
+		}
+	}
 	if xerr := d.Emails.Delete(ctx, inv.OrgID.String(), in.EmailAccountID); xerr != nil {
 		return "", fromErrx(xerr)
 	}

@@ -93,6 +93,8 @@ type mcpWorld struct {
 	client  uuid.UUID
 	agency  *mcpAgencyClients
 	seen    *aitools.Invocation
+	h       *Handler
+	writes  int
 }
 
 func newMCPWorld(t *testing.T, keyPerms uint64) *mcpWorld {
@@ -138,6 +140,7 @@ func newMCPWorld(t *testing.T, keyPerms uint64) *mcpWorld {
 
 	mw := &middleware.Handler{AgencyKeys: keys, OrganizationService: w.members}
 	h := &Handler{AITools: reg, AgencyTools: aitools.BuildAgencyRegistry(aitools.AgencyDeps{Agency: w.agency})}
+	w.h = h
 	w.r = gin.New()
 	w.r.Use(middleware.RequestIDMiddleware())
 	w.r.POST("/v1/mcp", mw.MCPAuthMiddleware(), mw.ResourceScopeGate(), h.MCPEndpoint)

@@ -88,6 +88,8 @@ func dispatch(ctx context.Context, args []string) error {
 		return runFleet(ctx, args[1:])
 	case "inbox-tag":
 		return runInboxTag(ctx, args[1:])
+	case "partner":
+		return runPartner(ctx, args[1:])
 	case "keys":
 		return runKeys(ctx, args[1:])
 	case "db":
@@ -141,6 +143,9 @@ var commands = []command{
 	{"fleet rollout start", "Move the fleet to a tag in stages: one canary, then waves", composeExec + "fleet rollout start v1.4.2 --bake 30m"},
 	{"fleet rollout status", "Show a staged rollout's stage, admitted nodes and halt reason", composeExec + "fleet rollout status"},
 	{"fleet env-status", "Whether every live node has applied the current rendered env", composeExec + "fleet env-status"},
+	{"partner create", "Add a reseller that runs workspaces through the partner API, which is off until one exists", composeExec + "partner create --slug graphkit --name GraphKit --allowed-hosts app.graphkit.com"},
+	{"partner list", "List resellers with their status and webhook", composeExec + "partner list"},
+	{"partner key", "Issue a partner API key for live or test workspaces. Shown once", composeExec + "partner key --partner graphkit --mode live"},
 	{"db load", "Show what the database is busy with: connections by service, costliest queries, largest tables", composeExec + "db load"},
 }
 

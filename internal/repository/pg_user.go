@@ -177,7 +177,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 	var u models.User
 
 	q := fmt.Sprintf(
-		`SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.referral_source, u.onboarding_completed_at, u.product_tour_completed_at,
+		`SELECT u.id, u.email, COALESCE(u.contact_email, ''), u.first_name, u.last_name, u.avatar_url, u.referral_source, u.onboarding_completed_at, u.product_tour_completed_at,
 		   u.max_organizations, u.free_trial_used, u.admin_permissions,
 		   u.deletion_scheduled_at, u.deletion_scheduled_for, u.undo_send_seconds,
 		   u.updated_at, u.created_at,
@@ -198,7 +198,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 		ctx,
 		q,
 		params...,
-	).Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.AvatarURL, &u.ReferralSource, &u.OnboardingCompletedAt, &u.ProductTourCompletedAt,
+	).Scan(&u.ID, &u.Email, &u.ContactEmail, &u.FirstName, &u.LastName, &u.AvatarURL, &u.ReferralSource, &u.OnboardingCompletedAt, &u.ProductTourCompletedAt,
 		&u.MaxOrganizations, &u.FreeTrialUsed, &adminPerm,
 		&u.DeletionScheduledAt, &u.DeletionScheduledFor, &u.UndoSendSeconds,
 		&u.UpdatedAt, &u.CreatedAt, &u.Roles)

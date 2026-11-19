@@ -14,6 +14,10 @@ export interface AppError {
     /** Correlation id the API already returns, so a user can quote it and an
      *  operator can find the matching server-side log line. */
     request_id?: string;
+    /** Where a payment_method_required answer sends the person to save a card. */
+    setup_url?: string;
+    /** Structured context some codes carry, e.g. the fresh quote on price_changed. */
+    details?: Record<string, unknown>;
 }
 
 /** True for a request aborted through its AbortSignal (axios CanceledError, ERR_CANCELED). */
@@ -62,6 +66,8 @@ export function normalizeError(error: unknown): AppError {
             code: data.code,
             reason: data.reason,
             request_id: data.request_id,
+            ...(typeof data.setup_url === "string" && data.setup_url ? { setup_url: data.setup_url } : {}),
+            ...(data.details && typeof data.details === "object" ? { details: data.details as Record<string, unknown> } : {}),
         }
     }
 

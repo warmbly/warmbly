@@ -1149,7 +1149,18 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"store_accounts":                   "Bought through this instance's GraphKit partner account and billed from this instance's ledger; the purchase cannot move with an archive. The connected mailboxes travel, and a domain leaves through transfer-out.",
+	"store_quotes":                     "Bought through this instance's GraphKit partner account and billed from this instance's ledger; the purchase cannot move with an archive. The connected mailboxes travel, and a domain leaves through transfer-out.",
+	"store_graphkit_connection":        "The instance's own GraphKit connection, not workspace data; its secrets are sealed under this instance's key.",
+	"store_orders":                     "Bought through this instance's GraphKit partner account and billed from this instance's ledger; the purchase cannot move with an archive. The connected mailboxes travel, and a domain leaves through transfer-out.",
+	"store_domains":                    "Bought through this instance's GraphKit partner account and billed from this instance's ledger; the purchase cannot move with an archive. The connected mailboxes travel, and a domain leaves through transfer-out.",
+	"store_mailboxes":                  "Bought through this instance's GraphKit partner account and billed from this instance's ledger; the purchase cannot move with an archive. The connected mailboxes travel, and a domain leaves through transfer-out.",
+	"store_photos":                     "Photos uploaded for mailboxes bought through this instance's GraphKit partner account. They are already set as each mailbox's profile picture at its provider, and the connected mailboxes carry their own photo when they travel.",
+	"store_webhook_events":             "Which GraphKit webhook deliveries this instance already applied. Instance-local dedupe.",
 	"organization_partner_referrals":   "The partner-program click and the Dub customer it became belong to this instance's Dub workspace, and commissions keep following the Stripe customer here. The destination has no partner program for it.",
+	"partner_organizations":            "The link to the reseller that manages and bills the workspace names a partner, its keys and its billing on the source instance. An imported workspace is an ordinary one; the reseller links a workspace again through its own API.",
+	"partner_mailboxes":                "Which mailboxes a reseller attached, what it enabled each for and the days it is billed for name a partner and its billing on the source instance. The mailboxes themselves travel; an imported workspace is unmanaged, so nothing holds them.",
+	"partner_connect_links":            "A reseller's single-use connect links name the partner and return to its hosts on the source instance, and open ones are live capabilities. The mailboxes they connected travel.",
 	"mailbox_connect_links":            "Single-use sign-in links whose URL points at the source instance and whose secret only the recipient holds. The mailboxes they connected travel; open links do not, so new ones are created on the destination.",
 	"agency_clients":                   "The link to an agency, its billing and its shared send pool belongs to the source instance. An imported workspace starts outside any agency; the agency attaches it again on the destination.",
 	"agency_vendor_connections":        "Inbox vendor accounts an agency holds for its clients, kept against the agency and sealed with the instance key. A client workspace's own connection to one travels without the agency's key.",

@@ -4,6 +4,7 @@ import {
     createBalanceCheckout,
     createPaymentMethodSetup,
     getBalance,
+    getBalanceWithBurn,
     listBalanceInvoices,
     topUpBalance,
     updateAutoReload,
@@ -29,6 +30,18 @@ export const balanceInvoicesQuery = queryOptions({
 
 export function useBalance(enabled = true) {
     return useQuery({ ...balanceQuery, enabled });
+}
+
+// Its own entry so the read every page makes stays cheap; still under ['subscription','credits'] to refresh with it.
+export const balanceBurnQuery = queryOptions({
+    queryKey: ["subscription", "credits", "balance-burn"],
+    queryFn: async ({ signal }) => (await getBalanceWithBurn(signal)).burn ?? null,
+    staleTime: 60_000,
+});
+
+/** What the balance pays for a day; the billing page only. */
+export function useBalanceBurn(enabled = true) {
+    return useQuery({ ...balanceBurnQuery, enabled });
 }
 
 export function useBalanceInvoices(enabled = true) {

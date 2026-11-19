@@ -57,6 +57,8 @@ type Service interface {
 	AutoVendorReconnect(ctx context.Context) bool
 	// UsagePrices is the price list a workspace's balance is charged by.
 	UsagePrices(ctx context.Context) Usage
+	// StoreRetail is what the store charges for domains and mailboxes, already normalized.
+	StoreRetail(ctx context.Context) StoreRetail
 }
 
 type service struct {
@@ -166,6 +168,12 @@ func (s *service) UsagePrices(ctx context.Context) Usage {
 	u := s.Get(ctx).Usage
 	u.Normalize()
 	return u
+}
+
+func (s *service) StoreRetail(ctx context.Context) StoreRetail {
+	r := s.Get(ctx).Store
+	r.Normalize()
+	return r
 }
 
 func (s *service) PlacementPolicy(ctx context.Context) Placement {

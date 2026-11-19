@@ -140,6 +140,9 @@ type Service struct {
 
 	googleMailboxClientID string
 
+	// purchased brokers tokens for Google mailboxes bought in the store; nil without the store.
+	purchased PurchasedTokens
+
 	sources sync.Map // cache key -> oauth2.TokenSource
 }
 
@@ -595,6 +598,14 @@ func (s *Service) check(ctx context.Context, g *models.DomainGrant) *errx.Error 
 	var xerr *errx.Error
 	switch g.Provider {
 	case models.GrantProviderGoogle:
+		// A purchased Workspace has no directory of the customer's to read; its tokens are brokered per mailbox,
+		// so the grant stays active (whatever a release that cannot broker recorded) and each mailbox is proved below.
+		if g.Purchased {
+			if s.purchased == nil {
+				return notConfigured("Google Workspace")
+			}
+			break
+		}
 		if !s.googleEnabled() {
 			return notConfigured("Google Workspace")
 		}
@@ -618,12 +629,25 @@ func (s *Service) check(ctx context.Context, g *models.DomainGrant) *errx.Error 
 	ids, err := s.repo.InactiveMailboxes(ctx, g.ID)
 	if err == nil {
 		for _, id := range ids {
+			if g.Provider == models.GrantProviderGoogle && g.Purchased && !s.brokerReaches(ctx, g, id) {
+				continue
+			}
 			if _, xerr := s.mailboxes.ReactivateDelegated(ctx, id); xerr != nil {
 				log.Warn().Str("email_account_id", id.String()).Str("error", xerr.Message).Msg("delegation: reactivating a mailbox failed")
 			}
 		}
 	}
 	return nil
+}
+
+// brokerReaches reports whether the broker mints a token for a purchased grant's mailbox right now.
+func (s *Service) brokerReaches(ctx context.Context, g *models.DomainGrant, accountID uuid.UUID) bool {
+	d, xerr := s.store.GetDelegation(ctx, accountID)
+	if xerr != nil || d == nil || d.OrganizationID != g.OrganizationID || d.GrantID != g.ID || !covers(g, d.Email) {
+		return false
+	}
+	_, err := s.purchased.GoogleToken(ctx, g.OrganizationID, strings.ToLower(d.Email), []string{gmail.GmailModifyScope, gmail.GmailSettingsBasicScope})
+	return err == nil
 }
 
 // Delete forgets a grant; its mailboxes stop, since nothing can mint for them any more.
@@ -719,6 +743,11 @@ func (s *Service) GrantFor(ctx context.Context, orgID uuid.UUID, provider, domai
 
 // Connect proves a token works for one address under a grant and stores the mailbox.
 func (s *Service) Connect(ctx context.Context, orgID uuid.UUID, userID string, grantID uuid.UUID, email, name string) (*models.Email, *errx.Error) {
+	return s.connect(ctx, orgID, userID, grantID, email, name, false)
+}
+
+// connect is Connect; purchased marks a mailbox bought in the store, which the mailbox allowance does not bound.
+func (s *Service) connect(ctx context.Context, orgID uuid.UUID, userID string, grantID uuid.UUID, email, name string, purchased bool) (*models.Email, *errx.Error) {
 	g, xerr := s.get(ctx, orgID, grantID)
 	if xerr != nil {
 		return nil, xerr
@@ -734,10 +763,19 @@ func (s *Service) Connect(ctx context.Context, orgID uuid.UUID, userID string, g
 	if domain == "" || !covers(g, email) {
 		return nil, errx.NewWithIdentifier(errx.BadRequest, ErrIDNotCovered, "This address is not on a domain the grant covers.")
 	}
-	data := models.NewDelegatedAccount{Email: email, Name: name, GrantID: g.ID}
+	data := models.NewDelegatedAccount{Email: email, Name: name, GrantID: g.ID, Purchased: purchased}
 	switch g.Provider {
 	case models.GrantProviderGoogle:
-		addr, err := s.googleProfile(ctx, strings.ToLower(email))
+		var addr string
+		var err error
+		if g.Purchased && s.purchased != nil {
+			if xerr := s.provePurchased(ctx, orgID, strings.ToLower(email)); xerr != nil {
+				return nil, xerr
+			}
+			addr = strings.ToLower(email)
+		} else {
+			addr, err = s.googleProfile(ctx, strings.ToLower(email))
+		}
 		if err != nil {
 			return nil, s.googleErr(err)
 		}
@@ -791,13 +829,20 @@ func (s *Service) accessToken(ctx context.Context, accountID uuid.UUID, imap boo
 	var ts oauth2.TokenSource
 	switch d.Provider {
 	case models.InboxProviderGoogle:
-		if !s.googleEnabled() {
-			return nil, true, notConfigured("Google Workspace")
-		}
 		// IMAP is minted on its own, so a delegation entry without the optional scope still serves the API token.
 		scopes := []string{gmail.GmailModifyScope, gmail.GmailSettingsBasicScope}
 		if imap {
 			scopes = []string{gmail.MailGoogleComScope}
+		}
+		if g.Purchased {
+			if s.purchased == nil {
+				return nil, true, notConfigured("Google Workspace")
+			}
+			ts = s.purchasedGoogleSource(g.OrganizationID, strings.ToLower(d.Email), scopes...)
+			break
+		}
+		if !s.googleEnabled() {
+			return nil, true, notConfigured("Google Workspace")
 		}
 		src, err := s.googleSource(d.Subject, scopes...)
 		if err != nil {

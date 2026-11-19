@@ -192,3 +192,20 @@ func TestFederatedSignInRefusesAnIdentityAnotherAccountHolds(t *testing.T) {
 }
 
 func (m *memoryIdentities) Unlink(context.Context, uuid.UUID, string) error { return nil }
+
+// An address under the reserved .invalid domain belongs to an account only its partner signs in; a provider asserting
+// it neither links that account nor creates one.
+func TestFederatedSignInRefusesAnInternalAddress(t *testing.T) {
+	s, u, ids := federatedFixture("", &config.AuthPolicy{})
+	u.Email = "p-0123456789abcdef@graphkit.partner.invalid"
+	for _, addr := range []string{u.Email, "nobody@other.partner.invalid"} {
+		res, err := s.resolveFederatedUser(context.Background(), models.IdentityProviderGoogle,
+			"https://accounts.google.com", "subject-1", &mail.Address{Address: addr}, "", "", models.OrgAcquisition{})
+		if err == nil || res.UserID != uuid.Nil {
+			t.Fatalf("%s resolved to %s (%v)", addr, res.UserID, err)
+		}
+	}
+	if len(ids.linked) != 0 {
+		t.Fatalf("linked %v to an internal address", ids.linked)
+	}
+}

@@ -294,9 +294,12 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		return nil, xerr
 	}
 
-	allowance, xerr := s.guardInboxLimit(ctx, orgID)
-	if xerr != nil {
-		return nil, xerr
+	var allowance *models.MailboxAllowance
+	if !data.Purchased {
+		var xerr *errx.Error
+		if allowance, xerr = s.guardInboxLimit(ctx, orgID); xerr != nil {
+			return nil, xerr
+		}
 	}
 
 	if existing, xerr := s.findExisting(ctx, userID, orgID, data.Email); xerr != nil {

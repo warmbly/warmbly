@@ -265,9 +265,17 @@ func (h *Handler) mcpRunTool(c *gin.Context, inv aitools.Invocation, req jsonRPC
 		fallthrough
 	default:
 		// Send-class tools are never exposed or callable over MCP.
-		if t, ok := h.AITools.Get(params.Name); ok && t.Risk == generation.RiskSend {
+		t, ok := h.AITools.Get(params.Name)
+		if ok && t.Risk == generation.RiskSend {
 			c.JSON(http.StatusOK, rpcError(req.ID, -32601, "tool not available"))
 			return
+		}
+		// A workspace its partner paused is read-only here as on every other write route.
+		if ok && t.Risk != generation.RiskRead {
+			if xerr := h.partnerWriteRefusal(c, inv.OrgID); xerr != nil {
+				c.JSON(http.StatusOK, rpcError(req.ID, -32000, xerr.Message))
+				return
+			}
 		}
 		out, err = h.AITools.Call(c.Request.Context(), inv, params.Name, params.Arguments)
 	}

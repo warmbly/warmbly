@@ -135,6 +135,8 @@ export const PLAN_CATALOG: Record<PlanID, PlanDef> = {
 export const WARMUP_PLAN_ID = "00000000-0000-0000-0000-000000000002";
 // The Partnership plan's server id (models.PartnershipPlanID); warming only, like the Warmup plan.
 export const PARTNERSHIP_PLAN_ID = "00000000-0000-0000-0000-000000000003";
+/** The private plan every workspace a reseller manages runs on: every feature, billed by the reseller. */
+export const MANAGED_PLAN_ID = "00000000-0000-0000-0000-0000000000c1";
 
 // Agency plans reach a client workspace as a managed grant. Neither is sold from the plans grid, so each
 // borrows the tier it matches for the dashboard's gates and keeps its own name on the plan pill.

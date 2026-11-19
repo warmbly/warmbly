@@ -294,6 +294,8 @@ type DomainGrant struct {
 	VerifiedAt     *time.Time `json:"verified_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	Mailboxes      int        `json:"mailboxes"`
+	// Purchased is a grant GraphKit made in a domain bought in the store; AdminEmail then names one of its mailboxes.
+	Purchased bool `json:"purchased"`
 }
 
 // DirectoryUser is one account in a granted domain or tenant.

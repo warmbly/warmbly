@@ -22,6 +22,10 @@ export default interface Inbox {
     vendor_connection_id?: string | null;
     /** That vendor's id (inboxkit, zapmail, ...); absent when none. */
     vendor?: string;
+    /** True for a mailbox bought in the store; absent otherwise. */
+    purchased?: boolean;
+    /** When a purchased mailbox's subscription ended and it was switched off; absent while it is live. */
+    purchase_cancelled_at?: Date | string | null;
     /** The mailbox's own profile photo from its provider or vendor; "" when none can be read. */
     avatar_url?: string;
     status: string;

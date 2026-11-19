@@ -31,12 +31,14 @@ import {
 import { agencyInboxQuery, agencyOverviewQuery, emptyInboxFilters } from "./lib/api/hooks/app/agency/useAgencyHome";
 import { agencyMailboxesQuery, agencyVendorsQuery, emptyMailboxFilters } from "./lib/api/hooks/app/agency/useAgencyMailboxes";
 import { agencyAPIKeysQuery } from "./lib/api/hooks/app/agency/useAgencyAPIKeys";
+import { agencyStoreQuery } from "./lib/api/hooks/app/agency/useAgencyStore";
 import { authConfigQuery } from "./lib/api/hooks/auth/useAuthConfig";
 import { emailsListQuery } from "./lib/api/hooks/app/emails/useEmails";
 import { sendingDomainsQuery } from "./lib/api/hooks/app/emails/useSendingDomains";
 import { signinMigrationQuery } from "./lib/api/hooks/app/emails/useMailboxGrants";
 import { featureStatusQuery } from "./lib/api/hooks/app/subscription/useFeatureStatus";
-import { balanceQuery } from "./lib/api/hooks/app/subscription/useBalance";
+import { balanceBurnQuery, balanceQuery } from "./lib/api/hooks/app/subscription/useBalance";
+import { orderQuery, storeDomainsQuery, storeOrdersQuery, storeStatusQuery } from "./lib/api/hooks/app/store/useStore";
 import { creditUsageQuery } from "./lib/api/hooks/app/subscription/useCreditUsage";
 import { creditSettingsQuery } from "./lib/api/hooks/app/subscription/useCreditSettings";
 import { advisorFindingsQuery, advisorSurfaceQuery } from "./lib/api/hooks/app/advisor/useAdvisor";
@@ -170,6 +172,7 @@ export const emailsLoader = pageLoader((qc) => {
     return [
         can("MANAGE_EMAILS") && qc.prefetchInfiniteQuery(emailsListQuery({ query: "", tag: "" })),
         can("MANAGE_EMAILS") && qc.prefetchQuery(signinMigrationQuery),
+        can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery),
         qc.prefetchQuery(advisorSurfaceQuery("emails")),
         qc.prefetchQuery(featureStatusQuery),
         can("VIEW_ANALYTICS") && qc.prefetchQuery(dashboardQuery("30d")),
@@ -177,7 +180,17 @@ export const emailsLoader = pageLoader((qc) => {
     ];
 });
 
-export const domainsLoader = pageLoader((qc) => [can("MANAGE_EMAILS") && qc.prefetchQuery(sendingDomainsQuery)]);
+export const domainsLoader = pageLoader((qc) => [
+    can("MANAGE_EMAILS") && qc.prefetchQuery(sendingDomainsQuery),
+    can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery),
+    can("MANAGE_EMAILS") && qc.prefetchQuery(storeDomainsQuery),
+]);
+
+export const buyLoader = pageLoader((qc) => [can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery)]);
+
+export const buyOrderLoader = pageLoader((qc, { params }) => [can("MANAGE_EMAILS") && !!params.id && qc.prefetchQuery(orderQuery(params.id))]);
+
+export const buyOrdersLoader = pageLoader((qc) => [can("MANAGE_EMAILS") && qc.prefetchInfiniteQuery(storeOrdersQuery)]);
 
 export const contactsLoader = pageLoader((qc, { search }) =>
     can("VIEW_CONTACTS")
@@ -449,6 +462,7 @@ export const billingLoader = pageLoader((qc, { params }) => {
         if (!can("MANAGE_BILLING")) return [];
         return [
             qc.prefetchQuery(balanceQuery),
+            qc.prefetchQuery(balanceBurnQuery),
             qc.prefetchQuery(creditUsageQuery(30)),
             qc.prefetchQuery(creditSettingsQuery),
         ];
@@ -493,6 +507,7 @@ export const agencyMailboxesLoader = agencyPage((qc, id) => [
     qc.prefetchQuery(agencyVendorsQuery(id)),
     qc.prefetchQuery(agencyOverviewQuery(id)),
 ]);
+export const agencyStoreLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyStoreQuery(id))]);
 export const agencyStaffLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyStaffQuery(id))]);
 export const agencyUsageLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyUsageQuery(id)), qc.prefetchQuery(agencyAIBalanceQuery(id))]);
 export const agencyBrandingLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyBrandQuery(id))]);
