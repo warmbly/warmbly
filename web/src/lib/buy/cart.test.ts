@@ -523,3 +523,19 @@ describe("default website forward", () => {
         expect(cartReducer(back, { type: "default_forwarding", value: "https://acme.com" }).forwarding).toBe("");
     });
 });
+
+describe("offered providers", () => {
+    it("moves a saved Microsoft cart onto the provider still offered, keeping domains that already have mailboxes", () => {
+        let cart = emptyCart({ first: "Ada", last: "Lovelace" });
+        cart = cartReducer(cart, { type: "default_provider", provider: "microsoft" });
+        cart = cartReducer(cart, { type: "add", domain: "fresh.com" });
+        cart = cartReducer(cart, { type: "add", domain: "picked.com", provider: "google" });
+        cart = { ...cart, domains: [...cart.domains, { domain: "owned.com", kind: "owned", years: 1, provider: "microsoft", providerFixed: true, custom: null, admin: 0 }] };
+
+        const next = cartReducer(cart, { type: "offered_providers", providers: ["google"] });
+
+        expect(next.provider).toBe("google");
+        expect(next.domains.map((d) => [d.domain, d.provider])).toEqual([["fresh.com", null], ["picked.com", null], ["owned.com", "microsoft"]]);
+        expect(cartReducer(next, { type: "offered_providers", providers: ["google"] })).toBe(next);
+    });
+});

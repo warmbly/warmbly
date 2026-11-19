@@ -39,6 +39,8 @@ const (
 	CodeRenewalInProgress     = "renewal_in_progress"
 	CodeTransferLocked        = "transfer_locked"
 	CodeProviderMixed         = "provider_mixed"
+	// CodeProviderUnavailable refuses mailboxes from a provider that is not offered right now.
+	CodeProviderUnavailable   = "provider_unavailable"
 	CodeAddressTaken          = "mailbox_exists"
 	CodeAddressInvalid        = "local_part_invalid"
 	CodeMailboxLimit          = "mailbox_limit"
@@ -146,6 +148,18 @@ func (s *Service) alertIfAccountLevel(err error) {
 	}
 }
 
+// providerUnavailable refuses mailboxes from a provider that cannot be ordered right now; nothing is charged.
+func providerUnavailable(provider string) *errx.Error {
+	name := "These mailboxes"
+	switch provider {
+	case graphkit.ProviderMicrosoft:
+		name = "Microsoft 365 mailboxes"
+	case graphkit.ProviderGoogle:
+		name = "Google Workspace mailboxes"
+	}
+	return errx.NewWithIdentifier(errx.Unprocessable, CodeProviderUnavailable, name+" aren't available right now. Choose another provider for these mailboxes.")
+}
+
 func unavailable() *errx.Error {
 	e := errx.NewWithIdentifier(errx.ServiceUnavailable, CodeUnavailable, "Buying domains and mailboxes is unavailable right now. Try again in a few minutes.")
 	e.Public = true
@@ -164,6 +178,9 @@ func (s *Service) upstream(_ context.Context, op string, err error) *errx.Error 
 	if ge.AccountLevel() {
 		s.alertIfAccountLevel(err)
 		return unavailable()
+	}
+	if p := ge.UnavailableProvider(); p != "" {
+		return providerUnavailable(p)
 	}
 	id := func(code errx.Code, ident, msg string) *errx.Error { return errx.NewWithIdentifier(code, ident, msg) }
 	dnsOp := strings.HasPrefix(op, "dns.")

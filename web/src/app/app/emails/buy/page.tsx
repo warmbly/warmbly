@@ -22,7 +22,7 @@ import { storeState, useOrder, useStoreStatus } from "@/lib/api/hooks/app/store/
 import usePartnerManaged from "@/hooks/usePartnerManaged";
 import { storePhotoFromProfile } from "@/lib/api/client/app/store/store";
 import { storeErrorCode } from "@/lib/buy/errors";
-import type { DomainSearchResult, Order, StoreDomain, StoreStatus } from "@/lib/api/models/app/store/Store";
+import type { DomainSearchResult, Order, StoreDomain, StoreProvider, StoreStatus } from "@/lib/api/models/app/store/Store";
 import { cartReducer, DEFAULT_LIMITS, emptyCart, loadCart, saveCart, type CartLimits, type PriceBook } from "@/lib/buy/cart";
 import { ownedFromDomain } from "@/lib/buy/connection";
 import { EASE } from "@/lib/buy/motion";
@@ -90,6 +90,9 @@ function Checkout({ status }: { status: StoreStatus }) {
     React.useEffect(() => saveCart(orgId, cart), [orgId, cart]);
     // A fresh cart's first sender picks up the account's name once the profile has loaded.
     React.useEffect(() => dispatch({ type: "seed_sender", person }), [person]);
+    // A saved cart may name a provider that is no longer offered.
+    const offered = providers.join(",");
+    React.useEffect(() => dispatch({ type: "offered_providers", providers: offered.split(",") as StoreProvider[] }), [offered]);
 
     // New domains forward to the workspace's website (or the buyer's business domain) until the buyer changes it.
     const suggestedForward = status.default_forwarding_url ?? "";

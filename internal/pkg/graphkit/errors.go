@@ -70,8 +70,24 @@ func (e *Error) Error() string {
 func (e *Error) Unwrap() error { return e.cause }
 
 // Retryable reports a failure the same request may succeed on later.
+// A provider that is not offered right now is not retried.
 func (e *Error) Retryable() bool {
+	if e.UnavailableProvider() != "" {
+		return false
+	}
 	return e.Status == 0 || e.Status == http.StatusTooManyRequests || e.Status >= 500
+}
+
+// UnavailableProvider is the mailbox provider an upstream_unavailable refusal names as not offered right now.
+func (e *Error) UnavailableProvider() string {
+	if e.Code != CodeUpstreamUnavailable || len(e.Details) == 0 {
+		return ""
+	}
+	var d struct {
+		Provider string `json:"provider"`
+	}
+	_ = json.Unmarshal(e.Details, &d)
+	return d.Provider
 }
 
 // ContactFields names the registrant fields a contact_invalid refusal rejected.
