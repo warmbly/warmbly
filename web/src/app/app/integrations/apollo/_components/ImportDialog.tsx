@@ -66,6 +66,7 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
     const [campaignName, setCampaignName] = React.useState("");
     const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
     const [segmentIds, setSegmentIds] = React.useState<string[]>([]);
+    const [segmentBusy, setSegmentBusy] = React.useState(false);
     const [recurring, setRecurring] = React.useState(true);
 
     const lists = useApolloLists(connectionId);
@@ -258,6 +259,7 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
                                 <div>
                                     <Label>Add to segments (optional)</Label>
                                     <SegmentMultiPicker
+                                        onBusyChange={setSegmentBusy}
                                         value={segmentIds}
                                         onChange={setSegmentIds}
                                         allowCreate
@@ -319,7 +321,7 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
                             <ChevronRightIcon className="w-3 h-3" />
                         </button>
                     ) : (
-                        <button type="button" onClick={() => void submit()} disabled={create.isPending} className={cn(primaryBtn, "shrink-0")}>
+                        <button type="button" onClick={() => void submit()} disabled={create.isPending || segmentBusy} className={cn(primaryBtn, "shrink-0")}>
                             {create.isPending ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <DownloadCloudIcon className="w-3.5 h-3.5" />}
                             Create and import
                         </button>
@@ -450,6 +452,7 @@ export function EditImportDialog({
     const [campaignName, setCampaignName] = React.useState("");
     const [categoryIds, setCategoryIds] = React.useState<string[]>(source.category_ids ?? []);
     const [segmentIds, setSegmentIds] = React.useState<string[]>(source.segment_ids ?? []);
+    const [segmentBusy, setSegmentBusy] = React.useState(false);
     const [verifiedOnly, setVerifiedOnly] = React.useState(source.verified_only);
     const [recurring, setRecurring] = React.useState(source.recurring);
 
@@ -515,6 +518,7 @@ export function EditImportDialog({
                 <div>
                     <Label>Add to segments</Label>
                     <SegmentMultiPicker
+                        onBusyChange={setSegmentBusy}
                         value={segmentIds}
                         onChange={setSegmentIds}
                         allowCreate
@@ -549,7 +553,7 @@ export function EditImportDialog({
                 >
                     Cancel
                 </button>
-                <button type="button" onClick={() => void save()} disabled={!dirty || update.isPending} className={primaryBtn}>
+                <button type="button" onClick={() => void save()} disabled={!dirty || update.isPending || segmentBusy} className={primaryBtn}>
                     {update.isPending && <Loader2Icon className="w-3.5 h-3.5 animate-spin" />}
                     Save
                 </button>

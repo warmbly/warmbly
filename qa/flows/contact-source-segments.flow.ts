@@ -63,6 +63,7 @@ test.describe("contact source segments", () => {
 
   test("pin every form submission into a segment", async ({ page, proof }) => {
     await page.goto("/app/forms/33333333-0000-0000-0000-000000000001");
+    await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
     await proof.chapter("Forms", "Submissions land in segments as well as labels");
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(page.getByText("Add to segments")).toBeVisible();
