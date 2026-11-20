@@ -23,7 +23,7 @@ type Deps struct {
 //
 // fallback selects a default provider when ENCRYPTED_KEYS_PROVIDER is unset.
 // Backend processes should pass "postgres"; workers should pass "http".
-func FromEnv(deps Deps, fallback string) (Store, error) {
+func FromEnv(deps Deps, fallback string, opts ...HTTPOption) (Store, error) {
 	provider := os.Getenv("ENCRYPTED_KEYS_PROVIDER")
 	if provider == "" {
 		provider = fallback
@@ -41,7 +41,7 @@ func FromEnv(deps Deps, fallback string) (Store, error) {
 		if token == "" {
 			token = os.Getenv("ENCRYPTED_KEYS_WORKER_TOKEN")
 		}
-		return NewHTTP(baseURL, token)
+		return NewHTTP(baseURL, token, opts...)
 	default:
 		return nil, fmt.Errorf("encryptedkeys: unknown ENCRYPTED_KEYS_PROVIDER %q (want: postgres, http)", provider)
 	}

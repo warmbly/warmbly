@@ -44,6 +44,7 @@ override_data {
       runtime = {
         vpc_id            = "vpc-1"
         public_subnet_ids = ["subnet-a", "subnet-b"]
+        tasks_sg_id       = "sg-tasks"
       }
     }
   }
@@ -55,6 +56,40 @@ variables {
   operator_ssh_cidrs      = ["203.0.113.0/24"]
   cache_security_group_id = "sg-cache"
   workers                 = {}
+}
+
+run "backend_internal_port_is_opt_in" {
+  command = plan
+  variables {
+    fleet_enabled      = true
+    fleet_instance_url = "https://app.example.com"
+  }
+  assert {
+    condition     = length(aws_vpc_security_group_ingress_rule.backend_internal) == 0
+    error_message = "Workers reach the backend's private listener only once backend_internal_port is set."
+  }
+}
+
+run "backend_internal_port_admits_fleet_and_hosts" {
+  command = plan
+  variables {
+    fleet_enabled         = true
+    fleet_instance_url    = "https://app.example.com"
+    backend_internal_port = 8443
+    workers               = { warmbly-a = { image = "r/worker@sha256:0000000000000000000000000000000000000000000000000000000000000000", zone_index = 0 } }
+  }
+  assert {
+    condition     = toset(keys(aws_vpc_security_group_ingress_rule.backend_internal)) == toset(["fleet", "hosts"]) && alltrue([for rule in aws_vpc_security_group_ingress_rule.backend_internal : rule.security_group_id == "sg-tasks" && rule.from_port == 8443 && rule.to_port == 8443])
+    error_message = "Fleet and fixed workers reach the tasks' TLS port and nothing else."
+  }
+}
+
+run "backend_internal_port_rejects_a_privileged_port" {
+  command = plan
+  variables {
+    backend_internal_port = 443
+  }
+  expect_failures = [var.backend_internal_port]
 }
 
 run "fleet_is_opt_in" {

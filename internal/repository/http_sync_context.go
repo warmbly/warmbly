@@ -100,7 +100,7 @@ type httpSyncContextRepository struct {
 // GET {BaseURL}/api/v1/internal/sync/own-conversation,
 // GET {BaseURL}/api/v1/internal/sync/folder-messages and
 // GET {BaseURL}/api/v1/internal/sync/provider-folder-messages.
-func NewHTTPSyncContextRepository(baseURL, token string) (SyncContextRepository, error) {
+func NewHTTPSyncContextRepository(baseURL, token string, opts ...ControlPlaneOption) (SyncContextRepository, error) {
 	if baseURL == "" {
 		return nil, errors.New("sync_context.http: baseURL is required")
 	}
@@ -110,7 +110,7 @@ func NewHTTPSyncContextRepository(baseURL, token string) (SyncContextRepository,
 	return &httpSyncContextRepository{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		client:  newControlPlaneClient(10 * time.Second),
+		client:  newControlPlaneClient(10*time.Second, opts),
 	}, nil
 }
 

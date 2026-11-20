@@ -127,6 +127,10 @@ func (a *Agent) sendLogs(ctx context.Context, body []byte) logSendResult {
 	req.Header.Set("Content-Type", "application/json")
 	// Never follow a redirect with a node credential or expose transport errors in evidence.
 	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	// Same transport as the heartbeat, so logs follow it to a private control-plane address.
+	if a.http != nil {
+		client.Transport = a.http.Transport
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return logSendResult{retryable: true}

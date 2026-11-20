@@ -111,6 +111,12 @@ variable "backend_internal_certificate" {
   }
 }
 
+variable "nodes_private_backend" {
+  description = "Offer fleet nodes the backend's private TLS address once the workers root admits them on target_tls_port; nodes that cannot reach it keep the public address"
+  type        = bool
+  default     = false
+}
+
 data "terraform_remote_state" "foundation" {
   backend = "s3"
   config = {
@@ -145,6 +151,10 @@ locals {
       local.tls_targets && contains(["forms", "tracking"], name) ? {
         BACKEND_INTERNAL_URL = local.backend_internal_url
         BACKEND_INTERNAL_CA  = var.backend_internal_certificate
+      } : {},
+      local.tls_targets && var.nodes_private_backend && name == "backend" ? {
+        NODE_BACKEND_INTERNAL_URL = local.backend_internal_url
+        NODE_BACKEND_INTERNAL_CA  = var.backend_internal_certificate
       } : {},
     )
   }

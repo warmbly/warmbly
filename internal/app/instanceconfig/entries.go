@@ -863,6 +863,12 @@ var table = []Entry{
 		Resolve:    envValue("ENCRYPTED_KEYS_BACKEND_URL"),
 	},
 	{
+		Key: "NODE_BACKEND_INTERNAL_URL", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "A private backend address offered to nodes beside ENCRYPTED_KEYS_BACKEND_URL. A node that reaches it at startup calls it instead; unset, nodes use the public address.",
+		DocsAnchor: docsWorkers,
+		Resolve:    envValue("NODE_BACKEND_INTERNAL_URL"),
+	},
+	{
 		Key: "ENCRYPTED_KEYS_WORKER_TOKEN", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
 		Effect:     "The worker's copy of the node token (NODE_BROKER_TOKEN, else INTERNAL_API_TOKEN). It must match the backend's value exactly.",
 		DocsAnchor: docsWorkers,
