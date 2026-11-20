@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
@@ -73,6 +72,7 @@ func (d Deps) registerFormTools(r *Registry) {
 			"redirect_url":    strProp("Send the visitor here instead of showing the success message."),
 			"campaign_id":     strProp("Add every contact this form creates to this campaign. Pass an empty string to detach."),
 			"category_ids":    arrProp("Categories to file new contacts under.", map[string]any{"type": "string"}),
+			"segment_ids":     arrProp("Segments to pin new contacts into.", map[string]any{"type": "string"}),
 			"allowed_domains": arrProp("Domains the form may be embedded on.", map[string]any{"type": "string"}),
 			"captcha_enabled": boolProp("Require a captcha. Has no effect where the install has no captcha provider."),
 			"triage_enabled":  boolProp("Classify each submission as buyer, vendor, job seeker, other or junk; junk creates no contact. Has no effect where the install has no TypeSafe key."),
@@ -201,6 +201,7 @@ func (d Deps) updateForm(ctx context.Context, inv Invocation, args json.RawMessa
 		RedirectURL    *string          `json:"redirect_url"`
 		CampaignID     *string          `json:"campaign_id"`
 		CategoryIDs    *[]string        `json:"category_ids"`
+		SegmentIDs     *[]string        `json:"segment_ids"`
 		AllowedDomains *[]string        `json:"allowed_domains"`
 		CaptchaEnabled *bool            `json:"captcha_enabled"`
 		TriageEnabled  *bool            `json:"triage_enabled"`
@@ -248,15 +249,18 @@ func (d Deps) updateForm(ctx context.Context, inv Invocation, args json.RawMessa
 		}
 	}
 	if in.CategoryIDs != nil {
-		ids := make([]uuid.UUID, 0, len(*in.CategoryIDs))
-		for _, raw := range *in.CategoryIDs {
-			cid, cerr := parseUUIDArg(raw)
-			if cerr != nil {
-				return "", cerr
-			}
-			ids = append(ids, cid)
+		ids, ierr := parseUUIDList(*in.CategoryIDs)
+		if ierr != nil {
+			return "", ierr
 		}
 		write.CategoryIDs = &ids
+	}
+	if in.SegmentIDs != nil {
+		ids, ierr := parseUUIDList(*in.SegmentIDs)
+		if ierr != nil {
+			return "", ierr
+		}
+		write.SegmentIDs = &ids
 	}
 
 	out, xerr := d.Forms.Update(ctx, inv.OrgID, id, write)

@@ -270,6 +270,10 @@ type SegmentAddToCampaignResult struct {
 // CampaignSegmentsMax bounds how many segments one campaign can link.
 const CampaignSegmentsMax = 20
 
+// ImportSourceSegmentsMax bounds how many segments a saved contact source
+// (an Apollo or Salesforce import, a form) pins what it brings in into.
+const ImportSourceSegmentsMax = 20
+
 // CampaignSegmentsWrite replaces a campaign's linked segments.
 type CampaignSegmentsWrite struct {
 	SegmentIDs []string `json:"segment_ids"`

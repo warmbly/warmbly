@@ -26,8 +26,15 @@ func TestLiveFormLifecycle(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO categories (id, organization_id, user_id, title, color, position) VALUES ($1, $2, $3, 'Form leads', '#00ff00', 0)`, category, f.org, f.owner); err != nil {
 		t.Fatalf("fixture category: %v", err)
 	}
+	segment, deleted, foreign := uuid.New(), uuid.New(), uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO segments (id, organization_id, name) VALUES ($1, $3, 'Form audience'), ($2, $3, 'Short-lived')`, segment, deleted, f.org); err != nil {
+		t.Fatalf("fixture segments: %v", err)
+	}
 	t.Cleanup(func() {
 		c := context.Background()
+		if _, err := pool.Exec(c, `DELETE FROM segments WHERE id = ANY($1)`, []uuid.UUID{segment, deleted}); err != nil {
+			t.Errorf("cleanup segments: %v", err)
+		}
 		if _, err := pool.Exec(c, `DELETE FROM forms WHERE organization_id = $1`, f.org); err != nil {
 			t.Errorf("cleanup forms: %v", err)
 		}
@@ -43,6 +50,7 @@ func TestLiveFormLifecycle(t *testing.T) {
 		Fields:         []models.FormField{{ID: "email", Type: models.FormFieldEmail, Label: "Email", Required: true, MapTo: "email"}},
 		SuccessMessage: "Thanks",
 		CategoryIDs:    []uuid.UUID{category},
+		SegmentIDs:     []uuid.UUID{segment, deleted, foreign},
 		AllowedDomains: []string{"example.com"},
 	})
 	if xerr != nil {
@@ -51,6 +59,17 @@ func TestLiveFormLifecycle(t *testing.T) {
 	if len(created.CategoryIDs) != 1 || created.CategoryIDs[0] != category {
 		t.Fatalf("category aggregation scan: %+v", created.CategoryIDs)
 	}
+	// A segment outside the workspace is dropped; a deleted one leaves the form.
+	if len(created.SegmentIDs) != 2 {
+		t.Fatalf("segment aggregation scan: %+v", created.SegmentIDs)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM segments WHERE id = $1`, deleted); err != nil {
+		t.Fatalf("delete segment: %v", err)
+	}
+	if got, xerr := repo.Get(ctx, f.org, created.ID); xerr != nil || len(got.SegmentIDs) != 1 || got.SegmentIDs[0] != segment {
+		t.Fatalf("deleted segment still linked: %+v %v", got, xerr)
+	}
+	created.SegmentIDs = []uuid.UUID{segment}
 	if len(created.AllowedDomains) != 1 || created.AllowedDomains[0] != "example.com" {
 		t.Fatalf("allowed domains round-trip: %+v", created.AllowedDomains)
 	}
@@ -62,7 +81,7 @@ func TestLiveFormLifecycle(t *testing.T) {
 	if xerr != nil {
 		t.Fatalf("update: %v", xerr)
 	}
-	if updated.Status != models.FormStatusPublished || updated.CampaignID == nil {
+	if updated.Status != models.FormStatusPublished || updated.CampaignID == nil || len(updated.SegmentIDs) != 1 {
 		t.Fatalf("update round-trip: %+v", updated)
 	}
 

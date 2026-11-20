@@ -561,6 +561,10 @@ var Tables = []Table{
 		Scope: `form_id IN (SELECT id FROM forms WHERE organization_id = $1)`,
 	},
 	{
+		Name: "form_segments", Group: models.OrgDataGroupContacts,
+		Scope: `form_id IN (SELECT id FROM forms WHERE organization_id = $1)`,
+	},
+	{
 		Name: "form_submissions", Group: models.OrgDataGroupContacts,
 		Scope: scopeOrg,
 	},

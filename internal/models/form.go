@@ -31,6 +31,7 @@ type Form struct {
 	RedirectURLActive *bool       `json:"redirect_url_active,omitempty"`
 	CampaignID        *uuid.UUID  `json:"campaign_id,omitempty"`
 	CategoryIDs       []uuid.UUID `json:"category_ids"`
+	SegmentIDs        []uuid.UUID `json:"segment_ids"`
 	AllowedDomains    []string    `json:"allowed_domains"`
 	CaptchaEnabled    bool        `json:"captcha_enabled"`
 	// TriageEnabled classifies each submission through TypeSafe; junk is kept
@@ -218,6 +219,7 @@ type FormWrite struct {
 	RedirectURL    *string      `json:"redirect_url,omitempty"`
 	CampaignID     NullableUUID `json:"campaign_id"`
 	CategoryIDs    *[]uuid.UUID `json:"category_ids,omitempty"`
+	SegmentIDs     *[]uuid.UUID `json:"segment_ids,omitempty"`
 	AllowedDomains *[]string    `json:"allowed_domains,omitempty"`
 	CaptchaEnabled *bool        `json:"captcha_enabled,omitempty"`
 	TriageEnabled  *bool        `json:"triage_enabled,omitempty"`
@@ -277,6 +279,7 @@ const (
 	FormMaxDomains        = 20
 	FormMaxAnswerLen      = 5000
 	FormMaxCategories     = 20
+	FormMaxSegments       = ImportSourceSegmentsMax
 	FormMinBorderRadius   = 0
 	FormMaxBorderRadius   = 24
 	FormMinWidth          = 320

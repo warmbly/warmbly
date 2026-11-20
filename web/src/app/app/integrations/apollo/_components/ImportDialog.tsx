@@ -18,6 +18,7 @@ import { Label, TextInput } from "@/components/ui/field";
 import CampaignPicker from "@/components/app/campaigns/CampaignPicker";
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
+import { SegmentMultiPicker } from "@/components/app/segments/SegmentPickers";
 import { useConfirm } from "@/hooks/context/confirm";
 import {
     useApolloImportPreview,
@@ -33,7 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { Pill, SearchSelect, primaryBtn } from "../../salesforce/_components/shared";
-import { errMsg } from "../../salesforce/_components/util";
+import { errMsg, sameIds } from "../../salesforce/_components/util";
 import DialogShell from "./DialogShell";
 import useEscapeToClose from "./useEscapeToClose";
 
@@ -64,6 +65,7 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
     const [campaignId, setCampaignId] = React.useState<string | null>(null);
     const [campaignName, setCampaignName] = React.useState("");
     const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
+    const [segmentIds, setSegmentIds] = React.useState<string[]>([]);
     const [recurring, setRecurring] = React.useState(true);
 
     const lists = useApolloLists(connectionId);
@@ -131,6 +133,7 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
                     list_name: listName,
                     campaign_id: campaignId ?? undefined,
                     category_ids: categoryIds,
+                    segment_ids: segmentIds,
                     verified_only: verifiedOnly,
                     recurring,
                 },
@@ -250,6 +253,16 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
                                             setCampaignName(n);
                                         }}
                                         noneLabel="Only add to contacts"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Add to segments (optional)</Label>
+                                    <SegmentMultiPicker
+                                        value={segmentIds}
+                                        onChange={setSegmentIds}
+                                        allowCreate
+                                        suggestedName={name.trim() || listName}
+                                        placeholder="Pick or create a segment…"
                                     />
                                 </div>
                                 <div>
@@ -436,6 +449,7 @@ export function EditImportDialog({
     const [campaignId, setCampaignId] = React.useState<string | null>(source.campaign_id ?? null);
     const [campaignName, setCampaignName] = React.useState("");
     const [categoryIds, setCategoryIds] = React.useState<string[]>(source.category_ids ?? []);
+    const [segmentIds, setSegmentIds] = React.useState<string[]>(source.segment_ids ?? []);
     const [verifiedOnly, setVerifiedOnly] = React.useState(source.verified_only);
     const [recurring, setRecurring] = React.useState(source.recurring);
 
@@ -444,7 +458,8 @@ export function EditImportDialog({
         (campaignId ?? null) !== (source.campaign_id ?? null) ||
         recurring !== source.recurring ||
         verifiedOnly !== source.verified_only ||
-        JSON.stringify([...categoryIds].sort()) !== JSON.stringify([...(source.category_ids ?? [])].sort());
+        !sameIds(categoryIds, source.category_ids) ||
+        !sameIds(segmentIds, source.segment_ids);
 
     const requestClose = React.useCallback(() => {
         if (update.isPending) return;
@@ -462,6 +477,7 @@ export function EditImportDialog({
                     name: name.trim() || source.list_name,
                     campaign_id: campaignId,
                     category_ids: categoryIds,
+                    segment_ids: segmentIds,
                     verified_only: verifiedOnly,
                     recurring,
                 },
@@ -494,6 +510,16 @@ export function EditImportDialog({
                             setCampaignName(n);
                         }}
                         noneLabel="Only add to contacts"
+                    />
+                </div>
+                <div>
+                    <Label>Add to segments</Label>
+                    <SegmentMultiPicker
+                        value={segmentIds}
+                        onChange={setSegmentIds}
+                        allowCreate
+                        suggestedName={name.trim() || source.list_name}
+                        placeholder="Pick or create a segment…"
                     />
                 </div>
                 <div>

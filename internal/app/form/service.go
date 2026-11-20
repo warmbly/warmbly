@@ -341,6 +341,9 @@ func (s *service) Update(ctx context.Context, orgID, id uuid.UUID, in *models.Fo
 	if in.CategoryIDs != nil {
 		f.CategoryIDs = *in.CategoryIDs
 	}
+	if in.SegmentIDs != nil {
+		f.SegmentIDs = *in.SegmentIDs
+	}
 	if in.AllowedDomains != nil {
 		domains, xerr := models.ValidateFormDomains(*in.AllowedDomains)
 		if xerr != nil {
@@ -514,7 +517,8 @@ func (s *service) Submit(ctx context.Context, publicID string, answers map[strin
 		}
 		if owner != nil {
 			lead.Campaigns = campaignList(f.CampaignID)
-			lead.Categories = categoryList(f.CategoryIDs)
+			lead.Categories = idStrings(f.CategoryIDs)
+			lead.Segments = idStrings(f.SegmentIDs)
 			lead.Source = models.ContactSourceForm
 			lead.SourceDetail = f.Name
 			created, cerr := s.contacts.Add(ctx, owner.String(), f.OrganizationID, []models.AddContact{*lead})
@@ -742,7 +746,7 @@ func campaignList(id *uuid.UUID) []string {
 	return []string{id.String()}
 }
 
-func categoryList(ids []uuid.UUID) []string {
+func idStrings(ids []uuid.UUID) []string {
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
 		out = append(out, id.String())

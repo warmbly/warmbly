@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -227,6 +228,7 @@ type SourceInput struct {
 	CampaignID    *uuid.UUID  `json:"campaign_id"`
 	ClearCampaign bool        `json:"-"`
 	CategoryIDs   []uuid.UUID `json:"category_ids"`
+	SegmentIDs    []uuid.UUID `json:"segment_ids"`
 	Recurring     *bool       `json:"recurring"`
 	Enabled       *bool       `json:"enabled"`
 }
@@ -242,6 +244,9 @@ func (s *Service) CreateSource(ctx context.Context, orgID, connID, userID uuid.U
 	}
 	if len(in.CategoryIDs) > 50 {
 		return nil, errx.New(errx.BadRequest, "at most 50 tags")
+	}
+	if len(in.SegmentIDs) > models.ImportSourceSegmentsMax {
+		return nil, errx.New(errx.BadRequest, fmt.Sprintf("at most %d segments", models.ImportSourceSegmentsMax))
 	}
 	label := truncate(strings.TrimSpace(in.SourceLabel), 200)
 	name := label
@@ -260,12 +265,13 @@ func (s *Service) CreateSource(ctx context.Context, orgID, connID, userID uuid.U
 		SourceLabel:     label,
 		CampaignID:      in.CampaignID,
 		CategoryIDs:     in.CategoryIDs,
+		SegmentIDs:      in.SegmentIDs,
 		Recurring:       in.Recurring != nil && *in.Recurring,
 		Enabled:         true,
 	}
 	if err := s.Repo.CreateSource(ctx, row); err != nil {
 		if errors.Is(err, repository.ErrSalesforceSourceRefs) {
-			return nil, errx.New(errx.BadRequest, "The campaign to enroll into or a category was not found in this workspace")
+			return nil, errx.New(errx.BadRequest, "The campaign to enroll into, a label or a segment was not found in this workspace")
 		}
 		return nil, err
 	}
@@ -295,6 +301,12 @@ func (s *Service) UpdateSource(ctx context.Context, orgID, id uuid.UUID, in Sour
 		}
 		src.CategoryIDs = in.CategoryIDs
 	}
+	if in.SegmentIDs != nil {
+		if len(in.SegmentIDs) > models.ImportSourceSegmentsMax {
+			return nil, errx.New(errx.BadRequest, fmt.Sprintf("at most %d segments", models.ImportSourceSegmentsMax))
+		}
+		src.SegmentIDs = in.SegmentIDs
+	}
 	if in.Recurring != nil {
 		src.Recurring = *in.Recurring
 	}
@@ -303,7 +315,7 @@ func (s *Service) UpdateSource(ctx context.Context, orgID, id uuid.UUID, in Sour
 	}
 	if err := s.Repo.UpdateSource(ctx, src); err != nil {
 		if errors.Is(err, repository.ErrSalesforceSourceRefs) {
-			return nil, errx.New(errx.BadRequest, "The campaign to enroll into or a category was not found in this workspace")
+			return nil, errx.New(errx.BadRequest, "The campaign to enroll into, a label or a segment was not found in this workspace")
 		}
 		return nil, err
 	}
@@ -417,6 +429,10 @@ func (s *Service) importOnce(ctx context.Context, src models.SalesforceImportSou
 	for _, id := range src.CategoryIDs {
 		cats = append(cats, id.String())
 	}
+	segs := make([]string, 0, len(src.SegmentIDs))
+	for _, id := range src.SegmentIDs {
+		segs = append(segs, id.String())
+	}
 	subscribed := true
 	opts := &models.ContactImportCommit{
 		Mapping:             mapping,
@@ -424,6 +440,7 @@ func (s *Service) importOnce(ctx context.Context, src models.SalesforceImportSou
 		HasHeader:           true,
 		CategoryIDs:         cats,
 		CampaignIDs:         campaigns,
+		SegmentIDs:          segs,
 		SkipMissingSegments: true,
 		SubscribedDefault:   &subscribed,
 		Source:              models.ContactSourceCRMSync,

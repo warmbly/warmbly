@@ -87,6 +87,7 @@ type SalesforceImportSource struct {
 	SourceLabel     string               `json:"source_label"`
 	CampaignID      *uuid.UUID           `json:"campaign_id,omitempty"`
 	CategoryIDs     []uuid.UUID          `json:"category_ids"`
+	SegmentIDs      []uuid.UUID          `json:"segment_ids"`
 	Recurring       bool                 `json:"recurring"`
 	Enabled         bool                 `json:"enabled"`
 	Status          string               `json:"status"`

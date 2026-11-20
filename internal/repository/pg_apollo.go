@@ -70,14 +70,14 @@ func NewApolloRepository(db *pgxpool.Pool) ApolloRepository {
 
 const apolloSourceColumns = `id, organization_id, connection_id, created_by_user_id, name, list_id, list_name,
 	campaign_id, category_ids, verified_only, recurring, enabled, status, last_run_at, last_result, last_error,
-	total_imported, created_at, updated_at`
+	total_imported, created_at, updated_at, segment_ids`
 
 func scanApolloSource(row pgx.Row) (models.ApolloImportSource, error) {
 	var s models.ApolloImportSource
 	var result []byte
 	err := row.Scan(&s.ID, &s.OrganizationID, &s.ConnectionID, &s.CreatedByUserID, &s.Name, &s.ListID, &s.ListName,
 		&s.CampaignID, &s.CategoryIDs, &s.VerifiedOnly, &s.Recurring, &s.Enabled, &s.Status, &s.LastRunAt, &result,
-		&s.LastError, &s.TotalImported, &s.CreatedAt, &s.UpdatedAt)
+		&s.LastError, &s.TotalImported, &s.CreatedAt, &s.UpdatedAt, &s.SegmentIDs)
 	if err == nil && len(result) > 0 {
 		var rr models.ApolloRunResult
 		if json.Unmarshal(result, &rr) == nil {
@@ -87,6 +87,9 @@ func scanApolloSource(row pgx.Row) (models.ApolloImportSource, error) {
 	if s.CategoryIDs == nil {
 		s.CategoryIDs = []uuid.UUID{}
 	}
+	if s.SegmentIDs == nil {
+		s.SegmentIDs = []uuid.UUID{}
+	}
 	return s, err
 }
 
@@ -94,18 +97,22 @@ func (r *apolloRepository) CreateSource(ctx context.Context, s *models.ApolloImp
 	if s.CategoryIDs == nil {
 		s.CategoryIDs = []uuid.UUID{}
 	}
+	if s.SegmentIDs == nil {
+		s.SegmentIDs = []uuid.UUID{}
+	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO apollo_import_sources (
 			organization_id, connection_id, created_by_user_id, name, list_id, list_name,
-			campaign_id, category_ids, verified_only, recurring, enabled
+			campaign_id, category_ids, verified_only, recurring, enabled, segment_ids
 		)
-		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 		WHERE EXISTS (SELECT 1 FROM integration_connections WHERE id = $2 AND organization_id = $1 AND provider = 'apollo')
 		  AND ($7::uuid IS NULL OR EXISTS (SELECT 1 FROM campaigns WHERE id = $7 AND organization_id = $1))
 		  AND NOT EXISTS (SELECT 1 FROM unnest($8::uuid[]) c(id) WHERE NOT EXISTS (SELECT 1 FROM categories cat WHERE cat.id = c.id AND cat.organization_id = $1))
+		  AND NOT EXISTS (SELECT 1 FROM unnest($12::uuid[]) g(id) WHERE NOT EXISTS (SELECT 1 FROM segments seg WHERE seg.id = g.id AND seg.organization_id = $1))
 		RETURNING `+apolloSourceColumns,
 		s.OrganizationID, s.ConnectionID, s.CreatedByUserID, s.Name, s.ListID, s.ListName,
-		s.CampaignID, s.CategoryIDs, s.VerifiedOnly, s.Recurring, s.Enabled)
+		s.CampaignID, s.CategoryIDs, s.VerifiedOnly, s.Recurring, s.Enabled, s.SegmentIDs)
 	out, err := scanApolloSource(row)
 	if isNoRows(err) {
 		return ErrApolloSourceRefs
@@ -149,11 +156,12 @@ func (r *apolloRepository) UpdateSource(ctx context.Context, s *models.ApolloImp
 	tag, err := r.db.Exec(ctx, `
 		UPDATE apollo_import_sources SET
 			name = $3, campaign_id = $4, category_ids = $5, verified_only = $6, recurring = $7, enabled = $8,
-			updated_at = NOW()
+			segment_ids = $9, updated_at = NOW()
 		WHERE organization_id = $1 AND id = $2
 		  AND ($4::uuid IS NULL OR EXISTS (SELECT 1 FROM campaigns WHERE id = $4 AND organization_id = $1))
-		  AND NOT EXISTS (SELECT 1 FROM unnest($5::uuid[]) c(id) WHERE c.id <> ALL(category_ids) AND NOT EXISTS (SELECT 1 FROM categories cat WHERE cat.id = c.id AND cat.organization_id = $1))`,
-		s.OrganizationID, s.ID, s.Name, s.CampaignID, s.CategoryIDs, s.VerifiedOnly, s.Recurring, s.Enabled)
+		  AND NOT EXISTS (SELECT 1 FROM unnest($5::uuid[]) c(id) WHERE c.id <> ALL(category_ids) AND NOT EXISTS (SELECT 1 FROM categories cat WHERE cat.id = c.id AND cat.organization_id = $1))
+		  AND NOT EXISTS (SELECT 1 FROM unnest($9::uuid[]) g(id) WHERE g.id <> ALL(segment_ids) AND NOT EXISTS (SELECT 1 FROM segments seg WHERE seg.id = g.id AND seg.organization_id = $1))`,
+		s.OrganizationID, s.ID, s.Name, s.CampaignID, s.CategoryIDs, s.VerifiedOnly, s.Recurring, s.Enabled, s.SegmentIDs)
 	if err != nil {
 		return err
 	}
@@ -219,7 +227,7 @@ func (r *apolloRepository) DueRecurringSources(ctx context.Context, every time.D
 	rows, err := r.db.Query(ctx, `
 		SELECT s.id, s.organization_id, s.connection_id, s.created_by_user_id, s.name, s.list_id, s.list_name,
 			s.campaign_id, s.category_ids, s.verified_only, s.recurring, s.enabled, s.status, s.last_run_at,
-			s.last_result, s.last_error, s.total_imported, s.created_at, s.updated_at
+			s.last_result, s.last_error, s.total_imported, s.created_at, s.updated_at, s.segment_ids
 		FROM apollo_import_sources s
 		JOIN integration_connections c ON c.id = s.connection_id
 		WHERE s.recurring AND s.enabled

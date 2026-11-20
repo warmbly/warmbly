@@ -259,6 +259,28 @@ export function SegmentMultiPicker({
     );
 }
 
+/** Read-only chips naming the segments a saved source pins contacts into; deleted ones are left out. */
+export function SegmentChips({ ids }: { ids: readonly string[] | null | undefined }) {
+    const segments = useSegments((ids?.length ?? 0) > 0);
+    const shown = (ids ?? [])
+        .map((id) => segments.data?.find((s) => s.id === id))
+        .filter((s): s is NonNullable<typeof s> => !!s);
+    if (shown.length === 0) return null;
+    return (
+        <>
+            {shown.map((s) => (
+                <span
+                    key={s.id}
+                    className="inline-flex items-center gap-1 h-4 px-1 rounded border border-slate-200 bg-white text-[10px] font-medium text-slate-700 min-w-0"
+                >
+                    <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                    <span className="truncate max-w-[120px]">{s.name}</span>
+                </span>
+            ))}
+        </>
+    );
+}
+
 const ENUM_LABELS: Record<string, string> = {
     unknown: "Unknown",
     manual: "Added manually",

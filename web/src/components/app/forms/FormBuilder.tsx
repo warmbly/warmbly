@@ -86,6 +86,7 @@ interface Draft {
     redirect_url: string;
     campaign_id: string | null;
     category_ids: string[];
+    segment_ids: string[];
     allowed_domains: string[];
     captcha_enabled: boolean;
     triage_enabled: boolean;
@@ -100,6 +101,7 @@ function draftFrom(f: Form): Draft {
         redirect_url: f.redirect_url,
         campaign_id: f.campaign_id ?? null,
         category_ids: [...f.category_ids],
+        segment_ids: [...(f.segment_ids ?? [])],
         allowed_domains: [...f.allowed_domains],
         captcha_enabled: f.captcha_enabled,
         triage_enabled: f.triage_enabled,
@@ -341,6 +343,7 @@ export default function FormBuilder({ form }: { form: Form }) {
             redirect_url: d.redirect_url,
             campaign_id: d.campaign_id,
             category_ids: d.category_ids,
+            segment_ids: d.segment_ids,
             allowed_domains: d.allowed_domains,
             captcha_enabled: d.captcha_enabled,
             triage_enabled: d.triage_enabled,
