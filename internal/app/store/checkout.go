@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,21 +37,6 @@ const quoteMargin = 30 * time.Second
 
 func itemsErr(msg string) *errx.Error {
 	return errx.NewWithIdentifier(errx.BadRequest, CodeInvalidItems, msg)
-}
-
-// checkProviders refuses mailboxes from a provider the price list does not list; an unreadable list is left to GraphKit.
-func (s *Service) checkProviders(ctx context.Context, items []graphkit.QuoteItem) error {
-	p, err := s.livePricing(ctx)
-	if err != nil {
-		return nil
-	}
-	offered := offeredProviders(p)
-	for _, it := range items {
-		if it.Type == graphkit.ItemMailboxes && !slices.Contains(offered, it.Provider) {
-			return providerUnavailable(it.Provider)
-		}
-	}
-	return nil
 }
 
 // cleanItems validates and normalizes what the buyer asked for.
@@ -192,9 +176,6 @@ func (s *Service) CreateQuote(ctx context.Context, orgID uuid.UUID, in QuoteRequ
 	}
 	items, hasDomain, err := cleanItems(in.Items)
 	if err != nil {
-		return nil, err
-	}
-	if err := s.checkProviders(ctx, items); err != nil {
 		return nil, err
 	}
 	photos, err := s.checkPhotos(ctx, orgID, in.Photos, items)

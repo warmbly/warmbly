@@ -17,7 +17,7 @@ type moneyStore struct{ moved []string }
 func (m *moneyStore) Status(context.Context, uuid.UUID) (*store.Status, error) {
 	return &store.Status{}, nil
 }
-func (m *moneyStore) Search(context.Context, string, []string) (*store.SearchResult, error) {
+func (m *moneyStore) Search(context.Context, string, []string, bool) (*store.SearchResult, error) {
 	return &store.SearchResult{}, nil
 }
 func (m *moneyStore) ListOrders(context.Context, uuid.UUID, string, int) (*store.Page[store.Order], error) {

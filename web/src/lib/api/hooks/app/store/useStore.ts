@@ -100,16 +100,32 @@ export function storeDisconnected(s: StoreState): StoreDisconnected | null {
 /** Whether the workspace's purchases can be listed: the store is on, or it is locked with live purchases. */
 export const storeListable = (s: StoreState) => s.kind === "on" || storeDisconnected(s) !== null;
 
-export const domainSearchQuery = (q: string) =>
+export const domainSearchQuery = (q: string, exactOnly = false) =>
     queryOptions({
-        queryKey: [...STORE_KEY, "search", q],
-        queryFn: ({ signal }) => searchStoreDomains(q, signal),
+        queryKey: [...STORE_KEY, "search", q, exactOnly ? "exact" : "all"],
+        queryFn: ({ signal }) => searchStoreDomains(q, exactOnly, signal),
         staleTime: 60_000,
         retry: false,
     });
 
+/**
+ * The exact matches come back in a second or two and show first; the full search, with suggestions,
+ * replaces them when it lands. Loading and errors follow the full search unless the exact one is all there is.
+ */
 export function useDomainSearch(q: string) {
-    return useQuery({ ...domainSearchQuery(q), enabled: q.length >= 2, placeholderData: keepPreviousData });
+    const enabled = q.length >= 2;
+    const exact = useQuery({ ...domainSearchQuery(q, true), enabled, placeholderData: keepPreviousData });
+    const full = useQuery({ ...domainSearchQuery(q), enabled, placeholderData: keepPreviousData });
+    const current = (r: typeof full) => r.data !== undefined && !r.isPlaceholderData;
+    const data = current(full) ? full.data : current(exact) ? exact.data : (full.data ?? exact.data);
+    return {
+        data,
+        isFetching: full.isFetching,
+        isPending: full.isPending && exact.isPending,
+        isError: full.isError && !current(exact),
+        error: full.error ?? exact.error,
+        refetch: () => Promise.all([exact.refetch(), full.refetch()]),
+    };
 }
 
 // A quote holds its prices for 15 minutes. It is re-asked for a little before it lapses, and on

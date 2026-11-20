@@ -28,8 +28,10 @@ export async function getStoreStatus(signal?: AbortSignal): Promise<StoreStatus>
     return await Request<StoreStatus>({ method: "GET", url: "/store/status", authorization: true, signal });
 }
 
-export async function searchStoreDomains(q: string, signal?: AbortSignal): Promise<DomainSearchResponse> {
-    return await Request<DomainSearchResponse>({ method: "GET", url: "/store/domains/search", params: { q }, authorization: true, signal });
+/** `exactOnly` skips suggestions, which answers much sooner. */
+export async function searchStoreDomains(q: string, exactOnly: boolean, signal?: AbortSignal): Promise<DomainSearchResponse> {
+    const params = exactOnly ? { q, suggestions: "false" } : { q };
+    return await Request<DomainSearchResponse>({ method: "GET", url: "/store/domains/search", params, authorization: true, signal });
 }
 
 export async function putRegistrant(r: Registrant): Promise<Registrant> {

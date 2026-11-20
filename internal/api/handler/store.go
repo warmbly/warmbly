@@ -140,12 +140,12 @@ func (h *Handler) canConfigureStore(c *gin.Context, userID uuid.UUID) bool {
 	return err == nil && models.AdminPermission(perms).HasPermission(models.AdminPermManageSettings)
 }
 
-// SearchStoreDomains is GET /v1/store/domains/search?q=&tlds=.
+// SearchStoreDomains is GET /v1/store/domains/search?q=&tlds=&suggestions=; suggestions=false answers with the exact matches only.
 func (h *Handler) SearchStoreDomains(c *gin.Context) {
 	if _, _, ok := h.storeCaller(c); !ok {
 		return
 	}
-	res, err := h.StoreService.Search(c.Request.Context(), c.Query("q"), c.QueryArray("tlds"))
+	res, err := h.StoreService.Search(c.Request.Context(), c.Query("q"), c.QueryArray("tlds"), c.Query("suggestions") == "false")
 	if err != nil {
 		storeError(c, err)
 		return

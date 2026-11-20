@@ -168,7 +168,7 @@ func TestSavingAKeyTurnsTheStoreOnAndClearingItTurnsItOffWithoutARestart(t *test
 	if !s.Enabled() || s.Source() != SourceSettings || !view.Configured || view.Source != SourceSettings || !view.APIKeySet || !view.WebhookSecretSet {
 		t.Fatalf("after save: enabled %v, view %+v", s.Enabled(), view)
 	}
-	if _, err := s.Search(ctx, "acme", nil); code(err) == CodeDisabled {
+	if _, err := s.Search(ctx, "acme", nil, false); code(err) == CodeDisabled {
 		t.Fatal("the store still answers store_disabled after the key was saved")
 	}
 
