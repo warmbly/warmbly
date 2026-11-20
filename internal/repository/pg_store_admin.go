@@ -48,7 +48,7 @@ var _ StoreAdminRepository = (*storeRepository)(nil)
 // storeStuckOrder is an order that should have moved by now: charged and not placed
 // after the reconciler's grace, or still setting up two days after it was bought.
 const storeStuckOrder = `((o.status = 'charging' AND o.updated_at < $NOW - interval '30 minutes')
-	OR (o.status = 'processing' AND o.created_at < $NOW - interval '48 hours'))`
+	OR (o.status = 'processing' AND o.created_at < $NOW - interval '72 hours'))`
 
 func (r *storeRepository) orgOf(ctx context.Context, table string, id uuid.UUID) (uuid.UUID, bool, error) {
 	var org uuid.UUID
