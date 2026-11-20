@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
@@ -257,10 +258,15 @@ func (t *originTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.fallback.RoundTrip(req)
 	}
 	if t.public != nil && t.usePublic() {
-		return t.toPublic(req)
+		return t.toPublic(req, false)
 	}
 	retry := t.public != nil && (req.Body == nil || req.Body == http.NoBody || req.GetBody != nil)
-	resp, err := t.current().RoundTrip(req)
+	// The transport may retry internally on a fresh dial, so a final dial error alone does not prove nothing was sent.
+	var wrote atomic.Bool
+	traced := req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		WroteHeaders: func() { wrote.Store(true) },
+	}))
+	resp, err := t.current().RoundTrip(traced)
 	if err == nil {
 		t.succeeded()
 		return resp, nil
@@ -270,10 +276,10 @@ func (t *originTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	t.failed(err)
-	if !retry {
+	if !retry || wrote.Load() {
 		return nil, err
 	}
-	return t.toPublic(req)
+	return t.toPublic(req, true)
 }
 
 func sameOrigin(u, origin *url.URL) bool {
@@ -311,8 +317,8 @@ func (t *originTransport) failed(err error) {
 	}
 }
 
-// toPublic resends a request nothing of which reached the private address, with only its origin changed.
-func (t *originTransport) toPublic(req *http.Request) (*http.Response, error) {
+// toPublic sends req to the public origin; resend is a retry after a private attempt, which needs a fresh body.
+func (t *originTransport) toPublic(req *http.Request, resend bool) (*http.Response, error) {
 	out := req.Clone(req.Context())
 	out.Host = ""
 	out.URL.Scheme = t.public.Scheme
@@ -321,8 +327,8 @@ func (t *originTransport) toPublic(req *http.Request) (*http.Response, error) {
 	if req.URL.RawPath != "" {
 		out.URL.RawPath = t.public.EscapedPath() + strings.TrimPrefix(req.URL.RawPath, t.private.EscapedPath())
 	}
-	// Without GetBody this is the first send, during a public window, so the body is unread.
-	if req.Body != nil && req.Body != http.NoBody && req.GetBody != nil {
+	// A first send during a public window keeps the caller's body, so the transport closes it.
+	if resend && req.Body != nil && req.Body != http.NoBody && req.GetBody != nil {
 		body, err := req.GetBody()
 		if err != nil {
 			return nil, err
