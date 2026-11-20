@@ -499,14 +499,14 @@ func (r *salesforceRepository) PruneActivities(ctx context.Context, before time.
 
 const sourceColumns = `id, organization_id, connection_id, created_by_user_id, name, source_kind, sobject,
 	source_id, source_label, campaign_id, category_ids, recurring, enabled, status, last_run_at,
-	last_result, last_error, total_imported, created_at, updated_at`
+	last_result, last_error, total_imported, created_at, updated_at, segment_ids`
 
 func scanSource(row pgx.Row) (models.SalesforceImportSource, error) {
 	var s models.SalesforceImportSource
 	var result []byte
 	err := row.Scan(&s.ID, &s.OrganizationID, &s.ConnectionID, &s.CreatedByUserID, &s.Name, &s.SourceKind, &s.SObject,
 		&s.SourceID, &s.SourceLabel, &s.CampaignID, &s.CategoryIDs, &s.Recurring, &s.Enabled, &s.Status, &s.LastRunAt,
-		&result, &s.LastError, &s.TotalImported, &s.CreatedAt, &s.UpdatedAt)
+		&result, &s.LastError, &s.TotalImported, &s.CreatedAt, &s.UpdatedAt, &s.SegmentIDs)
 	if err == nil && len(result) > 0 {
 		var rr models.SalesforceRunResult
 		if json.Unmarshal(result, &rr) == nil {
@@ -516,6 +516,9 @@ func scanSource(row pgx.Row) (models.SalesforceImportSource, error) {
 	if s.CategoryIDs == nil {
 		s.CategoryIDs = []uuid.UUID{}
 	}
+	if s.SegmentIDs == nil {
+		s.SegmentIDs = []uuid.UUID{}
+	}
 	return s, err
 }
 
@@ -523,18 +526,22 @@ func (r *salesforceRepository) CreateSource(ctx context.Context, s *models.Sales
 	if s.CategoryIDs == nil {
 		s.CategoryIDs = []uuid.UUID{}
 	}
+	if s.SegmentIDs == nil {
+		s.SegmentIDs = []uuid.UUID{}
+	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO salesforce_import_sources (
 			organization_id, connection_id, created_by_user_id, name, source_kind, sobject, source_id,
-			source_label, campaign_id, category_ids, recurring, enabled
+			source_label, campaign_id, category_ids, recurring, enabled, segment_ids
 		)
-		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
 		WHERE EXISTS (SELECT 1 FROM integration_connections WHERE id = $2 AND organization_id = $1)
 		  AND ($9::uuid IS NULL OR EXISTS (SELECT 1 FROM campaigns WHERE id = $9 AND organization_id = $1))
 		  AND NOT EXISTS (SELECT 1 FROM unnest($10::uuid[]) c(id) WHERE NOT EXISTS (SELECT 1 FROM categories cat WHERE cat.id = c.id AND cat.organization_id = $1))
+		  AND NOT EXISTS (SELECT 1 FROM unnest($13::uuid[]) g(id) WHERE NOT EXISTS (SELECT 1 FROM segments seg WHERE seg.id = g.id AND seg.organization_id = $1))
 		RETURNING `+sourceColumns,
 		s.OrganizationID, s.ConnectionID, s.CreatedByUserID, s.Name, s.SourceKind, s.SObject, s.SourceID,
-		s.SourceLabel, s.CampaignID, s.CategoryIDs, s.Recurring, s.Enabled)
+		s.SourceLabel, s.CampaignID, s.CategoryIDs, s.Recurring, s.Enabled, s.SegmentIDs)
 	out, err := scanSource(row)
 	if isNoRows(err) {
 		return ErrSalesforceSourceRefs
@@ -577,11 +584,13 @@ func (r *salesforceRepository) ListSources(ctx context.Context, orgID, connID uu
 func (r *salesforceRepository) UpdateSource(ctx context.Context, s *models.SalesforceImportSource) error {
 	tag, err := r.db.Exec(ctx, `
 		UPDATE salesforce_import_sources SET
-			name = $3, campaign_id = $4, category_ids = $5, recurring = $6, enabled = $7, updated_at = NOW()
+			name = $3, campaign_id = $4, category_ids = $5, recurring = $6, enabled = $7, segment_ids = $8,
+			updated_at = NOW()
 		WHERE organization_id = $1 AND id = $2
 		  AND ($4::uuid IS NULL OR EXISTS (SELECT 1 FROM campaigns WHERE id = $4 AND organization_id = $1))
-		  AND NOT EXISTS (SELECT 1 FROM unnest($5::uuid[]) c(id) WHERE c.id <> ALL(category_ids) AND NOT EXISTS (SELECT 1 FROM categories cat WHERE cat.id = c.id AND cat.organization_id = $1))`,
-		s.OrganizationID, s.ID, s.Name, s.CampaignID, s.CategoryIDs, s.Recurring, s.Enabled)
+		  AND NOT EXISTS (SELECT 1 FROM unnest($5::uuid[]) c(id) WHERE c.id <> ALL(category_ids) AND NOT EXISTS (SELECT 1 FROM categories cat WHERE cat.id = c.id AND cat.organization_id = $1))
+		  AND NOT EXISTS (SELECT 1 FROM unnest($8::uuid[]) g(id) WHERE g.id <> ALL(segment_ids) AND NOT EXISTS (SELECT 1 FROM segments seg WHERE seg.id = g.id AND seg.organization_id = $1))`,
+		s.OrganizationID, s.ID, s.Name, s.CampaignID, s.CategoryIDs, s.Recurring, s.Enabled, s.SegmentIDs)
 	if err != nil {
 		return err
 	}
@@ -634,7 +643,7 @@ func (r *salesforceRepository) DueRecurringSources(ctx context.Context, every ti
 	rows, err := r.db.Query(ctx, `
 		SELECT s.id, s.organization_id, s.connection_id, s.created_by_user_id, s.name, s.source_kind, s.sobject,
 			s.source_id, s.source_label, s.campaign_id, s.category_ids, s.recurring, s.enabled, s.status, s.last_run_at,
-			s.last_result, s.last_error, s.total_imported, s.created_at, s.updated_at
+			s.last_result, s.last_error, s.total_imported, s.created_at, s.updated_at, s.segment_ids
 		FROM salesforce_import_sources s
 		JOIN integration_connections c ON c.id = s.connection_id
 		WHERE s.recurring AND s.enabled AND s.status <> 'running'

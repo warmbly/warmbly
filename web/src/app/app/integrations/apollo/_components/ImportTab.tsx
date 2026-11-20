@@ -23,6 +23,7 @@ import {
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
 import { CategoryChip } from "@/components/app/contacts/CategoryPicker";
+import { SegmentChips } from "@/components/app/segments/SegmentPickers";
 import { useConfirm } from "@/hooks/context/confirm";
 import { useUserProfile } from "@/hooks/context/user";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
@@ -196,8 +197,9 @@ function SourceRow({
                     <span className="text-slate-300">·</span>
                     <span>{s.total_imported.toLocaleString()} imported in total</span>
                 </div>
-                {categories.length > 0 && (
+                {(categories.length > 0 || (s.segment_ids?.length ?? 0) > 0) && (
                     <div className="flex flex-wrap gap-1">
+                        <SegmentChips ids={s.segment_ids} />
                         {categories.map((c) => (
                             <CategoryChip key={c.id} category={c} compact />
                         ))}

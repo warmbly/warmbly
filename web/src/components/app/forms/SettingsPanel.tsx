@@ -12,6 +12,7 @@ import { Label, TextInput } from "@/components/ui/field";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { SettingRow, Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
+import { SegmentMultiPicker } from "@/components/app/segments/SegmentPickers";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
 
 import Section from "./SettingsSection";
@@ -24,6 +25,7 @@ export interface FormSettingsDraft {
     redirect_url: string;
     campaign_id: string | null;
     category_ids: string[];
+    segment_ids: string[];
     allowed_domains: string[];
     captcha_enabled: boolean;
     triage_enabled: boolean;
@@ -117,6 +119,16 @@ export default function SettingsPanel({
                         placeholder="Pick labels, e.g. Website leads"
                     />
                     <p className="text-[11px] text-slate-500 mt-1">Every submitted contact is filed under these.</p>
+                </div>
+                <div>
+                    <Label>Add to segments</Label>
+                    <SegmentMultiPicker
+                        value={draft.segment_ids}
+                        onChange={(next) => onChange({ segment_ids: next })}
+                        allowCreate
+                        placeholder="Pick or create a segment…"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">Every submitted contact is pinned into these.</p>
                 </div>
                 <div>
                     <Label>Add to campaign</Label>

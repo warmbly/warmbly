@@ -188,7 +188,7 @@ Warmbly fields are first name, last name, company, phone, any contact custom fie
 - a **Lead list view** or **Contact list view**, with its own filters and scope. Views run as the connected user, so "My Leads" means that user's Leads, or
 - a **Salesforce Campaign**, taking each member's Lead, or the Contact a converted Lead became.
 
-Preview shows the count and a sample before anything is written. Choose a Warmbly campaign to enroll them in and tags to apply. People without an email address are counted and skipped, and come in on a later run once they have one. People with **Email Opt Out** set are suppressed instead of imported while opt-out sync reads from Salesforce. Imported contacts are linked to their records and carry a **CRM sync** source.
+Preview shows the count and a sample before anything is written. Choose a Warmbly campaign to enroll them in, [segments](/guides/segments/) to pin them into and labels to apply. A recurring import pins everyone it brings in on every run, and skips a segment deleted since. People without an email address are counted and skipped, and come in on a later run once they have one. People with **Email Opt Out** set are suppressed instead of imported while opt-out sync reads from Salesforce. Imported contacts are linked to their records and carry a **CRM sync** source.
 
 Turn on **Keep in sync** and the import re-reads the list every 30 minutes, bringing in only people who are new to it, so a teammate's edits in Warmbly are never overwritten by the next run. One run imports up to 10,000 people; the rest come in on the following runs.
 

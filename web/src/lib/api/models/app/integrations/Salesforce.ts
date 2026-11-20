@@ -186,6 +186,7 @@ export interface SalesforceImportSource {
     source_label: string;
     campaign_id?: string | null;
     category_ids: string[] | null;
+    segment_ids: string[] | null;
     recurring: boolean;
     enabled: boolean;
     status: "idle" | "running" | "error";
@@ -205,6 +206,7 @@ export interface CreateSalesforceImportSourceInput {
     source_label: string;
     campaign_id?: string;
     category_ids?: string[];
+    segment_ids?: string[];
     recurring: boolean;
 }
 
@@ -212,6 +214,7 @@ export interface UpdateSalesforceImportSourceInput {
     name?: string;
     campaign_id?: string | null;
     category_ids?: string[];
+    segment_ids?: string[];
     recurring?: boolean;
     enabled?: boolean;
 }

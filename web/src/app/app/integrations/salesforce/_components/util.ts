@@ -4,6 +4,13 @@ export function errMsg(err: unknown, fallback: string): string {
     return errorMessage(err, fallback);
 }
 
+/** Whether two id lists hold the same ids, in any order. */
+export function sameIds(a: readonly string[] | null | undefined, b: readonly string[] | null | undefined): boolean {
+    const x = [...(a ?? [])].sort();
+    const y = [...(b ?? [])].sort();
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
 export function isForbidden(err: unknown): boolean {
     return (err as { status?: number } | null)?.status === 403;
 }

@@ -6,6 +6,7 @@ package form
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -341,6 +342,12 @@ func (s *service) Update(ctx context.Context, orgID, id uuid.UUID, in *models.Fo
 	if in.CategoryIDs != nil {
 		f.CategoryIDs = *in.CategoryIDs
 	}
+	if in.SegmentIDs != nil {
+		if len(*in.SegmentIDs) > models.FormMaxSegments {
+			return nil, errx.New(errx.BadRequest, fmt.Sprintf("at most %d segments per form", models.FormMaxSegments))
+		}
+		f.SegmentIDs = *in.SegmentIDs
+	}
 	if in.AllowedDomains != nil {
 		domains, xerr := models.ValidateFormDomains(*in.AllowedDomains)
 		if xerr != nil {
@@ -514,10 +521,18 @@ func (s *service) Submit(ctx context.Context, publicID string, answers map[strin
 		}
 		if owner != nil {
 			lead.Campaigns = campaignList(f.CampaignID)
-			lead.Categories = categoryList(f.CategoryIDs)
+			lead.Categories = idStrings(f.CategoryIDs)
+			lead.Segments = idStrings(f.SegmentIDs)
 			lead.Source = models.ContactSourceForm
 			lead.SourceDetail = f.Name
 			created, cerr := s.contacts.Add(ctx, owner.String(), f.OrganizationID, []models.AddContact{*lead})
+			// A segment deleted since the form loaded fails the write; retry with the ones still linked.
+			if cerr != nil && len(f.SegmentIDs) > 0 {
+				if fresh, ferr := s.repo.GetByPublicID(ctx, publicID); ferr == nil && len(fresh.SegmentIDs) < len(f.SegmentIDs) {
+					lead.Segments = idStrings(fresh.SegmentIDs)
+					created, cerr = s.contacts.Add(ctx, owner.String(), f.OrganizationID, []models.AddContact{*lead})
+				}
+			}
 			if cerr == nil && len(created) > 0 {
 				id := created[0].ID
 				sub.ContactID = &id
@@ -742,7 +757,7 @@ func campaignList(id *uuid.UUID) []string {
 	return []string{id.String()}
 }
 
-func categoryList(ids []uuid.UUID) []string {
+func idStrings(ids []uuid.UUID) []string {
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
 		out = append(out, id.String())
