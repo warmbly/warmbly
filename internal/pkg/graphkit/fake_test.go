@@ -342,7 +342,7 @@ func TestFakeSuspendedPartner(t *testing.T) {
 	f, _ := fakeAt(time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC))
 	ctx := context.Background()
 	f.Suspend(true)
-	if _, err := f.Search(ctx, "acme", nil, 5); CodeOf(err) != CodePartnerSuspended {
+	if _, err := f.Search(ctx, "acme", nil, 5, false); CodeOf(err) != CodePartnerSuspended {
 		t.Fatalf("search while suspended: %v", err)
 	}
 	if _, err := f.UpsertAccount(ctx, "org", AccountInput{Name: "x"}, "k"); err == nil {

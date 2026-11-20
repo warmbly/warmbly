@@ -19,7 +19,7 @@ import (
 // StoreTools is the slice of the store the tools call, exactly as the REST handlers do.
 type StoreTools interface {
 	Status(ctx context.Context, orgID uuid.UUID) (*store.Status, error)
-	Search(ctx context.Context, query string, tlds []string) (*store.SearchResult, error)
+	Search(ctx context.Context, query string, tlds []string, exactOnly bool) (*store.SearchResult, error)
 	ListOrders(ctx context.Context, orgID uuid.UUID, cursor string, limit int) (*store.Page[store.Order], error)
 	GetOrder(ctx context.Context, orgID, id uuid.UUID) (*store.Order, error)
 	ListDomains(ctx context.Context, orgID uuid.UUID, cursor string, limit int) (*store.Page[store.Domain], error)
@@ -84,7 +84,7 @@ func RegisterStoreTools(r *Registry, s StoreTools, auditSvc audit.AuditService) 
 			if err != nil {
 				return "", err
 			}
-			return storeResult(s.Search(ctx, in.Query, in.TLDs))
+			return storeResult(s.Search(ctx, in.Query, in.TLDs, false))
 		})
 	read("list_store_orders", "List the workspace's domain and mailbox orders, newest first, with status, totals, refunds and setup steps.",
 		page, func(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {

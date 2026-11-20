@@ -31,7 +31,7 @@ type API interface {
 	ListAccounts(ctx context.Context, cursor string, limit int) (*Page[Account], error)
 
 	Pricing(ctx context.Context) (*Pricing, error)
-	Search(ctx context.Context, query string, tlds []string, limit int) (*SearchResult, error)
+	Search(ctx context.Context, query string, tlds []string, limit int, exactOnly bool) (*SearchResult, error)
 	Check(ctx context.Context, domains []string, key string) ([]DomainOffer, error)
 
 	CreateQuote(ctx context.Context, externalID string, items []QuoteItem, key string) (*Quote, error)
@@ -399,8 +399,12 @@ func (c *Client) Pricing(ctx context.Context) (*Pricing, error) {
 	return ret(&out, c.get(ctx, "/pricing", nil, &out))
 }
 
-func (c *Client) Search(ctx context.Context, query string, tlds []string, limit int) (*SearchResult, error) {
+// Search looks up domains for query; exactOnly skips suggestions, which answers much sooner.
+func (c *Client) Search(ctx context.Context, query string, tlds []string, limit int, exactOnly bool) (*SearchResult, error) {
 	q := url.Values{"q": {query}}
+	if exactOnly {
+		q.Set("suggestions", "false")
+	}
 	if len(tlds) > 0 {
 		q.Set("tlds", strings.Join(tlds, ","))
 	}

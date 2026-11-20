@@ -297,7 +297,7 @@ func TestSuspendedPartnerAlertsTheOperatorOnce(t *testing.T) {
 	h.fake.Suspend(true)
 	ctx := context.Background()
 	for range 3 {
-		if _, err := h.s.Search(ctx, "acme", nil); code(err) != CodeUnavailable {
+		if _, err := h.s.Search(ctx, "acme", nil, false); code(err) != CodeUnavailable {
 			t.Fatalf("search while suspended: %v", err)
 		}
 	}
@@ -305,7 +305,7 @@ func TestSuspendedPartnerAlertsTheOperatorOnce(t *testing.T) {
 		t.Fatalf("operator alerts = %q", ops.keys)
 	}
 	h.clock.advance(2 * time.Hour)
-	_, _ = h.s.Search(ctx, "acme", nil)
+	_, _ = h.s.Search(ctx, "acme", nil, false)
 	if len(ops.keys) != 2 {
 		t.Fatalf("an hour later the alert repeats once: %q", ops.keys)
 	}
@@ -350,7 +350,7 @@ func TestPurchasedDomainGetsItsTrackingHostAndAdminSignIn(t *testing.T) {
 
 func TestSearchPricesTheMinimumTerm(t *testing.T) {
 	h := newHarness(t)
-	res, err := h.s.Search(context.Background(), "acmerobots", []string{"ai", "com"})
+	res, err := h.s.Search(context.Background(), "acmerobots", []string{"ai", "com"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

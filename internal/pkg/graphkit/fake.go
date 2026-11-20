@@ -495,7 +495,7 @@ func (f *Fake) liveDomainLocked(name string) *fakeDomain {
 
 var fakeKeep = regexp.MustCompile(`[^a-z0-9-]+`)
 
-func (f *Fake) Search(_ context.Context, query string, tlds []string, limit int) (*SearchResult, error) {
+func (f *Fake) Search(_ context.Context, query string, tlds []string, limit int, exactOnly bool) (*SearchResult, error) {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return nil, fakeErr(http.StatusBadRequest, CodeInvalidRequest, "q is required")
@@ -539,7 +539,7 @@ func (f *Fake) Search(_ context.Context, query string, tlds []string, limit int)
 		}
 	}
 	keyword = fakeKeep.ReplaceAllString(keyword, "")
-	if keyword == "" {
+	if keyword == "" || exactOnly {
 		return out, nil
 	}
 	suggestions := 0

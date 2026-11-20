@@ -321,20 +321,6 @@ func (s *Service) livePricing(ctx context.Context) (*graphkit.Pricing, error) {
 // externalID is the workspace's id at GraphKit.
 func externalID(orgID uuid.UUID) string { return orgID.String() }
 
-// offeredProviders are the mailbox providers the price list lists, Google first; only listed ones can be ordered.
-func offeredProviders(p *graphkit.Pricing) []string {
-	out := []string{}
-	for _, want := range []string{graphkit.ProviderGoogle, graphkit.ProviderMicrosoft} {
-		for _, m := range p.Mailboxes {
-			if m.Provider == want {
-				out = append(out, want)
-				break
-			}
-		}
-	}
-	return out
-}
-
 // defaultLimits are GraphKit's caps when the price list cannot be read.
 var defaultLimits = graphkit.Limits{MailboxesPerDomainMax: 5, MailboxesPerDomainRecommended: 3}
 
@@ -365,7 +351,6 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 		if p.Limits.MailboxesPerDomainMax > 0 {
 			out.Limits = p.Limits
 		}
-		out.Providers = offeredProviders(p)
 	}
 	active, err := s.planActive(ctx, orgID)
 	if err != nil {
@@ -594,7 +579,7 @@ func (s *Service) reopenAccount(ctx context.Context, orgID uuid.UUID) error {
 }
 
 // Search finds domains for a keyword or a name, at retail.
-func (s *Service) Search(ctx context.Context, query string, tlds []string) (*SearchResult, error) {
+func (s *Service) Search(ctx context.Context, query string, tlds []string, exactOnly bool) (*SearchResult, error) {
 	if !s.Enabled() {
 		return nil, errDisabled
 	}
@@ -602,7 +587,7 @@ func (s *Service) Search(ctx context.Context, query string, tlds []string) (*Sea
 	if err != nil {
 		return nil, err
 	}
-	res, gerr := s.api().Search(ctx, q, cleanTLDs(tlds), 30)
+	res, gerr := s.api().Search(ctx, q, cleanTLDs(tlds), 30, exactOnly)
 	if gerr != nil {
 		return nil, s.upstream(ctx, "search", gerr)
 	}
