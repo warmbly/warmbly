@@ -109,6 +109,7 @@ func Limits() []LimitGroup {
 				{"Flood threshold", n(config.SyncFloodPerHour), "messages/hour", "New live mail seen in one hour that deactivates the mailbox outright."},
 				{"Chronic overage", n(config.SyncThrottleEscalationDays), "days of 7", "Daily budget exhausted on this many of the last seven days deactivates the mailbox. The daily budgets, the backfill window and the full check interval are editable on Instance settings."},
 				{"Wake check gap", n(int(config.SyncWakeMinGap / time.Second)), "seconds", "Least time between two checks of one mailbox; a push or IDLE wake inside it waits."},
+				{"Narrow poll", n(int(config.SyncNarrowPollInterval / time.Second)), "seconds", "How often a mailbox without push or IDLE gets the inbox and junk check a wake would run."},
 				{"Seed full check", n(config.SyncFullCheckFastSeconds), "seconds", "Full check interval of placement seeds and pool-linked warmup mailboxes."},
 				{"Unibox page size", n(config.UniboxLimitDefault), "messages", "Default page size, range " + n(config.UniboxLimitMin) + " to " + n(config.UniboxLimitMax) + "."},
 				{"Sequence step delay", n(config.SequenceWaitAfterMax), "days", "The largest per-step wait a sequence can store."},
