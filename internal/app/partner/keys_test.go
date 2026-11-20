@@ -1,15 +1,9 @@
 package partner
 
 import (
-	"context"
-	"os"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/google/uuid"
-
-	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -77,40 +71,5 @@ func TestPartnerKeysCannotMintKeys(t *testing.T) {
 	}
 	if _, _, xerr := parsePermissions([]string{"NOPE"}); xerr == nil {
 		t.Fatal("an unknown permission was accepted")
-	}
-}
-
-// The rate limit is the partner's: requests spread across its keys and modes share one budget, and another partner has its own.
-func TestRateLimitIsPerPartner(t *testing.T) {
-	url := os.Getenv("WARMBLY_TEST_REDIS")
-	if url == "" {
-		t.Skip("WARMBLY_TEST_REDIS not set")
-	}
-	c, err := cache.New(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = c.Close() })
-	at := time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC)
-	s := NewService(Deps{Cache: c})
-	s.now = func() time.Time { return at }
-	a := &models.Partner{ID: uuid.New(), RateLimitPerSecond: 20}
-	b := &models.Partner{ID: uuid.New(), RateLimitPerSecond: 20}
-	ctx := context.Background()
-	allowed := 0
-	for i := 0; i < 40; i++ {
-		mode := models.PartnerModeLive
-		if i%2 == 1 {
-			mode = models.PartnerModeTest
-		}
-		if s.Allow(ctx, &Caller{Partner: a, Mode: mode, KeyID: uuid.New()}) {
-			allowed++
-		}
-	}
-	if allowed != 20 {
-		t.Fatalf("40 requests over 40 keys of one partner let %d through, want the partner's 20", allowed)
-	}
-	if !s.Allow(ctx, &Caller{Partner: b, Mode: models.PartnerModeLive, KeyID: uuid.New()}) {
-		t.Fatal("another partner was limited by the first one's traffic")
 	}
 }

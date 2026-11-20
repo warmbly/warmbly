@@ -68,6 +68,8 @@ go build -ldflags="$LDFLAGS" -o "$host_bin" ./cmd/cli
 completions="$OUT/.completions"
 stage_completions "$host_bin" "$completions"
 
+# Every platform compiles at once; the archives are packed afterwards in order.
+pids=""
 for target in $PLATFORMS; do
   os=${target%/*}
   arch=${target#*/}
@@ -79,7 +81,17 @@ for target in $PLATFORMS; do
   echo "  $os/$arch"
   # shellcheck disable=SC2086
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-    go build -ldflags="$LDFLAGS" -o "$stage/warmbly${ext}" ./cmd/cli
+    go build -ldflags="$LDFLAGS" -o "$stage/warmbly${ext}" ./cmd/cli &
+  pids="$pids $!"
+done
+for pid in $pids; do
+  wait "$pid"
+done
+
+for target in $PLATFORMS; do
+  os=${target%/*}
+  arch=${target#*/}
+  stage="$OUT/.stage/warmbly_${os}_${arch}"
 
   cp LICENSE README.md "$stage/"
   cp -r "$completions" "$stage/completions"

@@ -65,15 +65,6 @@ func (c *casSettings) CompareAndSetRelease(_ context.Context, prev, next *models
 	return true, nil
 }
 
-func (c *casSettings) state(t *testing.T) *models.FleetReleaseState {
-	t.Helper()
-	st, err := c.GetRelease(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return st
-}
-
 type rolloutFixture struct {
 	svc      *Service
 	nodes    *fleetNodes

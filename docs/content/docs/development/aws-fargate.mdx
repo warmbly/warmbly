@@ -260,8 +260,8 @@ preserves the narrowly scoped attachment setting described below. A deploy:
    service reads.
 3. Runs the dependency validation task, then the migration task on the backend's
    image. Either failing stops the deploy before any service moves.
-4. Rolls backend, then consumer, then forms, tracking and realtime together.
-   Each service is watched for a bake (five minutes by default) after it is
+4. Rolls backend, then consumer, forms, tracking and realtime together.
+   Each service is watched for a bake (two minutes by default) after it is
    stable.
 5. Starts a [canary rollout](/development/warmblyctl/#fleet) of the worker and
    consumer hosts from the `ops` task. The first host moves alone and the rest

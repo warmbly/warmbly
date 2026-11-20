@@ -43,7 +43,8 @@ Other CI-touching rules:
 - the frontend trees (`admin/`, `web/`, `site/`, `qa/`) each have their own CI jobs; run `pnpm typecheck` in any tree you touched and `pnpm lint` when the rules are non-trivial
 - never push without first re-running the relevant `*build*` / `*typecheck*` / `*lint*` step on the affected tree
 - a `make lint` (or `gofmt -l`) failure is always a real CI failure; do not push hoping it will pass
-- keep CI fast and minimal. A feature's tests run inside the existing jobs; do not add a job, a matrix entry, a step or a named live-test list for it. Touch `.github/` only to fix CI itself
+- keep CI fast and minimal. Do not add a job, a matrix entry or a step for a feature. Touch `.github/` only to fix CI itself
+- CI has no database. The only Postgres in it is the Migrations job, which applies every migration to an empty database
 
 Migrations are numbered against `main`, not against your branch:
 
@@ -51,6 +52,15 @@ Migrations are numbered against `main`, not against your branch:
 - two branches that each pick "the next number" independently are both green alone and collide once both merge; golang-migrate then refuses to build its source driver and the backend restart-loops at boot, so nothing deploys
 - run `make check-migrations` (also a prerequisite of `make lint`, and its own CI job) before pushing anything that adds a migration
 - if a duplicate does reach `main`, renumber the migration that has NOT been released yet. The other one is already recorded in deployments' `schema_migrations`, and renumbering it makes them re-apply it
+
+### Tests are opt-in
+
+Do not write tests by default. A change is done when it is formatted, lints and typechecks, not when it has a test.
+
+- add a test only when the user asks for one
+- never add a test that needs Postgres, Redis or any other running service (no `WARMBLY_TEST_DB`-style env-gated tests, no `TestLive*`); CI cannot run them
+- when a change breaks an existing test, fix or delete that test; do not add new ones around it
+- do not add test fixtures, golden files, mutation checks or "regression" cases to a fix that was not asked for them
 
 ### Deployment and rollback compatibility is required
 
@@ -80,10 +90,10 @@ and credentials. State the supported version window when it changes.
   migration version, clear a dirty flag or run a down migration automatically.
   Self-host startup migrations remain supported by default.
 - Review schema-lock duration and backfill cost. Keep large backfills out of the
-  deployment transaction. Validate old-code/new-schema behavior, new-code/old-data
-  behavior and rollback with representative fixtures when a change touches a
-  shared contract. Document any intentional breaking change and its transition
-  plan before deploying it.
+  deployment transaction. Think through old-code/new-schema behavior,
+  new-code/old-data behavior and rollback when a change touches a shared
+  contract. Document any intentional breaking change and its transition plan
+  before deploying it.
 
 ### Self-hosting remains a first-class deployment
 
@@ -238,6 +248,7 @@ Do not:
 - do not run `go build ./...`, `pnpm build`, or docker image builds as a "did it work" check. They are slow and are not what CI gates on. `go run` (via the make dev targets) already compiles; `make fmt` + `make lint` + `pnpm typecheck` are the real signals.
 - do not write Python or ad-hoc browser scripts, and do not drive the app step by step from screenshots or accessibility snapshots. Browser automation lives in `qa/` and only records proof for a PR (below); it is not a test gate, and manual verification against the native dev stack stays the user's job.
 - do not run the Go test suite as a default gate unless the task is specifically about those tests.
+- do not write new tests unless the user asks (see "Tests are opt-in").
 - do not push hoping CI passes; a `gofmt -l` / `make lint` / `pnpm typecheck` failure is always a real CI failure.
 
 ### Visual proof on pull requests
@@ -608,7 +619,7 @@ Rules:
 - **ask in the form the most clients exercise.** A server's mainstream path is the one Thunderbird, Apple Mail and Outlook hit every minute; its rarely used corners are where the bugs are. The CONDSTORE incremental set is `UID FETCH 1:* (UID) (CHANGEDSINCE n)` for that reason, not `SEARCH MODSEQ`: Dovecot answers the ESEARCH form with a parenthesised `(MODSEQ n)` go-imap cannot read, and Zoho answers an empty plain one with a double space
 - **an optional capability degrades, it never fails the mailbox.** When a server's answer to one form cannot be read, the client steps down to the next form for good and says so once (`changedSinceMode` in `client.go`; `sinceRefused` is the same pattern for dated SEARCH). The state lives on the `Client`, so it outlives a reconnect, and the last rung is the plain UIDNEXT path every server supports. Step down only on evidence about the dialect: an unreadable reply, or a refusal of the form against a folder that stayed selected, which leaves the session usable so the next form is asked in the same pass. Never on a network error or a transient NO (`UNAVAILABLE`, `INUSE`, `SERVERBUG`, a bare `UID FETCH failed`)
 - **read capabilities while the session is healthy.** A session the server's reply just closed reports none, so anything the ladder needs (`eSearch`, `condStore`) is recorded at connect
-- **a fix for one provider must not move the others.** #858 fixed Zoho by moving every server onto ESEARCH, which stalled every OVH mailbox for days. Add the provider's real reply to the dialect table in `search_modseq_test.go` (or its equivalent for the command you touch) and keep the whole table green, rather than writing a test that only knows the one server
+- **a fix for one provider must not move the others.** #858 fixed Zoho by moving every server onto ESEARCH, which stalled every OVH mailbox for days. Keep the existing dialect table in `search_modseq_test.go` green: it holds the real replies of the servers already fixed
 - **check a change to what the sync sends against real servers before it ships.** The cheap version: one login per distinct host, from the worker each mailbox already sits on (a new client IP can earn a provider security challenge), running the changed command and reporting only per-host results. Never print a credential or message content while doing it
 - **a message the server describes unreadably costs that message, never the folder.** go-imap reads `message/global` in a BODYSTRUCTURE as `message/rfc822`, so one RFC 6533 bounce dropped the session on every pass. `envelopeRung` in `envelope_ladder.go` steps the batch's UIDs down on an unreadable envelope answer (structure, then bare with the body parsed locally by go-message, then one at a time, then left unsynced), remembered on the `Client` per folder generation
 - **keep the server's words.** An `[ALERT]` reaches the owner verbatim through `imapErrDetail` (Zoho's `The server details you are using seems incorrect` is how they learn the account lives in another Zoho region). Map one in `classifyAlert` only when it is a known throttle or credentials case

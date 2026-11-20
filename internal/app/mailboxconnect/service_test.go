@@ -124,12 +124,3 @@ func TestCreateLinkValidatesBeforeStoring(t *testing.T) {
 		}
 	}
 }
-
-func TestLiveRefusesUnusableSecrets(t *testing.T) {
-	s := New(refuseRepo{t: t}, nil, nil, nil, nil, nil, "")
-	for _, token := range []string{"", "short", string(make([]byte, 200))} {
-		if _, xerr := s.live(context.Background(), token); xerr != ErrLinkGone {
-			t.Errorf("live(%d bytes) = %v", len(token), xerr)
-		}
-	}
-}

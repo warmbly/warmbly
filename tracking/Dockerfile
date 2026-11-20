@@ -2,8 +2,8 @@
 #
 # Default build is NATS-only (pure Rust, rustls TLS): no rdkafka/librdkafka, so
 # it skips the slow librdkafka source compile and needs none of the cmake /
-# openssl / curl / sasl build deps. Cargo cache mounts keep the registry +
-# target caches warm across builds.
+# openssl / curl / sasl build deps. Dependencies build in a layer of their own
+# so a source-only change reuses them.
 #
 # Build with --build-arg CARGO_FEATURES=kafka to include the Kafka + Avro
 # publisher (re-adds the librdkafka build chain; slower).
@@ -22,16 +22,25 @@ RUN apk add --no-cache musl-dev && \
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
+
+# Dependencies compile in a layer of their own, keyed on Cargo.toml and
+# Cargo.lock, so the registry cache CI exports reuses it for a source-only change.
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    set -eux; \
+    if [ -n "$CARGO_FEATURES" ]; then FEAT="--features $CARGO_FEATURES"; else FEAT=""; fi; \
+    export OPENSSL_STATIC=1; \
+    mkdir src; \
+    echo 'fn main() {}' > src/main.rs; \
+    cargo build --release $FEAT; \
+    rm -rf src target/release/tracking target/release/deps/tracking-* target/release/.fingerprint/tracking-*
+
 COPY src ./src
 # include_str! reads static/tracking.js and scanner-networks.txt at compile
 # time, so both must be in the context.
 COPY static ./static
 COPY scanner-networks.txt ./scanner-networks.txt
 
-# The binary is copied out of the (cache-mounted) target dir before the mount is
-# released, so the runtime stage can COPY it.
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=cargo-target,target=/app/target \
     set -eux; \
     if [ -n "$CARGO_FEATURES" ]; then FEAT="--features $CARGO_FEATURES"; else FEAT=""; fi; \
     export OPENSSL_STATIC=1; \
