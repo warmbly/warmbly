@@ -191,7 +191,7 @@ export default function Senders({
                             <div className="min-w-0">
                                 <span className="flex items-baseline gap-1.5 mb-1 min-w-0">
                                     <span className="text-[11px] text-slate-500 shrink-0">Addresses</span>
-                                    <span className="text-[11px] text-slate-400 truncate">Patterns turn each name into an address, used in this order</span>
+                                    <span className="text-[11px] text-slate-400 leading-snug">Patterns turn each name into an address, used in this order</span>
                                 </span>
                                 <PatternPicker
                                     value={patterns}
