@@ -19,7 +19,7 @@ import (
 // Callers pass an AWS config that's only consulted when the AWS provider is
 // selected. The fallbackAWSKeyID is used when KMS_AWS_KEY_ID is empty — this
 // preserves the historical "alias/master-key[-dev]" default used at boot.
-func FromEnv(ctx context.Context, awscfg aws.Config, fallbackAWSKeyID string) (Provider, error) {
+func FromEnv(ctx context.Context, awscfg aws.Config, fallbackAWSKeyID string, brokered ...BrokeredOption) (Provider, error) {
 	provider := os.Getenv("KMS_PROVIDER")
 	if provider == "" {
 		provider = "aws"
@@ -52,7 +52,7 @@ func FromEnv(ctx context.Context, awscfg aws.Config, fallbackAWSKeyID string) (P
 		if token == "" {
 			token = os.Getenv("ENCRYPTED_KEYS_WORKER_TOKEN")
 		}
-		return NewBrokered(baseURL, token)
+		return NewBrokered(baseURL, token, brokered...)
 	default:
 		return nil, fmt.Errorf("kms: unknown KMS_PROVIDER %q (want: aws, local, brokered)", provider)
 	}

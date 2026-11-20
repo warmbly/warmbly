@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -695,4 +696,88 @@ func TestNodeBackendURLIsReportedWhenCleartextOnHostedProduction(t *testing.T) {
 		}
 	}
 
+}
+
+// testCAPEM is a PEM certificate spanning several lines, the shape an env file cannot hold.
+func testCAPEM(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	defer srv.Close()
+	var b strings.Builder
+	if err := pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// Without NODE_BACKEND_INTERNAL_URL a node's env is what it always was.
+func TestRenderNodeEnvOmitsPrivateBackendWhenUnset(t *testing.T) {
+	setInstanceEnv(t)
+	env := envLines(t, renderNodeEnv(uuid.New(), models.NodeRoleWorker, ""))
+	for _, key := range []string{"WARMBLY_BACKEND_INTERNAL_URL", "WARMBLY_BACKEND_INTERNAL_CA_B64"} {
+		if _, ok := env[key]; ok {
+			t.Errorf("%s rendered with no private backend configured", key)
+		}
+	}
+}
+
+// The private address is offered beside the public one, never in its place, so a node that cannot read it keeps working.
+func TestRenderNodeEnvOffersPrivateBackendBesideThePublicOne(t *testing.T) {
+	setInstanceEnv(t)
+	ca := testCAPEM(t)
+	t.Setenv("NODE_BACKEND_INTERNAL_URL", "https://backend.warmbly.internal:8443/")
+	t.Setenv("NODE_BACKEND_INTERNAL_CA", ca)
+
+	for _, role := range []models.NodeRole{models.NodeRoleWorker, models.NodeRoleConsumer} {
+		env := envLines(t, renderNodeEnv(uuid.New(), role, ""))
+		if env["WARMBLY_BACKEND_URL"] != "https://api.example.com" || env["ENCRYPTED_KEYS_BACKEND_URL"] != "https://api.example.com" {
+			t.Errorf("%s: the public address moved: %q / %q", role, env["WARMBLY_BACKEND_URL"], env["ENCRYPTED_KEYS_BACKEND_URL"])
+		}
+		if env["WARMBLY_BACKEND_INTERNAL_URL"] != "https://backend.warmbly.internal:8443" {
+			t.Errorf("%s: WARMBLY_BACKEND_INTERNAL_URL = %q", role, env["WARMBLY_BACKEND_INTERNAL_URL"])
+		}
+		got, err := base64.StdEncoding.DecodeString(env["WARMBLY_BACKEND_INTERNAL_CA_B64"])
+		if err != nil || strings.TrimSpace(string(got)) != strings.TrimSpace(ca) {
+			t.Errorf("%s: the CA did not survive the env file (err %v)", role, err)
+		}
+	}
+	if err := fleetnode.CheckBackendURL(); err != nil {
+		t.Errorf("CheckBackendURL = %v", err)
+	}
+}
+
+// A cleartext private address is not handed out on hosted production, and the join log says why.
+func TestRenderNodeEnvRefusesCleartextPrivateBackendOnHostedProduction(t *testing.T) {
+	setInstanceEnv(t)
+	t.Setenv("DEPLOYMENT_MODE", "cloud")
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("NODE_BACKEND_INTERNAL_URL", "http://backend.warmbly.internal:8080")
+
+	env := envLines(t, renderNodeEnv(uuid.New(), models.NodeRoleWorker, ""))
+	if _, ok := env["WARMBLY_BACKEND_INTERNAL_URL"]; ok {
+		t.Error("a cleartext private address reached a node on hosted production")
+	}
+	if err := fleetnode.CheckBackendURL(); !errors.Is(err, fleetnode.ErrInternalBackendUnusable) {
+		t.Errorf("CheckBackendURL = %v, want ErrInternalBackendUnusable", err)
+	}
+
+	t.Setenv("DEPLOYMENT_MODE", "self_hosted")
+	env = envLines(t, renderNodeEnv(uuid.New(), models.NodeRoleWorker, ""))
+	if env["WARMBLY_BACKEND_INTERNAL_URL"] != "http://backend.warmbly.internal:8080" {
+		t.Error("a self-host's private-network address was withheld")
+	}
+}
+
+// A CA that is not PEM withholds the private address rather than handing nodes one they cannot verify.
+func TestRenderNodeEnvWithholdsPrivateBackendWithBadCA(t *testing.T) {
+	setInstanceEnv(t)
+	t.Setenv("NODE_BACKEND_INTERNAL_URL", "https://backend.warmbly.internal:8443")
+	t.Setenv("NODE_BACKEND_INTERNAL_CA", "not a certificate")
+	env := envLines(t, renderNodeEnv(uuid.New(), models.NodeRoleWorker, ""))
+	if _, ok := env["WARMBLY_BACKEND_INTERNAL_URL"]; ok {
+		t.Error("a private address went out with a CA nobody can parse")
+	}
+	if err := fleetnode.CheckBackendURL(); !errors.Is(err, fleetnode.ErrInternalBackendUnusable) {
+		t.Errorf("CheckBackendURL = %v, want ErrInternalBackendUnusable", err)
+	}
 }

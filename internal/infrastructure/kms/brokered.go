@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
+	"github.com/warmbly/warmbly/internal/pkg/nodebackend"
 )
 
 // BrokeredProvider is the node-side KMS: it holds no key material and no cloud
@@ -45,7 +46,20 @@ type BrokeredProvider struct {
 
 // NewBrokered builds the provider. baseURL is the control plane, token is the
 // internal API token both sides share.
-func NewBrokered(baseURL, token string) (*BrokeredProvider, error) {
+// BrokeredOption configures a BrokeredProvider.
+type BrokeredOption func(*BrokeredProvider)
+
+// WithControlPlane sends the provider to the node's private control-plane address when it chose one.
+func WithControlPlane(node nodebackend.Backend) BrokeredOption {
+	return func(p *BrokeredProvider) {
+		if node.Private() {
+			p.baseURL = node.BaseURL(p.baseURL)
+			p.client.Transport = node.Transport()
+		}
+	}
+}
+
+func NewBrokered(baseURL, token string, opts ...BrokeredOption) (*BrokeredProvider, error) {
 	if baseURL == "" {
 		return nil, errors.New("kms.brokered: no control plane address; set ENCRYPTED_KEYS_BACKEND_URL on the backend to a URL this machine can reach, then re-join this node")
 	}
@@ -55,11 +69,15 @@ func NewBrokered(baseURL, token string) (*BrokeredProvider, error) {
 	if _, err := url.Parse(baseURL); err != nil {
 		return nil, fmt.Errorf("kms.brokered: invalid baseURL: %w", err)
 	}
-	return &BrokeredProvider{
+	p := &BrokeredProvider{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
 		client:  &http.Client{Timeout: 15 * time.Second},
-	}, nil
+	}
+	for _, o := range opts {
+		o(p)
+	}
+	return p, nil
 }
 
 func (p *BrokeredProvider) Name() string { return "brokered" }

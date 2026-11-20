@@ -439,3 +439,38 @@ run "unmatched_hosts_follow_the_tls_route" {
     error_message = "the catch-all moves to HTTPS with every other tracking rule"
   }
 }
+
+run "nodes_keep_the_public_backend_by_default" {
+  command = apply
+  variables {
+    target_tls = "route"
+  }
+  assert {
+    condition     = !strcontains(aws_ecs_task_definition.service["backend"].container_definitions, "NODE_BACKEND_INTERNAL_URL")
+    error_message = "nodes are offered the private address only once nodes_private_backend is set"
+  }
+}
+
+run "nodes_are_offered_the_private_backend_over_tls" {
+  command = apply
+  variables {
+    target_tls            = "route"
+    nodes_private_backend = true
+  }
+  assert {
+    condition     = strcontains(aws_ecs_task_definition.service["backend"].container_definitions, "\"NODE_BACKEND_INTERNAL_URL\"") && strcontains(aws_ecs_task_definition.service["backend"].container_definitions, "https://backend.warmbly.internal:8443") && strcontains(aws_ecs_task_definition.service["backend"].container_definitions, "\"NODE_BACKEND_INTERNAL_CA\"")
+    error_message = "the backend offers nodes its private TLS address and the certificate that names it"
+  }
+}
+
+run "nodes_never_get_the_plain_hop" {
+  command = apply
+  variables {
+    target_tls            = "serve"
+    nodes_private_backend = true
+  }
+  assert {
+    condition     = !strcontains(aws_ecs_task_definition.service["backend"].container_definitions, "NODE_BACKEND_INTERNAL_URL")
+    error_message = "a node is offered the private address only once callers are on TLS"
+  }
+}

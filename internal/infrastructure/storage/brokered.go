@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
+	"github.com/warmbly/warmbly/internal/pkg/nodebackend"
 )
 
 // BrokeredStore is the node-side blob backend: it holds no credential for the
@@ -72,6 +73,16 @@ type BrokeredOption func(*BrokeredStore)
 // that need a custom transport.
 func WithBrokeredHTTPClient(c *http.Client) BrokeredOption {
 	return func(s *BrokeredStore) { s.broker, s.transfer = c, c }
+}
+
+// WithControlPlane sends broker calls to the node's private control-plane address when it chose one; transfers still go to the store.
+func WithControlPlane(node nodebackend.Backend) BrokeredOption {
+	return func(s *BrokeredStore) {
+		if node.Private() {
+			s.baseURL = node.BaseURL(s.baseURL)
+			s.broker.Transport = node.Transport()
+		}
+	}
 }
 
 func NewBrokered(baseURL, token string, opts ...BrokeredOption) (*BrokeredStore, error) {
