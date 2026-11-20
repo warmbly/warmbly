@@ -23,6 +23,12 @@ const graphBackfillPage = 50
 // loop stops and the account is flagged for re-auth; anything else is
 // captured and swallowed so a transient blip doesn't tear down the account.
 func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
+	return w.syncGraph(ctx, false)
+}
+
+// syncGraph is the full pass, or with narrow a wake's check: the delta of the
+// wake folders already following live changes, and nothing else.
+func (w *WMail) syncGraph(ctx context.Context, narrow bool) *errx.MailError {
 	w.beginTick()
 	stats := &tickStats{}
 	w.graphTick = stats
@@ -31,13 +37,20 @@ func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
 	if !w.retryUnmap(ctx) {
 		return nil
 	}
-	w.tracker.startBackfill(time.Now(), w.gov.Policy().BackfillDays)
+	if !narrow {
+		w.tracker.startBackfill(time.Now(), w.gov.Policy().BackfillDays)
+	}
+	w.GraphData.Client.OnPage = w.graphPrefetch
 	w.GraphData.Client.OnRecoveryStart = w.graphRecoveryStart
 	w.GraphData.Client.OnRecoveryCheckpoint = w.graphRecoveryCheckpoint
 	w.GraphData.Client.OnRecoveryBaseline = w.graphRecoveryBaseline
 	w.GraphData.Client.PendingRecoveryLink = w.graphPendingRecoveryLink
 	w.GraphData.Client.Recovering = w.graphRecovering
 	if w.SyncContext != nil && w.GraphData.Client.ImmutableIDMode() {
+		if narrow && !w.tracker.folder(graphIdentityCursor).Done {
+			w.narrowDeferred = true
+			return nil
+		}
 		done, err := w.graphUpgradeIDs(ctx)
 		if errors.Is(err, repository.ErrSyncContextUnsupported) {
 			w.GraphData.Client.SetImmutableIDMode(false)
@@ -55,13 +68,20 @@ func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
 		}
 	}
 
-	caughtUp, err := w.GraphData.Client.SyncPass(ctx)
+	folders := msgraph.TrackedFolders
+	if narrow {
+		folders = w.graphWakeFolders()
+	}
+	caughtUp, err := w.GraphData.Client.SyncFolders(ctx, folders)
 	if err != nil {
 		var mailErr *errx.MailError
 		if errors.As(err, &mailErr) {
 			return mailErr
 		}
 		w.captureSyncError(err)
+		return nil
+	}
+	if narrow {
 		return nil
 	}
 	if !stats.aborted {
@@ -71,6 +91,19 @@ func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
 	}
 	complete = caughtUp
 	return nil
+}
+
+// graphWakeFolders are the wake folders already on a live delta link; a first walk or a recovery is the full pass's.
+func (w *WMail) graphWakeFolders() []string {
+	var folders []string
+	for _, folder := range msgraph.WakeFolders {
+		if w.GraphData.Client.DeltaLinks[folder] != "" && !w.graphRecovering(folder) {
+			folders = append(folders, folder)
+		} else {
+			w.narrowDeferred = true
+		}
+	}
+	return folders
 }
 
 // onGraphMessageSeen is the delta feed's offer of one live item. Known

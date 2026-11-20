@@ -120,6 +120,10 @@ export interface InstanceSettings {
         backfill_messages: number;
         daily_messages_per_mailbox: number;
         daily_messages_per_org: number;
+        // Bounds of the full check interval in minutes; absent from a backend
+        // older than the setting.
+        full_check_min_minutes?: number;
+        full_check_max_minutes?: number;
     };
     // How long event-level history is kept. Every window bounds personal data:
     // opens and clicks carry a client, a device and a location, funnel events

@@ -31,6 +31,8 @@ type fakeGraph struct {
 	listFail map[string]*graphFailure
 	// listed counts successful listings per folder.
 	listed map[string]int
+	// deltas counts delta requests per folder.
+	deltas map[string]int
 }
 
 type graphFailure struct {
@@ -43,6 +45,7 @@ func newFakeGraph() *fakeGraph {
 		messages: map[string][]string{},
 		listFail: map[string]*graphFailure{},
 		listed:   map[string]int{},
+		deltas:   map[string]int{},
 	}
 }
 
@@ -67,6 +70,7 @@ func (g *fakeGraph) serve(t *testing.T) *httptest.Server {
 		folder, tail, _ := strings.Cut(rest, "/")
 
 		if tail == "messages/delta" {
+			g.deltas[folder]++
 			value := []any{}
 			if folder == msgraph.FolderInbox {
 				for _, id := range g.live {

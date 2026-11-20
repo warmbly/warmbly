@@ -14,27 +14,60 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func TestWakeRunsTheNextPassEarlyOnlyAfterACleanPass(t *testing.T) {
+// waitLegacy waits for a mailbox with a live signal, so only wakes and the full pass matter.
+func waitLegacy(t *testing.T, w *WMail, due, notBefore time.Time, wakeable bool) (narrow, ok bool) {
+	t.Helper()
+	step := w.waitForPass(t.Context(), syncPlan{due: due, notBefore: notBefore, wakeable: wakeable})
+	return step == stepNarrow, step != stepStop
+}
+
+func TestWakeRunsANarrowCheckOnlyAfterACleanPass(t *testing.T) {
 	w := &WMail{wake: make(chan struct{}, 1)}
 	w.Wake(false)
 	started := time.Now()
-	if !w.waitForPass(t.Context(), time.Hour, true) {
-		t.Fatal("wait ended without a pass")
+	narrow, ok := waitLegacy(t, w, time.Now().Add(time.Hour), time.Time{}, true)
+	if !ok || !narrow {
+		t.Fatalf("a wake after a clean pass ran narrow=%v ok=%v, want a narrow check", narrow, ok)
 	}
-	if waited := time.Since(started); waited > config.SyncWakeMinGap+time.Second {
-		t.Fatalf("a wake waited %v, not the merge gap", waited)
+	if waited := time.Since(started); waited > config.SyncWakeSettle+time.Second {
+		t.Fatalf("a wake waited %v, not the settle delay", waited)
 	}
 
 	w.Wake(false)
 	started = time.Now()
-	if !w.waitForPass(t.Context(), 50*time.Millisecond, false) {
-		t.Fatal("wait ended without a pass")
+	narrow, ok = waitLegacy(t, w, time.Now().Add(50*time.Millisecond), time.Time{}, false)
+	if !ok || narrow {
+		t.Fatalf("a wake during a backoff ran narrow=%v ok=%v, want the full pass", narrow, ok)
 	}
 	if time.Since(started) < 50*time.Millisecond {
 		t.Fatal("a wake cut short the backoff after a failed pass")
 	}
 	if len(w.wake) != 0 {
 		t.Fatal("a wake the timed pass covers was left for another pass")
+	}
+}
+
+// A wake inside the gap waits for it, and one whose check would start after the full pass is folded into it.
+func TestWakeKeepsTheGapBetweenChecks(t *testing.T) {
+	w := &WMail{wake: make(chan struct{}, 1)}
+	w.Wake(false)
+	started := time.Now()
+	narrow, ok := waitLegacy(t, w, time.Now().Add(time.Hour), time.Now().Add(config.SyncWakeSettle+300*time.Millisecond), true)
+	if !ok || !narrow || time.Since(started) < config.SyncWakeSettle+300*time.Millisecond {
+		t.Fatalf("a wake inside the gap ran early: narrow=%v ok=%v after %v", narrow, ok, time.Since(started))
+	}
+
+	w.Wake(false)
+	started = time.Now()
+	narrow, ok = waitLegacy(t, w, time.Now().Add(100*time.Millisecond), time.Now().Add(config.SyncWakeMinGap), true)
+	if !ok || narrow {
+		t.Fatalf("a wake held past the full pass ran narrow=%v ok=%v, want the full pass", narrow, ok)
+	}
+	if waited := time.Since(started); waited > time.Second {
+		t.Fatalf("the full pass waited %v for a held wake", waited)
+	}
+	if len(w.wake) != 0 {
+		t.Fatal("a wake the full pass covers was left for another check")
 	}
 }
 
@@ -48,23 +81,28 @@ func TestWakesCoalesce(t *testing.T) {
 	}
 }
 
-func TestPollIntervalFollowsThePushChannel(t *testing.T) {
+// The full check interval is the control plane's for every mailbox, push or IDLE alike.
+func TestFullCheckIntervalComesFromThePolicy(t *testing.T) {
 	w := &WMail{wake: make(chan struct{}, 1)}
-	if got := w.pollInterval(); got != ImapCheckInterval {
-		t.Fatalf("no push: %v", got)
+	if got := w.fullCheckInterval(); got != config.SyncFullCheckDefault {
+		t.Fatalf("no policy: %v", got)
 	}
-	w.ApplyPush(&models.AddWorkerEmailPushData{GraphNotificationURL: "https://x", GraphClientState: "s",
-		State: &models.MailboxPushState{Provider: models.MailboxPushGraph, SubscriptionID: "sub", ExpiresAt: time.Now().Add(time.Hour)}})
-	if got := w.pollInterval(); got != config.SyncPushFallbackInterval() {
-		t.Fatalf("live subscription: %v", got)
-	}
-	w.push.state.ExpiresAt = time.Now().Add(-time.Minute)
-	if got := w.pollInterval(); got != ImapCheckInterval {
-		t.Fatalf("an expired subscription must fall back to the normal poll, got %v", got)
-	}
-	w.push.imapIdle.Store(true)
-	if got := w.pollInterval(); got != config.SyncImapWatchedInterval {
-		t.Fatalf("IMAP in IDLE: %v", got)
+	for _, tc := range []struct {
+		seconds int
+		want    time.Duration
+	}{
+		{0, config.SyncFullCheckDefault},
+		{1800, 30 * time.Minute},
+		{60, time.Minute},
+		{5, config.SyncFullCheckFloor},
+	} {
+		w.gov = newGovernor(uuid.New(), nil, nil, models.SyncPolicy{FullCheckSeconds: tc.seconds})
+		w.ApplyPush(&models.AddWorkerEmailPushData{GraphNotificationURL: "https://x", GraphClientState: "s",
+			State: &models.MailboxPushState{Provider: models.MailboxPushGraph, SubscriptionID: "sub", ExpiresAt: time.Now().Add(time.Hour)}})
+		w.push.imapIdle.Store(true)
+		if got := w.fullCheckInterval(); got != tc.want {
+			t.Fatalf("%d seconds: interval %v, want %v", tc.seconds, got, tc.want)
+		}
 	}
 }
 

@@ -70,9 +70,32 @@ const SYNC_FIELDS = [
         max: 2000000,
         help: "New plus imported mail across one organization per UTC day.",
     },
+    {
+        key: "fullCheckMin",
+        setting: "full_check_min_minutes",
+        label: "Full check, fastest (minutes)",
+        min: 5,
+        max: 180,
+        help: "How often a workspace with room left under its plan gets a full check of every folder. Push and IDLE still bring new mail within seconds in between.",
+    },
+    {
+        key: "fullCheckMax",
+        setting: "full_check_max_minutes",
+        label: "Full check, slowest (minutes)",
+        min: 5,
+        max: 180,
+        help: "How often a workspace using its whole mailbox allowance gets a full check. In between, the interval scales with mailboxes connected over the allowance. Must not be below the fastest.",
+    },
 ] as const;
 
 type SyncFieldKey = (typeof SYNC_FIELDS)[number]["key"];
+
+// Compiled full check bounds, for a backend older than the setting.
+const FULL_CHECK_DEFAULTS = { full_check_min_minutes: 15, full_check_max_minutes: 60 } as const;
+
+function syncSetting(sync: InstanceSettings["sync"], setting: (typeof SYNC_FIELDS)[number]["setting"]): number {
+    return sync[setting] ?? FULL_CHECK_DEFAULTS[setting as keyof typeof FULL_CHECK_DEFAULTS];
+}
 
 // Retention windows, mirroring internal/config/constants.go. Each one is also
 // how long the personal data in that log is held, so the help text says what
@@ -543,6 +566,8 @@ function toForm(s: InstanceSettings): FormState {
             backfillMessages: String(s.sync.backfill_messages),
             dailyPerMailbox: String(s.sync.daily_messages_per_mailbox),
             dailyPerOrg: String(s.sync.daily_messages_per_org),
+            fullCheckMin: String(syncSetting(s.sync, "full_check_min_minutes")),
+            fullCheckMax: String(syncSetting(s.sync, "full_check_max_minutes")),
         },
         retention: {
             engagementDays: String(s.retention.engagement_event_days),
@@ -619,7 +644,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
     const syncDirty =
         !!server &&
         !!form &&
-        SYNC_FIELDS.some((f) => form.sync[f.key] !== String(server.sync[f.setting]));
+        SYNC_FIELDS.some((f) => form.sync[f.key] !== String(syncSetting(server.sync, f.setting)));
     const retentionDirty =
         !!server &&
         !!form &&
@@ -663,8 +688,12 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
         onDirtyChange?.(dirty);
         return () => onDirtyChange?.(false);
     }, [dirty, onDirtyChange]);
+    const fullCheckOrdered =
+        form !== null && Number(form.sync.fullCheckMin) <= Number(form.sync.fullCheckMax);
     const syncValid =
-        form !== null && SYNC_FIELDS.every((f) => syncFieldValid(form.sync[f.key], f.min, f.max));
+        form !== null &&
+        SYNC_FIELDS.every((f) => syncFieldValid(form.sync[f.key], f.min, f.max)) &&
+        fullCheckOrdered;
     const retentionValid =
         form !== null &&
         RETENTION_FIELDS.every((f) => syncFieldValid(form.retention[f.key], f.min, RETENTION_MAX_DAYS));
@@ -713,7 +742,11 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             return;
         }
         if (!syncValid) {
-            toast.error("Every sync budget must be a whole number inside its range");
+            toast.error(
+                fullCheckOrdered
+                    ? "Every sync budget must be a whole number inside its range"
+                    : "The slowest full check cannot be faster than the fastest",
+            );
             return;
         }
         if (!retentionValid) {
@@ -758,6 +791,8 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 backfill_messages: Number(form.sync.backfillMessages),
                 daily_messages_per_mailbox: Number(form.sync.dailyPerMailbox),
                 daily_messages_per_org: Number(form.sync.dailyPerOrg),
+                full_check_min_minutes: Number(form.sync.fullCheckMin),
+                full_check_max_minutes: Number(form.sync.fullCheckMax),
             },
             retention: {
                 engagement_event_days: Number(form.retention.engagementDays),
@@ -901,11 +936,12 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                         title="Mailbox sync fair use"
                         description={
                             <>
-                                What a connected mailbox imports and how much new mail it may
-                                store. Mail over a budget waits and is picked up when the window
-                                rolls; nothing is dropped, and replies to the mailbox&apos;s own
-                                outreach are never held. Changes apply the next time a mailbox is
-                                loaded onto a worker (within a few minutes). The fixed pacing
+                                What a connected mailbox imports, how much new mail it may store,
+                                and how often every folder is checked. Mail over a budget waits and
+                                is picked up when the window rolls; nothing is dropped, and replies
+                                to the mailbox&apos;s own outreach are never held. Changes apply the
+                                next time a mailbox is loaded onto a worker (within a few minutes).
+                                The fixed pacing
                                 numbers are listed under{" "}
                                 <TabLink onClick={() => onSwitchTab?.("limits")}>Limits</TabLink>.
                             </>
@@ -920,8 +956,15 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                                 range={`Between ${f.min.toLocaleString()} and ${f.max.toLocaleString()}.`}
                                 value={form.sync[f.key]}
                                 onChange={(v) => setForm({ ...form, sync: { ...form.sync, [f.key]: v } })}
-                                valid={syncFieldValid(form.sync[f.key], f.min, f.max)}
-                                error={`Enter a whole number between ${f.min.toLocaleString()} and ${f.max.toLocaleString()}.`}
+                                valid={
+                                    syncFieldValid(form.sync[f.key], f.min, f.max) &&
+                                    (f.key !== "fullCheckMax" || fullCheckOrdered)
+                                }
+                                error={
+                                    f.key === "fullCheckMax" && !fullCheckOrdered
+                                        ? "Must not be below the fastest full check."
+                                        : `Enter a whole number between ${f.min.toLocaleString()} and ${f.max.toLocaleString()}.`
+                                }
                             />
                         ))}
                     </SettingsGroup>

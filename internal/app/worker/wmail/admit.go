@@ -137,10 +137,12 @@ func (w *WMail) laneOf(ctx context.Context, key string, msg *models.EmailMessage
 func (w *WMail) beginTick() {
 	w.tracker.tickComplete = false
 	w.tracker.release(time.Now())
+	w.mapPage = mapPage{}
 }
 
 // endTick retains unmeasured backlog until a complete pass confirms catch-up.
 func (w *WMail) endTick(ctx context.Context, stats *tickStats, complete bool) {
+	w.mapPage = mapPage{}
 	if stats.deferred > 0 {
 		nodeevidence.Emit(nodeevidence.PolicyDeferred, w.ID, 0, stats.deferred)
 	}
@@ -160,6 +162,7 @@ func (w *WMail) endTick(ctx context.Context, stats *tickStats, complete bool) {
 // events. mapKey is the id the provider reports on later remove/flag events
 // (RFC Message-ID for IMAP, provider message id for Gmail and Graph).
 func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data *models.EmailMessageStoreData, mapKey string) error {
+	w.forgetMap(mapKey)
 	w.verifyDiagnostic(ctx, msg, data)
 	evidence := models.EvidenceFromFlags(data.Flags)
 	if evidence.Source != "unavailable" {

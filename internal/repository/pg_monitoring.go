@@ -3,17 +3,41 @@ package repository
 import (
 	"context"
 	"errors"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/warmbly/warmbly/internal/app/monitoring"
-	"github.com/warmbly/warmbly/internal/models"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/app/monitoring"
+	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
-type MonitoringRepository struct{ pool *pgxpool.Pool }
+type MonitoringRepository struct {
+	pool *pgxpool.Pool
+	// syncStaleAfter is how old a completed full check may be before sync reads as stale; nil uses the default.
+	syncStaleAfter func(context.Context) time.Duration
+}
 
 func NewMonitoringRepository(pool *pgxpool.Pool) *MonitoringRepository {
 	return &MonitoringRepository{pool: pool}
+}
+
+// defaultSyncStaleAfter is twice the compiled longest full check interval.
+const defaultSyncStaleAfter = 2 * time.Duration(config.SyncFullCheckMaxMinutesDefault) * time.Minute
+
+// WireSyncStaleAfter follows the operator's full check bounds, so a slower configured cadence does not read as stale.
+func (r *MonitoringRepository) WireSyncStaleAfter(f func(context.Context) time.Duration) {
+	r.syncStaleAfter = f
+}
+
+func (r *MonitoringRepository) staleAfter(ctx context.Context) time.Duration {
+	if r.syncStaleAfter != nil {
+		if d := r.syncStaleAfter(ctx); d > 0 {
+			return d
+		}
+	}
+	return defaultSyncStaleAfter
 }
 
 type monitoringQuery struct {
@@ -71,7 +95,8 @@ func (r *MonitoringRepository) collect(ctx context.Context, at time.Time, id str
 			return out, nil
 		}
 	}
-	rows, err := r.pool.Query(ctx, monitoringStatement(section))
+	staleAfter := r.staleAfter(ctx)
+	rows, err := r.pool.Query(ctx, monitoringStatementWith(section, staleAfter))
 	if err != nil {
 		return out, err
 	}
@@ -94,6 +119,10 @@ func (r *MonitoringRepository) collect(ctx context.Context, at time.Time, id str
 		for _, q := range section.queries {
 			if q.id == id {
 				v := monitoringMetric(q, observed, section.investigate)
+				if q.id == "sync_stale" || q.id == "sync_held_stale" || q.id == "backfill_stale_running" {
+					seconds := int64(staleAfter / time.Second)
+					v.ThresholdSeconds = &seconds
+				}
 				v.Count = m.Count
 				v.AffectedMailboxes = m.AffectedMailboxes
 				v.AffectedOrganizations = m.AffectedOrganizations
@@ -123,9 +152,16 @@ func (r *MonitoringRepository) collect(ctx context.Context, at time.Time, id str
 }
 
 func monitoringStatement(section monitoringSection) string {
+	return monitoringStatementWith(section, defaultSyncStaleAfter)
+}
+
+// monitoringStatementWith assembles a section, with staleAfter as the sync freshness cutoff.
+func monitoringStatementWith(section monitoringSection, staleAfter time.Duration) string {
 	queries := make([]string, 0, len(section.queries))
+	stale := fmt.Sprintf("INTERVAL '%d seconds'", int64(staleAfter/time.Second))
 	for _, q := range section.queries {
-		query := strings.ReplaceAll(q.query, "$1", "(SELECT at FROM observation)")
+		query := strings.ReplaceAll(q.query, "$stale", stale)
+		query = strings.ReplaceAll(query, "$1", "(SELECT at FROM observation)")
 		queries = append(queries, strings.Replace(query, "SELECT ", "SELECT '"+q.id+"', (SELECT at FROM observation), ", 1))
 	}
 	// One database reference for every predicate and observation in the statement snapshot.
@@ -151,8 +187,8 @@ func monitoringMetric(q monitoringQuery, at time.Time, path string) models.Monit
 var monitoringThresholds = map[string]int64{
 	"reservations_under_5m": 300, "reservations_5_to_30m": 1800, "reservations_over_30m": 1800,
 	"campaign_reserved_aging": 1800, "dispatch_persistent": 600, "dispatch_old_failure": 900,
-	"original_slot_overdue_1h": 3600, "sync_stale": 1200, "sync_held_stale": 1200,
-	"backfill_stale_running": 3600, "worker_samples_missing": 1200,
+	"original_slot_overdue_1h": 3600, "sync_stale": int64(defaultSyncStaleAfter / time.Second), "sync_held_stale": int64(defaultSyncStaleAfter / time.Second),
+	"backfill_stale_running": int64(defaultSyncStaleAfter / time.Second), "worker_samples_missing": 1200,
 	"webhook_stale_claim": 300, "notification_aging": 120, "notification_stale": 600,
 	"arrival_aging": 300,
 }
@@ -226,13 +262,13 @@ var monitoringSections = map[string]monitoringSection{
 		{id: "sync_hold_org_daily", title: "Active sync org_daily hold", unit: "mailboxes", condition: "daily_limit", severity: "info", note: "Persisted governor hold, not transport failure; expiry is eligibility only.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(s.throttled_until::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.throttled_until>$1 AND s.throttle_reason='org_daily'`},
 		{id: "sync_hold_priority_daily", title: "Active sync priority_daily hold", unit: "mailboxes", condition: "daily_limit", severity: "info", note: "Persisted governor hold, not transport failure; expiry is eligibility only.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(s.throttled_until::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.throttled_until>$1 AND s.throttle_reason='priority_daily'`},
 		{id: "sync_hold_other", title: "Other active sync holds", unit: "mailboxes", condition: "budget", severity: "info", note: "Unknown reason is not promoted to a provider error.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(s.throttled_until::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.throttled_until>$1 AND s.throttle_reason NOT IN ('burst','hourly','daily','org_daily','priority_daily')`},
-		{id: "sync_stale", title: "Eligible sync state older than 20m", unit: "mailboxes", condition: "stale_telemetry", severity: "warning", note: "20m monitoring freshness policy, not provider SLA; base tick timestamps do not prove successful sync.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s JOIN email_accounts e ON e.id=s.email_id WHERE e.status='active' AND e.worker_id IS NOT NULL AND e.provider::text IN ('gmail','outlook','smtp_imap') AND (s.last_synced_at IS NULL OR s.last_synced_at<$1-INTERVAL '20 minutes') AND (s.throttled_until IS NULL OR s.throttled_until<=$1)`},
-		{id: "sync_held_stale", title: "Stale sync observations under active holds", unit: "mailboxes", condition: "budget", severity: "info", note: "Hold explains waiting but does not refresh old activity evidence.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(s.throttled_until::timestamptz) FROM email_sync_state s JOIN email_accounts e ON e.id=s.email_id WHERE e.status='active' AND e.worker_id IS NOT NULL AND (s.last_synced_at IS NULL OR s.last_synced_at<$1-INTERVAL '20 minutes') AND s.throttled_until>$1`},
+		{id: "sync_stale", title: "Eligible sync state older than two full check intervals", unit: "mailboxes", condition: "stale_telemetry", severity: "warning", note: "Monitoring freshness policy of twice the longest configured full check interval, not provider SLA; base tick timestamps do not prove successful sync.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s JOIN email_accounts e ON e.id=s.email_id WHERE e.status='active' AND e.worker_id IS NOT NULL AND e.provider::text IN ('gmail','outlook','smtp_imap') AND (s.last_synced_at IS NULL OR s.last_synced_at<$1-$stale) AND (s.throttled_until IS NULL OR s.throttled_until<=$1)`},
+		{id: "sync_held_stale", title: "Stale sync observations under active holds", unit: "mailboxes", condition: "budget", severity: "info", note: "Hold explains waiting but does not refresh old activity evidence.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(s.throttled_until::timestamptz) FROM email_sync_state s JOIN email_accounts e ON e.id=s.email_id WHERE e.status='active' AND e.worker_id IS NOT NULL AND (s.last_synced_at IS NULL OR s.last_synced_at<$1-$stale) AND s.throttled_until>$1`},
 		{id: "sync_future_clock", title: "Future-dated sync activity", unit: "mailboxes", condition: "unknown", severity: "warning", note: "Clock anomaly; never a negative-age healthy reading.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.last_synced_at>$1`},
 		{id: "backfill_running", title: "Backfill running states", unit: "mailboxes", condition: "waiting_schedule", severity: "info", note: "Persisted import state; complete can mean configured cap reached, not current sync health.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.backfill_started_at::timestamptz), MAX(s.updated_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.backfill_status='running'`},
 		{id: "backfill_pending", title: "Backfill pending states", unit: "mailboxes", condition: "waiting_schedule", severity: "info", note: "Persisted import state; complete can mean configured cap reached, not current sync health.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.backfill_started_at::timestamptz), MAX(s.updated_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.backfill_status='pending'`},
 		{id: "backfill_complete", title: "Backfill complete states", unit: "mailboxes", condition: "unknown", severity: "info", note: "Persisted import state; complete can mean configured cap reached, not current sync health.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.backfill_started_at::timestamptz), MAX(s.updated_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.backfill_status='complete'`},
-		{id: "backfill_stale_running", title: "Stale running backfill without active hold", unit: "mailboxes", condition: "stale_telemetry", severity: "warning", note: "Native 1h stale running-state rule for active mailboxes, potential stall rather than proved outage.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.updated_at::timestamptz), MAX(s.updated_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE e.status='active' AND s.backfill_status='running' AND s.updated_at<$1-INTERVAL '1 hour' AND (s.throttled_until IS NULL OR s.throttled_until<=$1)`},
+		{id: "backfill_stale_running", title: "Stale running backfill without active hold", unit: "mailboxes", condition: "stale_telemetry", severity: "warning", note: "Running import not updated within twice the longest configured full check interval, potential stall rather than proved outage.", window: 0 * time.Second, query: `SELECT COUNT(*), COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.updated_at::timestamptz), MAX(s.updated_at::timestamptz), MIN(NULL::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE e.status='active' AND s.backfill_status='running' AND s.updated_at<$1-$stale AND (s.throttled_until IS NULL OR s.throttled_until<=$1)`},
 		{id: "sync_deferred", title: "Last reported budget-deferred live messages", unit: "messages", condition: "budget", severity: "info", note: "Latest pass count, not remaining provider backlog; incomplete ticks can overwrite it.", window: 0 * time.Second, query: `SELECT COALESCE(SUM(s.deferred),0)::bigint, COUNT(DISTINCT s.email_id), COUNT(DISTINCT e.organization_id), COUNT(*) FILTER(WHERE e.organization_id IS NULL), MIN(s.last_synced_at::timestamptz), MAX(s.last_synced_at::timestamptz), MIN(s.throttled_until::timestamptz) FROM email_sync_state s LEFT JOIN email_accounts e ON e.id=s.email_id WHERE s.deferred>0`},
 	}},
 	"mailbox_errors": {permission: models.AdminPermViewUsers, investigate: "/mailboxes", queries: []monitoringQuery{

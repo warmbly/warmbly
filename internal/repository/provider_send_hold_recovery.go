@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// providerRestoredHold is a Gmail or Outlook refusal of the whole mailbox that a complete sync pass on the same grant has since outlived; with the refused task gone, only a sync in the last hour counts.
+// providerRestoredHold is a Gmail or Outlook refusal of the whole mailbox that a complete sync pass on the same grant has since outlived; with the refused task gone, only a sync within config.SyncFullCheckRecent counts.
 // A permanent refusal is a known failed outcome, so releasing it can cost one more refused send, never a duplicate.
 const providerRestoredHold = `ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_reason='permanent'
 	AND ea.provider IN('gmail','outlook') AND (ea.send_cooldown_provider IS NULL OR ea.send_cooldown_provider=ea.provider::text)
 	AND ((t.id IS NOT NULL AND ss.last_synced_at>COALESCE(t.send_result_applied_at,t.completed_at,t.updated_at))
-	 OR (t.id IS NULL AND ss.last_synced_at>NOW()-interval '1 hour'))
+	 OR (t.id IS NULL AND ss.last_synced_at>NOW()-interval '198 minutes'))
 	AND NOT EXISTS(SELECT 1 FROM send_recovery_resolutions r WHERE r.email_account_id=ea.id
 	 AND r.evidence_type='provider_access_restored' AND r.created_at>$1)`
 

@@ -231,6 +231,7 @@ type emailService struct {
 	syncState          repository.EmailSyncStateRepository
 	mailboxes          repository.MailboxRepository
 	syncBudget         SyncBudgetSource
+	fullCheck          fullCheckAllowances
 	seedScope          SeedScopeSource
 	// poolLink marks linked warmup-only mailboxes, which sync with no history.
 	poolLink repository.PoolLinkRepository
@@ -473,7 +474,7 @@ func (s *emailService) GetSyncState(ctx context.Context, orgID, emailID string) 
 	if xerr != nil {
 		return nil, models.SyncPolicy{}, nil, xerr
 	}
-	data, err := s.syncDataFor(ctx, acc.ID, true)
+	data, err := s.syncDataFor(ctx, acc.ID, acc.OrganizationID, true)
 	if err != nil {
 		log.Error().Err(err).Str("email_id", acc.ID.String()).Msg("sync state: policy lookup failed")
 		return nil, models.SyncPolicy{}, nil, errx.InternalError()

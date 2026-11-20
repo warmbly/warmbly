@@ -224,7 +224,7 @@ func TestLiveMonitoringInactiveBackfillRetainsHistoryWithoutWarning(t *testing.T
 	baseline := collectMonitoring(t, r, "sync", now)
 	baseWarning := *measuredMonitoring(t, baseline, "backfill_stale_running").Count
 	baseHistory := *measuredMonitoring(t, baseline, "backfill_running").Count
-	f.exec(`INSERT INTO email_sync_state(email_id,user_id,backfill_status,backfill_synced,last_synced_at,updated_at) VALUES($1,$2,'running',0,$3,$3)`, f.account, f.user, now.Add(-2*time.Hour))
+	f.exec(`INSERT INTO email_sync_state(email_id,user_id,backfill_status,backfill_synced,last_synced_at,updated_at) VALUES($1,$2,'running',0,$3,$3)`, f.account, f.user, now.Add(-defaultSyncStaleAfter-time.Hour))
 	for _, item := range []struct {
 		name, status string
 		warning      int64
@@ -259,7 +259,7 @@ func TestLiveMonitoringAdminSyncStalledRequiresActiveUnheldMailbox(t *testing.T)
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	f.exec(`INSERT INTO email_sync_state(email_id,user_id,backfill_status,backfill_synced,last_synced_at,updated_at) VALUES($1,$2,'running',0,$3,$3)`, f.account, f.user, now.Add(-2*time.Hour))
+	f.exec(`INSERT INTO email_sync_state(email_id,user_id,backfill_status,backfill_synced,last_synced_at,updated_at) VALUES($1,$2,'running',0,$3,$3)`, f.account, f.user, now.Add(-defaultSyncStaleAfter-time.Hour))
 	for _, item := range []struct {
 		name, status  string
 		held, stalled bool
@@ -321,7 +321,7 @@ func TestLiveMonitoringSyncAuthAndDomainPolicy(t *testing.T) {
 		t.Helper()
 		return *measuredMonitoring(t, source, id).Count
 	}
-	f.exec(`INSERT INTO email_sync_state(email_id,user_id,backfill_status,backfill_synced,deferred,last_synced_at,throttled_until,throttle_reason,updated_at) VALUES($1,$2,'running',900,7,$3,$4,'daily',$3)`, f.account, f.user, now.Add(-2*time.Hour), now.Add(time.Minute))
+	f.exec(`INSERT INTO email_sync_state(email_id,user_id,backfill_status,backfill_synced,deferred,last_synced_at,throttled_until,throttle_reason,updated_at) VALUES($1,$2,'running',900,7,$3,$4,'daily',$3)`, f.account, f.user, now.Add(-defaultSyncStaleAfter-time.Hour), now.Add(time.Minute))
 	sync := collectMonitoring(t, r, "sync", now)
 	if count(sync, "sync_deferred") != count(baseSync, "sync_deferred")+7 || count(sync, "sync_hold_daily") != count(baseSync, "sync_hold_daily")+1 || measuredMonitoring(t, sync, "sync_hold_daily").Condition != models.MonitoringDailyLimit || count(sync, "backfill_stale_running") != count(baseSync, "backfill_stale_running") {
 		t.Fatal(sync)

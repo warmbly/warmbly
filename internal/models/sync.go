@@ -25,6 +25,8 @@ type SyncPolicy struct {
 	// lists them; each also covers its subfolders. Per mailbox, unlike the
 	// budgets above, and only meaningful on IMAP.
 	SkipFolders []string `json:"skip_folders,omitempty" avro:"skip_folders"`
+	// FullCheckSeconds is the interval between full checks; zero leaves the worker's default.
+	FullCheckSeconds int `json:"full_check_seconds,omitempty" avro:"full_check_seconds"`
 }
 
 // SyncFolder is one folder the sync has seen on the server, as GET

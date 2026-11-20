@@ -882,15 +882,9 @@ var table = []Entry{
 	},
 	{
 		Key: "IMAP_IDLE", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "Workers hold each IMAP INBOX open in IDLE on a second connection, so new mail syncs within seconds. false keeps IMAP polling once a minute.",
+		Effect:     "Workers hold each IMAP INBOX open in IDLE on a second connection, so new mail in INBOX and junk syncs within seconds. false checks INBOX and junk about every 5 minutes instead; other folders are checked every 15 to 60 minutes either way.",
 		DocsAnchor: docsMailboxSync,
 		Resolve:    envOr("IMAP_IDLE", "true"),
-	},
-	{
-		Key: "SYNC_PUSH_FALLBACK_INTERVAL", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "How often a mailbox whose provider pushes its changes is still polled, because notifications can be delayed or lost.",
-		DocsAnchor: docsMailboxSync,
-		Resolve:    envOr("SYNC_PUSH_FALLBACK_INTERVAL", "10m"),
 	},
 	{
 		Key: "GRAPH_PUSH", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,

@@ -81,7 +81,7 @@ func TestStartupIMAPFailureKeepsSMTPExecutionAndRecoversSync(t *testing.T) {
 		t.Fatal("startup failure was not retained or falsely marked sync as recovered")
 	}
 	recovered.Store(true)
-	if err := mail.syncOnce(t.Context()); err != nil {
+	if err := mail.syncOnce(t.Context(), false); err != nil {
 		t.Fatalf("IMAP could not reconnect without reloading the mailbox: %v", err)
 	}
 	if mail.tracker.state.LastSyncedAt == nil || !mail.tracker.state.LastSyncedAt.After(previous) {
@@ -146,7 +146,7 @@ func TestStartupIMAPLockoutStaysLoadedButCredentialsStillFail(t *testing.T) {
 				t.Fatalf("provider lockout discarded the mailbox: %v", err)
 			}
 			t.Cleanup(mail.Discard)
-			if retry := mail.syncOnce(t.Context()); retry == nil || retry.Code != tc.want || retry.RetryAfter <= 0 {
+			if retry := mail.syncOnce(t.Context(), false); retry == nil || retry.Code != tc.want || retry.RetryAfter <= 0 {
 				t.Fatalf("lockout did not survive reconnect: %+v", retry)
 			}
 			if logins.Load() != 1 {

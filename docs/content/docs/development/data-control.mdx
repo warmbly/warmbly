@@ -71,6 +71,8 @@ Every window below lives in the database, not the environment, and is edited und
 | `sync.backfill_messages` | 5,000 | 1 to 100,000 | The most messages that import stores per mailbox |
 | `sync.daily_messages_per_mailbox` | 2,000 | 1 to 100,000 | New mail one mailbox may store per UTC day |
 | `sync.daily_messages_per_org` | 25,000 | 1 to 2,000,000 | New plus imported mail across one workspace per UTC day |
+| `sync.full_check_min_minutes` | 15 | 5 to 180 | How often a workspace with room left under its plan has every folder of its mailboxes checked |
+| `sync.full_check_max_minutes` | 60 | 5 to 180 | How often a workspace using its whole mailbox allowance has every folder checked |
 
 Mail over a daily budget is deferred, never dropped: the provider cursor is held and the mail is re-offered on the next pass. Replies to the mailbox's own outreach ride a separate budget of the same size and keep landing regardless.
 

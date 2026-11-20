@@ -40,7 +40,7 @@ func TestSyncGraphRetryAfterStopsInflightRequests(t *testing.T) {
 	var relayed []models.SyncState
 	w := newGraphTestMail(t, srv, &events, &relayed)
 	previous := seedSyncTruth(w, &relayed)
-	err := w.syncOnce(t.Context())
+	err := w.syncOnce(t.Context(), false)
 	if err == nil || err.RetryAfter != 12*time.Minute || requests.Load() != 1 || err.Failure == nil || err.Failure.RetryAt == nil {
 		t.Fatalf("early hidden retry or lost deadline: requests=%d err=%+v", requests.Load(), err)
 	}
@@ -65,7 +65,7 @@ func TestSyncGraphLaterFolderRetryAfterOverridesEarlierError(t *testing.T) {
 	var relayed []models.SyncState
 	w := newGraphTestMail(t, srv, &events, &relayed)
 	previous := seedSyncTruth(w, &relayed)
-	err := w.syncOnce(t.Context())
+	err := w.syncOnce(t.Context(), false)
 	if err == nil || err.RetryAfter < 12*time.Minute || requests.Load() != 2 || err.Failure == nil || err.Failure.RetryAt == nil {
 		t.Fatalf("later provider deadline discarded: requests=%d err=%+v delay=%s", requests.Load(), err, w.nextSyncDelay(time.Minute, err))
 	}
@@ -84,7 +84,7 @@ func TestSyncFolderCapPreservesUnselectedStateWithoutClaimingRecovery(t *testing
 	previous := seedSyncTruth(w, &relayed)
 	w.transportFailures = 2
 	w.EmailType = models.InboxProviderSMTPIMAP
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	if gone := mailboxDeletes(*events); len(gone) != 0 {
@@ -96,7 +96,7 @@ func TestSyncFolderCapPreservesUnselectedStateWithoutClaimingRecovery(t *testing
 	}
 	conn.overflow = 0
 	conn.folders = append(conn.folders, *w.SmtpImapData.Mailboxes[1])
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	assertSyncCatchUp(t, w, previous)
@@ -160,7 +160,7 @@ func TestSyncPresentFolderWithoutStatusRetainsRecoveryEvidence(t *testing.T) {
 	previous := seedSyncTruth(w, &relayed)
 	w.EmailType = models.InboxProviderSMTPIMAP
 	w.transportFailures = 2
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	assertNoSyncSuccess(t, w, previous)
