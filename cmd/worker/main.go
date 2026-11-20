@@ -85,7 +85,7 @@ func main() {
 	}
 
 	// Every call back to the control plane goes to its private address when this node can reach it.
-	controlPlane := nodebackend.Resolve(ctx, os.Getenv, log.Printf)
+	controlPlane := nodebackend.Resolve(ctx, os.Getenv, publicBackendURL(), log.Printf)
 
 	kmsClient, err := kms.FromEnv(ctx, awscfg, masterKey, kms.WithControlPlane(controlPlane))
 	if err != nil {
@@ -314,6 +314,14 @@ func nodeRegion() string {
 		return v
 	}
 	return os.Getenv("WORKER_REGION")
+}
+
+// publicBackendURL is where a private-address failure falls back to, the address the brokered providers read too.
+func publicBackendURL() string {
+	if v := os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"); v != "" {
+		return v
+	}
+	return os.Getenv("WARMBLY_BACKEND_URL")
 }
 
 // buildVersion is the image tag this build reports. Set by the join script

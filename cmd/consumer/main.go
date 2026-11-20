@@ -129,7 +129,7 @@ func main() {
 	}
 
 	// A fleet consumer calls the control plane on its private address when it can reach it.
-	controlPlane := nodebackend.Resolve(ctx, os.Getenv, log.Printf)
+	controlPlane := nodebackend.Resolve(ctx, os.Getenv, consumerBackendURL(), log.Printf)
 
 	kmsClient, err := kms.FromEnv(ctx, awscfg, masterKey, kms.WithControlPlane(controlPlane))
 	if err != nil {
