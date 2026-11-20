@@ -518,7 +518,7 @@ func TestFailedLineWithAFailedRefundKeepsTheOrder(t *testing.T) {
 	}
 }
 
-// #10 is a ledger query: see TestLiveStoreChargesStayOutOfSpendLimits in the repository package.
+// #10 is a ledger query.
 
 // #11: a declined manual renewal is charged again once the card is replaced, not refused for good.
 func TestDeclinedManualRenewalGoesThroughWithANewCard(t *testing.T) {

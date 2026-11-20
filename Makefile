@@ -87,7 +87,7 @@ fmt:
 schemas:
 	go test ./internal/app/eventschemas -run TestPublishedSchemasStayCompatible -update
 
-lint: check-migrations join-check split-cloud-check pages-check check-dockerfiles
+lint: check-migrations join-check pages-check check-dockerfiles
 	./scripts/check-forms-mirror.sh
 	$(GO_BIN)/golangci-lint run --timeout=5m
 

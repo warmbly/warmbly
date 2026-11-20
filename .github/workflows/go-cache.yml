@@ -1,0 +1,56 @@
+name: Go cache
+
+# CI runs on pull requests and the merge queue, and neither can restore a cache
+# another PR or queue entry saved; only caches saved on main are shared. This
+# saves the Go module and build cache, and the built lint tools, on main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - '.github/workflows/go-cache.yml'
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: Warm the Go cache
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Same key as go-lint in ci.yml.
+      - name: Tool versions
+        id: versions
+        run: echo "key=$({ grep -E '^(toolchain|go) ' go.mod; grep -E '^[A-Z_]+_VERSION \?=' Makefile; } | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Go tools
+        id: tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ steps.versions.outputs.key }}
+
+      - name: Install required Go tools
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: make setup-tools
+
+      - name: Compile everything CI compiles
+        run: |
+          go test -run '^$' ./...
+          go build -tags kafka ./...

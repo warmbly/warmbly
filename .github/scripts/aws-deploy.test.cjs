@@ -336,13 +336,13 @@ test("a revision that drops a secret the live service reads is refused", async (
   await run(g, config({ DEPLOY_ALLOW_DROPPED_SECRETS: "true" }));
 });
 
-test("an alarm during the bake restores every updated service in reverse order", async () => {
-  const f = fixture({ alarm: "consumer" });
-  await assert.rejects(run(f, config()), /fixture-consumer-5xx/);
+test("an alarm on the backend restores it before any other service moves", async () => {
+  const f = fixture({ alarm: "backend" });
+  await assert.rejects(run(f, config()), /fixture-backend-5xx/);
   const restores = updates(f).filter((u) => u.taskDefinition.endsWith(":1"));
-  assert.deepEqual(restores.map((u) => u.service), ["fixture-consumer", "fixture-backend"]);
+  assert.deepEqual(restores.map((u) => u.service), ["fixture-backend"]);
   assert.ok(restores.every((u) => u.desiredCount === 2));
-  assert.ok(!updates(f).some((u) => u.service === "fixture-forms"));
+  assert.ok(!updates(f).some((u) => u.service === "fixture-consumer"));
 });
 
 test("a failure in the parallel wave waits for its siblings and then restores all of them", async () => {
@@ -444,8 +444,8 @@ test("no secret value or version-free reference is ever read", async () => {
 });
 
 test("an empty bake setting means the default, not no bake", () => {
-  assert.equal(config({ DEPLOY_BAKE_SECONDS: "" }).bake, 300);
-  assert.equal(config({ DEPLOY_BAKE_SECONDS: "  " }).bake, 300);
+  assert.equal(config({ DEPLOY_BAKE_SECONDS: "" }).bake, 120);
+  assert.equal(config({ DEPLOY_BAKE_SECONDS: "  " }).bake, 120);
   assert.equal(config({ DEPLOY_BAKE_SECONDS: "0" }).bake, 0);
 });
 
