@@ -78,6 +78,8 @@ const (
 	ErrIDGrantInactive      = "mailbox_grant_inactive"
 	ErrIDProof              = "mailbox_grant_proof_missing"
 	ErrIDUnavailable        = "mailbox_grant_unavailable"
+	// ErrIDMicrosoftTenantConsent is a purchased Microsoft 365 mailbox whose tenant has not approved this instance's app for the workspace.
+	ErrIDMicrosoftTenantConsent = "microsoft_tenant_consent_required"
 )
 
 // States holds a consent round trip's state until the administrator returns.
@@ -142,6 +144,11 @@ type Service struct {
 
 	// purchased brokers tokens for Google mailboxes bought in the store; nil without the store.
 	purchased PurchasedTokens
+	// wakers run connects waiting on a tenant's consent once it is verified.
+	wakers []ConsentWaker
+	// consentAttempts and consentPause bound the wait for a fresh consent to reach the token endpoint.
+	consentAttempts int
+	consentPause    time.Duration
 
 	sources sync.Map // cache key -> oauth2.TokenSource
 }
@@ -181,6 +188,9 @@ func NewService(d Deps) *Service {
 		graphBase:      "https://graph.microsoft.com/v1.0",
 
 		googleMailboxClientID: d.GoogleMailboxClientID,
+
+		consentAttempts: 4,
+		consentPause:    10 * time.Second,
 	}
 	if s.txt == nil {
 		s.txt = net.DefaultResolver
@@ -298,7 +308,7 @@ func tokenError(provider string, err error) *errx.Error {
 		return errx.NewWithIdentifier(errx.BadRequest, ErrIDGoogleUnauthorized, "Google did not issue a token for this domain. Check the domain-wide delegation entry and try again.")
 	}
 	switch {
-	case strings.Contains(code, "AADSTS700016"), strings.Contains(code, "AADSTS65001"), strings.Contains(code, "AADSTS500011"):
+	case microsoftConsentCodes(code):
 		return errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent,
 			"This Microsoft 365 organization has not approved Warmbly. Ask a Global Administrator to connect it with admin consent.")
 	case strings.Contains(code, "AADSTS90002"):

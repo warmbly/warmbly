@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -46,12 +47,27 @@ type memDelegator struct {
 	// signatures are the Gmail signatures set, as "address html"; signatureFail refuses that many first.
 	signatures    []string
 	signatureFail int
+	// awaitConsent answers every connect as a tenant still waiting on its administrator's consent.
+	awaitConsent bool
+	// consents are the tenant consents started, as "domain returnURL".
+	consents []string
+}
+
+func (d *memDelegator) StartPurchasedMicrosoftConsent(_ context.Context, _, _ uuid.UUID, domain, returnURL string) (*delegation.MicrosoftConsent, *errx.Error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.consents = append(d.consents, domain+" "+returnURL)
+	return &delegation.MicrosoftConsent{URL: "https://login.example/adminconsent?state=x", ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 
 func (d *memDelegator) ConnectPurchased(_ context.Context, _, _ uuid.UUID, provider, address, _, _ string, brokered bool) (*models.Email, *errx.Error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.calls = append(d.calls, provider+":"+address)
+	if d.awaitConsent {
+		d.brokered = append(d.brokered, brokered)
+		return nil, errx.NewWithIdentifier(errx.Unprocessable, delegation.ErrIDMicrosoftTenantConsent, "approve it")
+	}
 	d.brokered = append(d.brokered, brokered)
 	return &models.Email{ID: uuid.New(), Email: address}, nil
 }

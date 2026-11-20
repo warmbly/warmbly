@@ -136,12 +136,14 @@ type StoreMailbox struct {
 	UnpaidCancel bool
 	CancelsAt    *time.Time
 	// CancelledAt is when the cancellation was applied here: the Warmbly mailbox switched off.
-	CancelledAt      *time.Time
-	EmailAccountID   *uuid.UUID
-	ConnectMethod    string
-	ConnectState     string
-	ConnectError     string
-	ConnectAttempts  int
+	CancelledAt     *time.Time
+	EmailAccountID  *uuid.UUID
+	ConnectMethod   string
+	ConnectState    string
+	ConnectError    string
+	ConnectAttempts int
+	// ActionRequired is the step only a person can take before the mailbox connects (ActionMicrosoftConsent), nil when none.
+	ActionRequired   *string
 	BillingFailures  int
 	PendingChargeKey *string
 	// PendingChargeMicros is what the pending charge takes for this mailbox, fixed when it was reserved.

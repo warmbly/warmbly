@@ -111,6 +111,10 @@ type StoreRepository interface {
 	// another attempt holds it, or it failed too often or too recently.
 	ClaimConnect(ctx context.Context, orgID, id uuid.UUID, now time.Time) (bool, error)
 	FinishConnect(ctx context.Context, orgID, id uuid.UUID, emailAccountID *uuid.UUID, state, errMsg string) error
+	// AwaitConnectAction parks a connect on a step only a person can take; it is claimable again half an hour after its last try.
+	AwaitConnectAction(ctx context.Context, orgID, id uuid.UUID, action string) error
+	// WakeConnectAction makes a workspace's connects waiting on a step for these domains claimable now, returning them.
+	WakeConnectAction(ctx context.Context, orgID uuid.UUID, action string, domains []string) ([]models.StoreMailbox, error)
 	// PendingConnects are active mailboxes a connect attempt could claim, across workspaces.
 	PendingConnects(ctx context.Context, now time.Time, limit int) ([]models.StoreMailbox, error)
 
@@ -715,14 +719,14 @@ func (r *storeRepository) SetDomainNotice(ctx context.Context, id uuid.UUID, not
 const storeMailboxColumns = `id, organization_id, domain_id, order_id, graphkit_mailbox_id, email, provider, status, first_name,
 	last_name, is_admin, monthly_retail_micros, paid_through, period_end, unpaid_cancel, cancels_at, cancelled_at, email_account_id, connect_method, connect_state, connect_error,
 	connect_attempts, billing_failures, pending_charge_key, pending_charge_micros, paid_key, paid_micros, last_notice, photo_id, photo_applied_id, signature_html, signature_plain,
-	signature_set_at, signature_provider_at, created_at, updated_at`
+	signature_set_at, signature_provider_at, created_at, updated_at, action_required`
 
 func scanStoreMailbox(row pgx.Row) (*models.StoreMailbox, error) {
 	var m models.StoreMailbox
 	err := row.Scan(&m.ID, &m.OrganizationID, &m.DomainID, &m.OrderID, &m.GraphKitMailboxID, &m.Email, &m.Provider, &m.Status,
 		&m.FirstName, &m.LastName, &m.IsAdmin, &m.MonthlyRetailMicros, &m.PaidThrough, &m.PeriodEnd, &m.UnpaidCancel, &m.CancelsAt, &m.CancelledAt, &m.EmailAccountID, &m.ConnectMethod,
 		&m.ConnectState, &m.ConnectError, &m.ConnectAttempts, &m.BillingFailures, &m.PendingChargeKey, &m.PendingChargeMicros, &m.PaidKey, &m.PaidMicros, &m.LastNotice,
-		&m.PhotoID, &m.PhotoAppliedID, &m.SignatureHTML, &m.SignaturePlain, &m.SignatureSetAt, &m.SignatureProviderAt, &m.CreatedAt, &m.UpdatedAt)
+		&m.PhotoID, &m.PhotoAppliedID, &m.SignatureHTML, &m.SignaturePlain, &m.SignatureSetAt, &m.SignatureProviderAt, &m.CreatedAt, &m.UpdatedAt, &m.ActionRequired)
 	return noRows(&m, err)
 }
 
@@ -824,10 +828,12 @@ func (r *storeRepository) UnmarkedEndedMailboxes(ctx context.Context, limit int)
 		WHERE cancelled_at IS NULL AND `+storeEndedMailbox+` ORDER BY updated_at LIMIT $1`, limit)
 }
 
-// storeConnectRetry is the claimable set: never tried, failed fewer than five
-// times and not in the last attempt's backoff, or a claim abandoned by a crash.
+// storeConnectRetry is the claimable set: never tried (or waiting on a person's
+// step and not tried in the last half hour), failed fewer than five times and
+// not in the last attempt's backoff, or a claim abandoned by a crash.
 const storeConnectRetry = `email_account_id IS NULL AND status = 'active' AND cancelled_at IS NULL AND (
-	connect_state = 'waiting'
+	(connect_state = 'waiting' AND (action_required IS NULL OR connect_attempted_at IS NULL
+		OR connect_attempted_at < $NOW - interval '30 minutes'))
 	OR (connect_state = 'failed' AND connect_attempts < 5 AND connect_attempted_at < $NOW - make_interval(mins => 10 * connect_attempts))
 	OR (connect_state = 'connecting' AND connect_attempted_at < $NOW - interval '10 minutes'))`
 
@@ -842,7 +848,18 @@ func (r *storeRepository) ClaimConnect(ctx context.Context, orgID, id uuid.UUID,
 
 func (r *storeRepository) FinishConnect(ctx context.Context, orgID, id uuid.UUID, emailAccountID *uuid.UUID, state, errMsg string) error {
 	return r.exec(ctx, `UPDATE store_mailboxes SET email_account_id = COALESCE($3, email_account_id), connect_state = $4,
-		connect_error = $5, updated_at = now() WHERE organization_id = $1 AND id = $2`, orgID, id, emailAccountID, state, errMsg)
+		connect_error = $5, action_required = NULL, updated_at = now() WHERE organization_id = $1 AND id = $2`, orgID, id, emailAccountID, state, errMsg)
+}
+
+func (r *storeRepository) AwaitConnectAction(ctx context.Context, orgID, id uuid.UUID, action string) error {
+	return r.exec(ctx, `UPDATE store_mailboxes SET connect_state = 'waiting', action_required = $3, connect_attempts = 0,
+		connect_error = '', updated_at = now() WHERE organization_id = $1 AND id = $2 AND email_account_id IS NULL`, orgID, id, action)
+}
+
+func (r *storeRepository) WakeConnectAction(ctx context.Context, orgID uuid.UUID, action string, domains []string) ([]models.StoreMailbox, error) {
+	return r.mailboxes(ctx, `UPDATE store_mailboxes SET action_required = NULL, updated_at = now()
+		WHERE organization_id = $1 AND action_required = $2 AND email_account_id IS NULL AND split_part(email, '@', 2) = ANY($3)
+		RETURNING `+storeMailboxColumns, orgID, action, domains)
 }
 
 func (r *storeRepository) PendingConnects(ctx context.Context, now time.Time, limit int) ([]models.StoreMailbox, error) {

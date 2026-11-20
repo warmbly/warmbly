@@ -43,6 +43,10 @@ const (
 	PartnerConnectFailed     = "failed"
 )
 
+// ActionMicrosoftConsent is a purchased Microsoft 365 mailbox waiting for its tenant's administrator to approve
+// this instance's app. The only value of partner_mailboxes.action_required and store_mailboxes.action_required.
+const ActionMicrosoftConsent = "microsoft_consent"
+
 // PartnerMailbox is one mailbox of a partner-managed workspace as the partner API knows it.
 type PartnerMailbox struct {
 	ID               uuid.UUID         `json:"id"`

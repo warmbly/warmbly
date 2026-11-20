@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/displayname"
 	"github.com/warmbly/warmbly/internal/pkg/graphkit"
@@ -83,7 +84,13 @@ func (s *Service) connect(ctx context.Context, row *models.StoreMailbox, m *grap
 	if name == "" {
 		name = displayname.FromEmail(row.Email)
 	}
-	acc, cerr := s.connectBy(ctx, orgID, userID, row, m, name)
+	acc, cerr, waiting := s.connectBy(ctx, orgID, userID, row, m, name)
+	if waiting {
+		// Not a failure: the domain's administrator approves the app once, and that wakes it (WakeMicrosoftConsent).
+		_ = s.Repo.AwaitConnectAction(context.WithoutCancel(ctx), orgID, row.ID, models.ActionMicrosoftConsent)
+		s.publishMailbox(ctx, &models.StoreMailbox{ID: row.ID, OrganizationID: orgID, DomainID: row.DomainID, Status: row.Status, ConnectState: models.StoreConnectWaiting})
+		return
+	}
 	if cerr != "" {
 		_ = s.Repo.FinishConnect(context.WithoutCancel(ctx), orgID, row.ID, nil, models.StoreConnectFailed, cerr)
 		s.publishMailbox(ctx, &models.StoreMailbox{ID: row.ID, OrganizationID: orgID, DomainID: row.DomainID, Status: row.Status, ConnectState: models.StoreConnectFailed})
@@ -111,12 +118,13 @@ func (s *Service) connect(ctx context.Context, row *models.StoreMailbox, m *grap
 	}
 }
 
-// connectBy connects through the mailbox's method and returns a workspace-safe failure.
-func (s *Service) connectBy(ctx context.Context, orgID, userID uuid.UUID, row *models.StoreMailbox, m *graphkit.Mailbox, name string) (*models.Email, string) {
+// connectBy connects through the mailbox's method and returns a workspace-safe failure, or true for a Microsoft 365
+// tenant that has not approved this instance's app yet, which is not a failure.
+func (s *Service) connectBy(ctx context.Context, orgID, userID uuid.UUID, row *models.StoreMailbox, m *graphkit.Mailbox, name string) (*models.Email, string, bool) {
 	switch m.Connection.Method {
 	case graphkit.ConnectToken, graphkit.ConnectDelegation:
 		if s.Delegator == nil {
-			return nil, connectFailed
+			return nil, connectFailed, false
 		}
 		provider := models.GrantProviderGoogle
 		if m.Provider == graphkit.ProviderMicrosoft {
@@ -126,22 +134,26 @@ func (s *Service) connectBy(ctx context.Context, orgID, userID uuid.UUID, row *m
 		// read through its admin mailbox, like any administrator's grant.
 		admin, err := s.Repo.DomainAdminEmail(ctx, orgID, row.DomainID)
 		if err != nil {
-			return nil, connectFailed
+			return nil, connectFailed, false
 		}
 		if admin == "" {
 			admin = row.Email
 		}
 		brokered := m.Connection.Method == graphkit.ConnectToken
 		acc, xerr := s.Delegator.ConnectPurchased(ctx, orgID, userID, provider, row.Email, name, admin, brokered)
+		if xerr != nil && xerr.Identifier == delegation.ErrIDMicrosoftTenantConsent {
+			return nil, "", true
+		}
 		if xerr != nil {
 			log.Warn().Str("store_mailbox_id", row.ID.String()).Str("reason", xerr.ResponseCode()).Msg("store: connecting a purchased mailbox failed")
-			return nil, connectFailed
+			return nil, connectFailed, false
 		}
-		return acc, ""
+		return acc, "", false
 	case graphkit.ConnectPassword:
-		return s.connectPassword(ctx, orgID, userID, row, name)
+		acc, failure := s.connectPassword(ctx, orgID, userID, row, name)
+		return acc, failure, false
 	}
-	return nil, connectFailed
+	return nil, connectFailed, false
 }
 
 // connectPassword fetches the credentials once and connects through the
@@ -201,4 +213,16 @@ func (s *Service) purchaser(ctx context.Context, row *models.StoreMailbox) uuid.
 		}
 	}
 	return uuid.Nil
+}
+
+// WakeMicrosoftConsent makes a workspace's mailboxes waiting on these domains' tenant consent connect on the next pass.
+func (s *Service) WakeMicrosoftConsent(ctx context.Context, orgID uuid.UUID, domains []string) {
+	rows, err := s.Repo.WakeConnectAction(ctx, orgID, models.ActionMicrosoftConsent, domains)
+	if err != nil {
+		log.Warn().Err(err).Str("org_id", orgID.String()).Msg("store: waking connects after a tenant consent failed")
+		return
+	}
+	for i := range rows {
+		s.publishMailbox(ctx, &rows[i])
+	}
 }

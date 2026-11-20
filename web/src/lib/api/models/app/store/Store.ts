@@ -280,6 +280,8 @@ export interface StoreMailbox {
     cancelled_at?: Date | string | null;
     email_account_id: string | null;
     connect_state: ConnectState;
+    /** The step only a person can take before it connects: the Microsoft 365 administrator approving Warmbly. */
+    action_required?: "microsoft_consent" | null;
     created_at: Date | string;
     /** The domain's Google Workspace / Microsoft 365 admin. */
     is_admin: boolean;
@@ -287,6 +289,13 @@ export interface StoreMailbox {
     paused: boolean;
     /** The profile photo at Google or Microsoft: none, pending (sent, not taken yet) or set. */
     photo?: "none" | "pending" | "set";
+}
+
+/** Where the domain's Microsoft 365 administrator approves Warmbly; url is null when nothing is left to approve. */
+export interface MicrosoftConsentLink {
+    url: string | null;
+    expires_at?: Date | string;
+    consented: boolean;
 }
 
 /** A fresh sign-in, shown once and never cached. */

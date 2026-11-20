@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -112,12 +113,31 @@ func (s *Service) connectOne(ctx context.Context, row *models.PartnerMailbox) {
 	provider := grantProvider(row.Provider)
 	orgID := *po.OrganizationID
 	name := s.senderName(row.FirstName, row.LastName, row.Email)
+	method := ""
+	if row.ConnectionMethod != nil {
+		method = *row.ConnectionMethod
+	}
 	var acc *models.Email
 	var xerr *errx.Error
-	if row.ConnectionMethod != nil && *row.ConnectionMethod == "token" {
+	switch {
+	case method == "token":
 		acc, xerr = s.mb.Delegator.ConnectPurchased(ctx, orgID, p.ServiceUserID, provider, row.Email, name, "", true)
-	} else {
+	case infrastructureMicrosoft(row.Source, row.Provider, method) && !delegationVouched(p, row.Email):
+		// Partner input alone never records a grant: the tenant's administrator consenting through a link does.
+		var pending bool
+		if pending, xerr = s.consentPending(ctx, p, orgID, row); xerr == nil && pending {
+			s.awaitConsent(ctx, row)
+			return
+		}
+		if xerr == nil {
+			acc, xerr = s.mb.Delegator.ConnectPurchased(ctx, orgID, p.ServiceUserID, provider, row.Email, name, "", false)
+		}
+	default:
 		acc, xerr = s.mb.Delegator.ConnectPartnerDelegated(ctx, orgID, p.ServiceUserID, provider, row.Email, name, delegationVouched(p, row.Email))
+	}
+	if xerr != nil && xerr.Identifier == delegation.ErrIDMicrosoftTenantConsent {
+		s.awaitConsent(ctx, row)
+		return
 	}
 	if xerr != nil {
 		log.Warn().Str("partner_mailbox", row.ID.String()).Str("reason", xerr.ResponseCode()).Msg("partner: connecting an attached mailbox failed")
@@ -135,6 +155,16 @@ func (s *Service) connectOne(ctx context.Context, row *models.PartnerMailbox) {
 	s.syncWarmup(ctx, orgID, acc.ID, row.Enablement)
 }
 
+// consentRetry is how often a mailbox waiting on its tenant's consent checks again; the consent itself wakes it at once.
+const consentRetry = 30 * time.Minute
+
+// awaitConsent parks a Microsoft 365 mailbox until its tenant's administrator consents, spending no attempt.
+func (s *Service) awaitConsent(ctx context.Context, row *models.PartnerMailbox) {
+	if err := s.mb.Repo.AwaitPartnerAction(ctx, row.ID, models.ActionMicrosoftConsent, delegation.TenantConsentMessage(emailDomain(row.Email)), s.now().Add(consentRetry)); err != nil {
+		errs.CaptureException(err)
+	}
+}
+
 // connectRetry backs a connect off, and gives up after connectMaxAttempts with the reason the partner reads.
 func (s *Service) connectRetry(ctx context.Context, row *models.PartnerMailbox, msg string) {
 	if row.ConnectAttempts >= connectMaxAttempts {
@@ -143,4 +173,14 @@ func (s *Service) connectRetry(ctx context.Context, row *models.PartnerMailbox, 
 	}
 	next := s.now().Add(min(30*time.Minute, time.Duration(1<<min(row.ConnectAttempts, 6))*30*time.Second))
 	_ = s.mb.Repo.FinishPartnerConnect(ctx, row.ID, nil, models.PartnerConnectPending, &msg, &next)
+}
+
+// WakeMicrosoftConsent runs a workspace's connects waiting on these domains' tenant consent on the next pass.
+func (s *Service) WakeMicrosoftConsent(ctx context.Context, orgID uuid.UUID, domains []string) {
+	if !s.mailboxesOn() {
+		return
+	}
+	if err := s.mb.Repo.WakePartnerAction(ctx, orgID, models.ActionMicrosoftConsent, domains); err != nil {
+		errs.CaptureException(err)
+	}
 }

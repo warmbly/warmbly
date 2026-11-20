@@ -787,6 +787,8 @@ func Run(
 				storeRoutes.PATCH("/domains/:id/dns/:record_id", manage, h.UpdateStoreDNSRecord)
 				storeRoutes.DELETE("/domains/:id/dns/:record_id", manage, h.DeleteStoreDNSRecord)
 				storeRoutes.POST("/domains/:id/dns/check", read, h.CheckStoreDNS)
+				// The Microsoft 365 administrator's approval link for a purchased domain; nothing changes until they approve.
+				storeRoutes.POST("/domains/:id/microsoft-consent", manage, h.StartStoreMicrosoftConsent)
 				storeRoutes.GET("/mailboxes", read, h.ListStoreMailboxes)
 				storeRoutes.PATCH("/mailboxes/:id", manage, h.PatchStoreMailbox)
 				// Profile photos: uploaded once (or copied from the caller's own), then named by an order line or a mailbox.

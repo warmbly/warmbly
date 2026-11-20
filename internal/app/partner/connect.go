@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/connectlink"
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -199,4 +200,67 @@ func (s *Service) Connected(ctx context.Context, linkID uuid.UUID, acc *models.E
 		errs.CaptureException(err)
 	}
 	_ = s.mb.Repo.SetPartnerMailboxPublished(ctx, row.ID, publishedState(v))
+}
+
+// MicrosoftConsents opens a Microsoft 365 tenant's consent to this instance's app (delegation.Service).
+type MicrosoftConsents interface {
+	StartPurchasedMicrosoftConsent(ctx context.Context, orgID, userID uuid.UUID, domain, returnURL string) (*delegation.MicrosoftConsent, *errx.Error)
+}
+
+// MicrosoftConsentInput is the POST /organizations/{external_id}/microsoft-consent-links body.
+type MicrosoftConsentInput struct {
+	Domain    string `json:"domain"`
+	ReturnURL string `json:"return_url"`
+}
+
+// MicrosoftConsentLink is a one-time consent URL, or url null and consented true when the workspace needs none.
+type MicrosoftConsentLink struct {
+	URL       *string    `json:"url"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Consented bool       `json:"consented,omitempty"`
+}
+
+// CreateMicrosoftConsentLink mints a single-use, hour-long link through which the tenant's administrator approves
+// this instance's app for a domain of the workspace's Microsoft 365 mailboxes, and lands back on return_url.
+func (s *Service) CreateMicrosoftConsentLink(ctx context.Context, c *Caller, externalID string, in MicrosoftConsentInput) (*MicrosoftConsentLink, *errx.Error) {
+	if !s.mailboxesOn() || s.mb.Consents == nil {
+		return nil, ErrMailboxesDisabled
+	}
+	po, xerr := s.ResolveOrganization(ctx, c, externalID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	domain := strings.ToLower(strings.TrimSpace(in.Domain))
+	if domain == "" || len(domain) > 253 || !strings.Contains(domain, ".") || strings.ContainsAny(domain, "@/:?# ") {
+		return nil, invalid("domain is a domain name.")
+	}
+	back, ok := CleanReturnURL(in.ReturnURL, c.Partner.AllowedHosts)
+	if !ok {
+		return nil, invalid("return_url is not on a host configured for this partner.")
+	}
+	if po.State.Paused() {
+		return nil, pausedError(po)
+	}
+	attached, err := s.mb.Repo.PartnerMailboxOnDomain(ctx, c.Partner.ID, c.Mode, po.ExternalID, "microsoft", domain)
+	if err != nil {
+		return nil, internal(err)
+	}
+	if !attached {
+		return nil, errx.NewWithIdentifier(errx.NotFound, "not_found", "No Microsoft 365 mailbox on this domain is attached to the organization.")
+	}
+	consent, xerr := s.mb.Consents.StartPurchasedMicrosoftConsent(ctx, *po.OrganizationID, c.Partner.ServiceUserID, domain, back)
+	if xerr != nil {
+		if xerr.Identifier == delegation.ErrIDNotConfigured {
+			return nil, errx.NewWithIdentifier(errx.Unprocessable, "provider_unavailable", "Connecting Microsoft 365 is not configured on this instance.")
+		}
+		if xerr.Identifier == delegation.ErrIDUnavailable {
+			return nil, &errx.Error{Code: errx.ServiceUnavailable, Identifier: "upstream_unavailable", Message: "Microsoft did not answer. Try again in a minute.", RetryAfter: 30}
+		}
+		return nil, xerr
+	}
+	if consent.Consented {
+		return &MicrosoftConsentLink{Consented: true}, nil
+	}
+	u, at := consent.URL, consent.ExpiresAt.UTC()
+	return &MicrosoftConsentLink{URL: &u, ExpiresAt: &at}, nil
 }

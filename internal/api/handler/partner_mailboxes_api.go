@@ -186,3 +186,21 @@ func (h *Handler) AdminPartnerStatement(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, st)
 }
+
+// PartnerCreateMicrosoftConsentLink is POST /v1/partner/organizations/:external_id/microsoft-consent-links.
+func (h *Handler) PartnerCreateMicrosoftConsentLink(c *gin.Context) {
+	var in partner.MicrosoftConsentInput
+	if !bindPartnerJSON(c, &in) {
+		return
+	}
+	link, xerr := h.Partners.CreateMicrosoftConsentLink(c.Request.Context(), partnerCaller(c), c.Param("external_id"), in)
+	if xerr != nil {
+		partnerError(c, xerr)
+		return
+	}
+	status := http.StatusCreated
+	if link.Consented {
+		status = http.StatusOK
+	}
+	c.JSON(status, link)
+}

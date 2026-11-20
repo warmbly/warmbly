@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -110,11 +111,21 @@ type fakeDelegator struct {
 	proven    string
 	purchased []string
 	delegated map[string]bool
+	// microsoft are the addresses connected through this instance's own Microsoft app; consentMissing refuses them.
+	microsoft      []string
+	consentMissing bool
 }
 
 func (d *fakeDelegator) ConnectPurchased(_ context.Context, _, _ uuid.UUID, _, address, _, _ string, brokered bool) (*models.Email, *errx.Error) {
 	if !brokered {
-		return nil, errx.NewWithIdentifier(errx.BadRequest, "unexpected", "the partner path recorded a grant from its own input")
+		if !strings.HasSuffix(address, "@"+d.proven) {
+			return nil, errx.NewWithIdentifier(errx.BadRequest, "unexpected", "the partner path recorded a grant from its own input")
+		}
+		if d.consentMissing {
+			return nil, errx.NewWithIdentifier(errx.Unprocessable, delegation.ErrIDMicrosoftTenantConsent, "approve it")
+		}
+		d.microsoft = append(d.microsoft, address)
+		return &models.Email{ID: uuid.New(), Email: address}, nil
 	}
 	d.purchased = append(d.purchased, address)
 	return &models.Email{ID: uuid.New(), Email: address}, nil

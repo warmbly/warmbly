@@ -68,6 +68,7 @@ Base URL: `https://<your api host>/v1/partner`. Every request carries `Authoriza
 | `DELETE /organizations/{external_id}/mailboxes/{partner_mailbox_id}` | Detach it: it stops and turns off, its history stays |
 | `PUT /organizations/{external_id}/enablements/{mailbox_id}` | Set what one mailbox may do: `sending_warmup`, `warmup_only` or `off` |
 | `POST /organizations/{external_id}/connect-links` | A one-time, hour-long page that connects an outside Google or Microsoft mailbox |
+| `POST /organizations/{external_id}/microsoft-consent-links` | A one-time, hour-long page where a domain's Microsoft 365 administrator approves this instance's app |
 | `GET /organizations/{external_id}/balance` | The workspace's balance for AI and usage |
 | `POST /organizations/{external_id}/balance/credits` | Add money the partner charged its customer for, once per `reference` |
 | `GET /usage/mailbox-days?month=YYYY-MM` | Enabled mailbox-days per mailbox in a month, for reconciliation |
@@ -84,7 +85,7 @@ Every `POST`, `PUT`, `PATCH` and `DELETE` needs an `Idempotency-Key` of 1 to 255
 
 ### Errors and limits
 
-Errors are `{"error": {"code", "message", "request_id"}}`: `invalid_request`, `idempotency_key_required`, `idempotency_conflict`, `idempotency_in_progress`, `unauthorized`, `partner_suspended`, `not_found`, `plan_unknown`, `permission_not_allowed`, `organization_suspended`, `organization_cancelled`, `mailbox_exists`, `connection_failed`, `delegation_not_allowed`, `provider_unavailable`, `rate_limited` and `internal`. An unknown path under `/v1/partner` answers `404 not_found` in the same shape. Over the partner's rate limit the answer is `429` with `Retry-After`. Lists are `{"data": […], "pagination": {"next_cursor", "has_more"}}` with `?cursor=&limit=` (at most 100). Timestamps are RFC 3339 in UTC and money is integer micro-USD.
+Errors are `{"error": {"code", "message", "request_id"}}`: `invalid_request`, `idempotency_key_required`, `idempotency_conflict`, `idempotency_in_progress`, `unauthorized`, `partner_suspended`, `not_found`, `plan_unknown`, `permission_not_allowed`, `organization_suspended`, `organization_cancelled`, `mailbox_exists`, `connection_failed`, `delegation_not_allowed`, `provider_unavailable`, `upstream_unavailable` (`503` with `Retry-After`, when Microsoft did not answer), `rate_limited` and `internal`. An unknown path under `/v1/partner` answers `404 not_found` in the same shape. Over the partner's rate limit the answer is `429` with `Retry-After`. Lists are `{"data": […], "pagination": {"next_cursor", "has_more"}}` with `?cursor=&limit=` (at most 100). Timestamps are RFC 3339 in UTC and money is integer micro-USD.
 
 ### Webhooks
 
@@ -94,7 +95,7 @@ Events: `organization.updated` (state, plan or limit changed, and on cancellatio
 
 ## Mailboxes
 
-Every mailbox of a managed workspace has an id in the partner API (`id`, a UUID) and, when the partner attached it, the partner's own id for it (`partner_mailbox_id`). A mailbox answer carries `email`, `provider` (`google`, `microsoft` or `smtp`), `source`, `status` (`connecting` until its first sync, `connected`, `error` with `status_error`, or `disconnected`), `enablement`, `sends_today`, `daily_send_limit` and `warmup` (`state` is `off`, `ramping` or the mailbox's warmup health band, with `reason`, `daily_target`, `sent_7d`, `inbox_rate_7d` and `score`).
+Every mailbox of a managed workspace has an id in the partner API (`id`, a UUID) and, when the partner attached it, the partner's own id for it (`partner_mailbox_id`). A mailbox answer carries `email`, `provider` (`google`, `microsoft` or `smtp`), `source`, `status` (`connecting` until its first sync, `connected`, `error` with `status_error`, or `disconnected`), `action_required` (`microsoft_consent` while the mailbox waits for its [tenant's approval](#microsoft-365-approval), with `status_error` saying what to do; otherwise `null`), `enablement`, `sends_today`, `daily_send_limit` and `warmup` (`state` is `off`, `ramping` or the mailbox's warmup health band, with `reason`, `daily_target`, `sent_7d`, `inbox_rate_7d` and `score`).
 
 ### Attaching
 
@@ -103,7 +104,8 @@ Every mailbox of a managed workspace has an id in the partner API (`id`, a UUID)
 | `source` | `connection.method` | How Warmbly connects it |
 |---|---|---|
 | `graphkit_infrastructure` (bought through the partner) | `token` (Google) | Through the same purchased-mailbox path as the [store](/guides/buy-mailboxes/), with short-lived tokens from the partner's token callback (`POST {callback base}/mailboxes/{id}/access-token`). The token has to open exactly the attached address. Connects in the background a few seconds after the attach, retried with backoff |
-| `graphkit_infrastructure` | `delegation` (Google or Microsoft) | This instance's own Google service account or Microsoft app. Only for a domain the workspace already holds an active grant for (it verified the domain, or the store bought it), or one of the partner's delegation domains; anything else is `422 delegation_not_allowed`. Also in the background |
+| `graphkit_infrastructure` | `delegation` (Google) | This instance's own Google service account. Only for a domain the workspace already holds an active grant for (it verified the domain, or the store bought it), or one of the partner's delegation domains; anything else is `422 delegation_not_allowed`. Also in the background |
+| `graphkit_infrastructure` | `delegation` (Microsoft) | This instance's own Microsoft app, once the domain's Microsoft 365 administrator approved it for the workspace through a [consent link](#microsoft-365-approval) (or the domain is one of the partner's delegation domains). Until then the attach succeeds and the mailbox waits with `status: connecting` and `action_required: microsoft_consent` |
 | `graphkit_infrastructure` or `partner` | `password` | `connection.credentials` (`username`, `password` or Google's `app_password`, and `imap` and `smtp` host, port and `security` of `ssl` or `starttls`). Checked live during the call and sealed like any mailbox password; never kept anywhere else, logged or returned. A refusal is `422 connection_failed` |
 
 A bought mailbox shows as **Purchased** in the workspace. An address the workspace already has is adopted under the partner's id instead of connected again. Attaching again applies the body's enablement and sender name, brings a detached mailbox back, and retries a connect that failed. A suspended or cancelled workspace refuses an attach (`409 organization_suspended` or `organization_cancelled`), and nothing a suspended partner attached connects until it is active again.
@@ -131,6 +133,14 @@ Enablement is enforced where every send is already decided, not in a parallel ch
 ### Connect links
 
 `POST /organizations/{external_id}/connect-links` with `provider` (`google` or `microsoft`), `partner_mailbox_id`, `enablement`, an optional `login_hint` and `return_url` answers `{"url", "expires_at"}`. The page is the [client connect page](/guides/agencies/#client-connect-links), in the group's brand, for that one provider. It works once and for an hour: the first mailbox connected spends it, and a used or expired link opens an explanation instead. The person signs in at Google or Microsoft (whose consent screen names this instance's OAuth app), the mailbox joins the workspace as `source: partner` under `partner_mailbox_id` with the requested enablement, the partner gets `mailbox.created`, and the browser returns to `return_url` with `?partner_mailbox_id=…&status=connected`, `cancelled` or `error`. `return_url` must be HTTPS on one of the partner's allowed hosts (`400 invalid_request` otherwise). An instance without Google or Microsoft sign-in, or without a portal address (`PORTAL_DOMAIN`), answers `422 provider_unavailable`.
+
+### Microsoft 365 approval
+
+A Microsoft 365 mailbox attached with `delegation` connects through this instance's Microsoft app, which the administrator of the domain's Microsoft 365 account approves once for the workspace. Until they do, the mailbox stays `connecting` with `action_required: microsoft_consent` and `status_error` naming the step, announced once with `mailbox.updated`. It checks again every 30 minutes and never turns to `error` while it waits.
+
+`POST /organizations/{external_id}/microsoft-consent-links` with `{"domain": "getacme.com", "return_url": "https://app.partner.test/…"}` answers `201 {"url", "expires_at"}`. Send the administrator to `url`: Microsoft's admin consent page for this instance's app, then a sign-in that proves they administer that domain's Microsoft 365 account. The link works once and for an hour. When it is done, the browser returns to `return_url` with `?domain=getacme.com&status=connected`, `cancelled` (they declined) or `error` (Microsoft did not confirm an administrator of that account), and the workspace's waiting mailboxes on the account connect within a minute. A used or expired link opens an explanation instead of redirecting.
+
+When the workspace's approval for the domain already works, the answer is `200 {"url": null, "consented": true}` and the waiting mailboxes are retried at once. `domain` must belong to a Microsoft 365 mailbox the partner attached to the workspace (`404 not_found` otherwise), and `return_url` must be HTTPS on one of the partner's allowed hosts (`400 invalid_request`). A suspended or cancelled workspace refuses it (`409 organization_suspended` or `organization_cancelled`), an instance without a Microsoft app answers `422 provider_unavailable`, and a Microsoft that did not answer `503 upstream_unavailable`.
 
 ### Group branding
 
