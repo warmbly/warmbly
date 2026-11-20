@@ -231,6 +231,34 @@ func TestInterestedRepliesByLanguage(t *testing.T) {
 			"Estamos muy interesados.",
 			"Me interesa mucho, pero tengo una pregunta.",
 		},
+		"nl": {
+			"Klinkt goed, laten we bellen.",
+			"Ik ben geïnteresseerd, wat kost het?",
+			"Wij zijn zeer geinteresseerd.",
+			"Dat lijkt me interessant.",
+			"Graag meer informatie.",
+			"Indien mogelijk, stuur me meer informatie.",
+			"Klinkt interessant, maar ik heb een vraag.",
+		},
+		"it": {
+			"Mi interessa molto, quanto costa?",
+			"Sono interessata.",
+			"Siamo molto interessati, fissiamo una chiamata.",
+			"Mi sembra interessante.",
+			"Se possibile, mi mandi maggiori informazioni.",
+			"Qual è il prezzo?",
+		},
+		"pt": {
+			"Tenho interesse, podemos conversar amanhã?",
+			"Estou muito interessada.",
+			"Parece interessante, qual é o preço?",
+			"Vamos marcar uma reunião.",
+			"Se possível, envie mais informações.",
+			"Nos interessa muito, mas tenho uma dúvida.",
+			"Tenho interesse em saber mais, não hesite em me contactar.",
+			"Tenho interesse, se possível envie mais informações.",
+			"Tenho interesse. Se precisar de algo, aviso.",
+		},
 	}
 	for lang, replies := range positive {
 		for _, body := range replies {
@@ -305,6 +333,25 @@ func TestNegatedAndHedgedInterestIsNotPositive(t *testing.T) {
 		"Me interesa mucho. Pero no este año.",
 		"Klingt interessant, aber nicht vor dem nächsten Quartal.",
 		"Ça m'intéresse, mais pas maintenant.",
+		"Ik ben niet geïnteresseerd.",
+		"Als het past, laten we bellen.",
+		"Indien wij geïnteresseerd zijn, klinkt goed.",
+		"Klinkt goed, maar niet dit jaar.",
+		"Wij hebben geen tijd, klinkt goed.",
+		"Non sono interessato.",
+		"Non mi sembra interessante.",
+		"Se ci interessa molto, vi faremo sapere.",
+		"Mi interessa molto, ma non adesso.",
+		"Não estou interessado.",
+		"Não me parece interessante.",
+		"Se tivermos interesse, tenho interesse em falar depois.",
+		"Caso nos interessa muito, avisaremos.",
+		"Parece interessante, mas não agora.",
+		"Tenho interesse se o preço for baixo.",
+		"Mi interessa molto se il prezzo è giusto.",
+		"Klinkt goed als de prijs klopt.",
+		"Me interesa mucho si el precio es bueno.",
+		"Ich bin interessiert, wenn der Preis stimmt.",
 	} {
 		if got := ClassifyOffline(Input{Subject: "Re: Hallo", BodyText: body, Languages: all}); got.Class == ClassPositive {
 			t.Errorf("%q read as positive", body)
@@ -326,7 +373,7 @@ func TestNegatedOrConditionalAtReadsTheSentence(t *testing.T) {
 		"no. me interesa mucho":         false,
 		"por que no? me interesa mucho": false,
 	} {
-		if got := negatedOrConditionalAt(text, len(text)-len("me interesa mucho")); got != want {
+		if got := negatedOrConditionalAt(text, len(text)-len("me interesa mucho"), nil); got != want {
 			t.Errorf("negatedOrConditionalAt(%q) = %v, want %v", text, got, want)
 		}
 	}
@@ -337,5 +384,20 @@ func TestSubjectNegatorDoesNotReachTheBody(t *testing.T) {
 	in := Input{Subject: "Re: No-code platform", BodyText: "Me interesa mucho.", Languages: []string{"es"}}
 	if got := ClassifyOffline(in); got.Class != ClassPositive {
 		t.Errorf("%q under %q = %q, want positive", in.BodyText, in.Subject, got.Class)
+	}
+}
+
+// A language's own conditionals and contrasts qualify only its phrases.
+func TestLanguageQualifiersStayInTheirLanguage(t *testing.T) {
+	all := []string{"de", "fr", "es", "nl", "it", "pt"}
+	for body, wantPositive := range map[string]bool{
+		"Me interesa mucho. ¿Me envían más información? No hay prisa.": true,
+		"Besser als erwartet, wir sind interessiert.":                  true,
+		"Votre offre se présente bien, cela nous intéresse.":           true,
+		"Parece interessante, mas não agora.":                          false,
+	} {
+		if got := ClassifyOffline(Input{BodyText: body, Languages: all}); (got.Class == ClassPositive) != wantPositive {
+			t.Errorf("%q = %q, want positive: %v", body, got.Class, wantPositive)
+		}
 	}
 }
