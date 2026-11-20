@@ -979,6 +979,10 @@ func Run(
 				{
 					sequences.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetSequences)
 					sequences.POST("", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.CreateSequence)
+					// Static "reorder" sits beside the ":sid" param route; Gin routes
+					// the static segment first, so /:id/steps/reorder never collides
+					// with /:id/steps/:sid.
+					sequences.PATCH("/reorder", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.ReorderSteps)
 					sequences.PATCH("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.UpdateSequence)
 					sequences.DELETE("/:sid", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteSequence)
 				}

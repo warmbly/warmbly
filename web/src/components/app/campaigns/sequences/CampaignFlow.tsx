@@ -19,6 +19,7 @@ import type { SequenceActionType } from "@/lib/api/models/app/campaigns/sequence
 import useSequences from "@/lib/api/hooks/app/campaigns/sequences/useSequences";
 import useCreateSequence from "@/lib/api/hooks/app/campaigns/sequences/useCreateSequence";
 import useDeleteSequence from "@/lib/api/hooks/app/campaigns/sequences/useDeleteSequence";
+import useReorderSteps from "@/lib/api/hooks/app/campaigns/sequences/useReorderSteps";
 import updateSequence from "@/lib/api/client/app/campaigns/sequences/updateSequence";
 import useCampaign from "@/lib/api/hooks/app/campaigns/useCampaign";
 import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
@@ -98,6 +99,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const steps = React.useMemo(() => sequences ?? [], [sequences]);
     const createSequence = useCreateSequence(campaignId);
     const deleteSequence = useDeleteSequence(campaignId);
+    const reorderSteps = useReorderSteps(campaignId);
     const { data: campaign } = useCampaign(campaignId);
     const updateCampaign = useUpdateCampaign(campaignId);
     const { data: variants } = useCampaignABVariants(campaignId);
@@ -210,6 +212,21 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         (id: string, patch: Partial<Sequence>) => qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => old?.map((s) => (s.id === id ? { ...s, ...patch } : s))),
         [qc, campaignId],
     );
+    // Reorder the cached steps into the given order, keeping any step the list
+    // omits at the end. The server is the source of truth; this just makes the
+    // canvas move before the response lands.
+    const reorderCache = React.useCallback(
+        (stepIds: string[]) => {
+            qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => {
+                if (!old) return old;
+                const byId = new Map(old.map((s) => [s.id, s]));
+                const ordered = stepIds.map((id) => byId.get(id)).filter((s): s is Sequence => !!s);
+                const remaining = old.filter((s) => !stepIds.includes(s.id));
+                return [...ordered, ...remaining];
+            });
+        },
+        [campaignId, qc],
+    );
 
     const saveBranches = React.useCallback(
         async (id: string, branches: SequenceBranch[]) => {
@@ -227,6 +244,33 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             }
         },
         [campaignId, patchCache, invalidate, qc],
+    );
+
+    // Move a step up or down one position in the sequence. The whole new order
+    // is committed at once so the server repositions every step and reconnects
+    // the linear chain to follow it; conditional branches are left untouched.
+    const reorder = React.useCallback(
+        async (fromIndex: number, direction: -1 | 1) => {
+            const toIndex = fromIndex + direction;
+            if (toIndex < 0 || toIndex >= steps.length) return;
+            const original = steps.map((s) => s.id);
+            const next = steps.slice();
+            [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
+            const stepIds = next.map((s) => s.id);
+            // A refetch in flight would land on top of this optimistic reorder.
+            await qc.cancelQueries({ queryKey: SEQ_KEY(campaignId) });
+            reorderCache(stepIds);
+            try {
+                await reorderSteps.mutateAsync(stepIds);
+            } catch (err) {
+                toast.error(buildError(err as AppError));
+                reorderCache(original);
+                throw err;
+            } finally {
+                void invalidate();
+            }
+        },
+        [campaignId, steps, reorderSteps, reorderCache, qc, invalidate],
     );
 
     const saveWait = React.useCallback(
@@ -452,6 +496,25 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             </StepBadge>
         ) : null;
         const menu: StepMenuItem[] = [];
+        if (canEdit) {
+            // Reorder within the sequence's position order. Moving a step swaps
+            // it with its neighbour; the server reconnects the linear chain.
+            const index = indexOf.get(id) ?? 0;
+            if (index > 0) {
+                menu.push({
+                    label: "Move up",
+                    icon: <ArrowUpIcon className="size-3.5" />,
+                    onSelect: () => void reorder(index, -1),
+                });
+            }
+            if (index < steps.length - 1) {
+                menu.push({
+                    label: "Move down",
+                    icon: <ArrowDownIcon className="size-3.5" />,
+                    onSelect: () => void reorder(index, 1),
+                });
+            }
+        }
         if (canEdit && !isSwitchStep(s)) {
             menu.push({
                 label: "Add a condition",

@@ -30,7 +30,21 @@ type SequenceRepository interface {
 	// statement, without bumping updated_at — so a drag never reads as a content
 	// change. Cosmetic and unaudited.
 	UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error
+	// Reorder repositions the campaign's steps to the given order and rewrites
+	// each step's conditions (position + branch tree) in one transaction. The
+	// caller has already validated the order; the repository only enforces the
+	// org/campaign scope here.
+	Reorder(ctx context.Context, orgID, campaignID string, updates []SequenceReorder) *errx.Error
 	Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error
+}
+
+// SequenceReorder is one step's new position and conditions for a reorder. The
+// service computes Conditions (reconnecting the catch-all chain, preserving
+// conditional branches); the repository writes position + conditions atomically.
+type SequenceReorder struct {
+	ID         uuid.UUID
+	Position   int
+	Conditions json.RawMessage
 }
 
 type sequenceRepository struct {
@@ -373,6 +387,62 @@ func (r *sequenceRepository) UpdateLayout(ctx context.Context, orgID, campaignID
 	args := []any{orgID, campaignID, ids, xs, ys}
 	if _, err := r.DB.Exec(ctx, query, args...); err != nil {
 		db.CaptureError(err, query, args, "exec")
+		return errx.InternalError()
+	}
+	return nil
+}
+
+// Reorder repositions the campaign's steps and rewrites their conditions in one
+// transaction. It does not touch the branch tree's meaning beyond position: the
+// service has already reconnected the catch-all chain and preserved conditional
+// branches, so here it only writes position + conditions atomically. The
+// campaign row is locked FOR UPDATE so two concurrent reorders cannot take the
+// same positions.
+func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID string, updates []SequenceReorder) *errx.Error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		db.CaptureError(err, "", nil, "begin")
+		return errx.InternalError()
+	}
+	defer tx.Rollback(ctx)
+
+	query := `
+		SELECT id
+		FROM campaigns WHERE id = $1 AND organization_id = $2
+		FOR UPDATE
+	`
+	var locked uuid.UUID
+	if err := tx.QueryRow(ctx, query, campaignID, orgID).Scan(&locked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errx.ErrNotFound
+		}
+		db.CaptureError(err, query, []any{campaignID, orgID}, "queryrow")
+		return errx.InternalError()
+	}
+
+	for _, u := range updates {
+		row := tx.QueryRow(ctx,
+			`UPDATE sequences s
+			 SET position = $3, conditions = $4
+			 FROM campaigns c
+			 WHERE c.organization_id = $1
+			  AND c.id = $2
+			  AND s.campaign_id = c.id
+			  AND s.id = $5
+			 RETURNING %s`, SequenceSelectJoin,
+			orgID, campaignID, u.Position, u.Conditions, u.ID)
+		var seq models.Sequence
+		if err := GetSequence(row, &seq); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return errx.ErrNotFound
+			}
+			db.CaptureError(err, "", nil, "scan")
+			return errx.InternalError()
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		db.CaptureError(err, "", nil, "commit")
 		return errx.InternalError()
 	}
 	return nil
