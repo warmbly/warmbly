@@ -129,7 +129,7 @@ function DomainCard({
     return (
         <article aria-label={d.domain} className={cn("rounded-xl border bg-white transition-colors", issue ? "border-amber-200" : "border-slate-200 hover:border-slate-300")}>
             <header className="pl-3.5 pr-2 pt-2.5 flex items-center gap-2 min-w-0">
-                <span className="text-[13.5px] font-semibold text-slate-900 truncate">{d.domain}</span>
+                <span className="text-[13.5px] font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">{d.domain}</span>
                 <span className="shrink-0 h-[18px] px-1.5 rounded-full bg-slate-50 border border-slate-200 text-slate-500 text-[10.5px] font-medium inline-flex items-center">
                     {d.kind === "owned" ? "Already yours" : `${d.years} ${d.years === 1 ? "year" : "years"}`}
                 </span>
@@ -356,7 +356,7 @@ function Customize({
                                             autoCapitalize="none"
                                             className={cn("flex-1 min-w-0 h-full pl-2.5 bg-transparent outline-none text-[16px] md:text-[12.5px]", m.typed ? "text-slate-900" : "text-slate-600")}
                                         />
-                                        <span className="hidden sm:inline pr-1.5 text-[12.5px] text-slate-400 truncate max-w-[45%] select-none">@{d.domain}</span>
+                                        <span className="hidden sm:inline pr-1.5 text-[12.5px] text-slate-400 truncate max-w-[45%] select-none" title={`@${d.domain}`}>@{d.domain}</span>
                                         {m.typed && (
                                             <button
                                                 type="button"
