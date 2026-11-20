@@ -35,7 +35,7 @@ func TestSyncTruthRepeatedTransportFailuresRelayFreshObservations(t *testing.T) 
 	var events []captured
 	w := newGoogleTestMail(t, srv, &events)
 	for i := 0; i < 2; i++ {
-		if err := w.syncOnce(t.Context()); err == nil {
+		if err := w.syncOnce(t.Context(), false); err == nil {
 			t.Fatal("provider failure hidden")
 		}
 	}
@@ -84,7 +84,7 @@ func TestSyncTruthGraphServiceUnavailableHonorsRetryWindowAndRecovers(t *testing
 	before := w.GraphData.Client.DeltaLinks[msgraph.FolderInbox]
 
 	for range 2 {
-		err := w.syncOnce(t.Context())
+		err := w.syncOnce(t.Context(), false)
 		if err == nil || err.Code != errx.MailErrorCodeServerUnreachable || err.RetryAfter != 12*time.Minute {
 			t.Fatalf("missing retryable provider evidence: %v", err)
 		}
@@ -100,7 +100,7 @@ func TestSyncTruthGraphServiceUnavailableHonorsRetryWindowAndRecovers(t *testing
 		t.Fatalf("failed passes reset transport evidence: %d", w.transportFailures)
 	}
 	recovered.Store(true)
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	assertSyncCatchUp(t, w, previous)
@@ -118,7 +118,7 @@ func TestSyncTruthImapFolderFailurePreservesSavedStateUntilRecovery(t *testing.T
 	previous := seedSyncTruth(w, &relayed)
 	w.tracker.state.BackfillCursor.Folders = map[string]models.SyncFolderCursor{"Sent": {Done: true, UID: 7}}
 	for range 2 {
-		if err := w.syncOnce(t.Context()); err == nil || err.Code != errx.MailErrorCodeServerUnreachable {
+		if err := w.syncOnce(t.Context(), false); err == nil || err.Code != errx.MailErrorCodeServerUnreachable {
 			t.Fatalf("folder failure hidden: %v", err)
 		}
 		assertNoSyncSuccess(t, w, previous)
@@ -130,7 +130,7 @@ func TestSyncTruthImapFolderFailurePreservesSavedStateUntilRecovery(t *testing.T
 		}
 	}
 	conn.folderErr = nil
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	assertSyncCatchUp(t, w, previous)
@@ -322,7 +322,7 @@ func TestSyncTruthPanicDoesNotResetTransportFailure(t *testing.T) {
 	w.transportFailures = 2
 	var relayed []models.SyncState
 	previous := seedSyncTruth(w, &relayed)
-	if err := w.syncOnce(t.Context()); err == nil {
+	if err := w.syncOnce(t.Context(), false); err == nil {
 		t.Fatal("recovered panic returned successful outcome")
 	}
 	assertNoSyncSuccess(t, w, previous)
@@ -426,7 +426,7 @@ func TestSyncTruthGoogleCheckpointFailureAndDirtyRelayRetry(t *testing.T) {
 		}
 		return nil
 	}
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	assertNoSyncSuccess(t, w, previous)

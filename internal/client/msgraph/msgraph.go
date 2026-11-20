@@ -71,8 +71,10 @@ type Client struct {
 	// read state: the caller dedupes, hydrates (FetchMessage) and stores as
 	// budget allows, and returns false for a message it left on the server,
 	// which pins the folder cursor before that page.
-	OnMessageSeen        func(ctx context.Context, folder, providerID string, seen bool) (stored bool, err error)
-	OnMessageRemove      func(ctx context.Context, providerID string) error
+	OnMessageSeen   func(ctx context.Context, folder, providerID string, seen bool) (stored bool, err error)
+	OnMessageRemove func(ctx context.Context, providerID string) error
+	// OnPage is told every id on a delta page before its items are offered, so lookups can be batched.
+	OnPage               func(ctx context.Context, ids []string)
 	OnDelta              func(ctx context.Context, folder, deltaLink string) error
 	OnTokenRefresh       func(ctx context.Context, token *oauth2.Token) error
 	OnFolderReconcile    func(ctx context.Context, folder string) (bool, error)

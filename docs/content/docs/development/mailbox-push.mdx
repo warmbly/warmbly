@@ -23,10 +23,12 @@ Each variable is read by one service: `GRAPH_PUSH`, `GMAIL_PUSH_TOPIC` and `GMAI
 
 1. The provider signals a change. Graph posts to the backend, Gmail publishes to Pub/Sub, which pushes to the backend or is pulled by the consumer, and an IMAP `IDLE` session runs inside the worker itself.
 2. The backend or consumer finds the worker holding the mailbox and sends it a [`SYNC_WAKE`](/development/events/#worker-commands) command on that worker's `w.<worker-id>` topic. Repeat wakes for one mailbox within 2 seconds are dropped. That check uses Redis, and when Redis is unavailable every wake is sent.
-3. The worker waits 2 seconds so one pass covers a burst of changes, then runs the ordinary sync pass: Gmail history, Graph delta or IMAP CONDSTORE.
-4. New mail the pass stores reaches the dashboard through the consumer, which drains stored arrivals in batches of 32 and starts the next batch at once while full ones are waiting, rather than pausing between them.
+3. The worker waits 2 seconds so one check covers a burst of changes, then runs a narrow check of what a change signal can announce: Gmail history, the Graph delta of the inbox and junk folders, or IMAP CONDSTORE on INBOX and the junk folder. Checks of one mailbox start at least 30 seconds apart; a wake inside that gap waits for it rather than being dropped.
+4. New mail the check stores reaches the dashboard through the consumer, which drains stored arrivals in batches of 32 and starts the next batch at once while full ones are waiting, rather than pausing between them.
 
-A wake carries no mail. The pass reads the provider exactly as a timed pass does, under the same [sync budgets](/guides/mailboxes/#what-gets-synced), so an extra wake costs one pass and a lost one is caught by the poll. A wake never shortens a backoff: after a failed pass, or inside a retry window the provider asked for, the worker waits it out.
+A wake carries no mail. The check reads each folder from the same cursor the timed pass keeps, under the same [sync budgets](/guides/mailboxes/#what-gets-synced), so what a check stores is not offered again and what it could not store is offered by the next check or pass. Everything else (the other folders, the folder listing, the history import, flag scans and folder reconciliation) waits for the timed pass, which a wake neither runs early nor postpones. A folder still on its first walk or recovering from an expired cursor is also left to the timed pass. A wake never shortens a backoff: after a failed pass or check, or inside a retry window the provider asked for, the worker waits it out and the retry is a full pass.
+
+Delta pages and Gmail history pages look up the messages they report in one batch request per page instead of one request per message.
 
 Only workers that report `sync_wake_protocol` 1 on their heartbeat are sent `SYNC_WAKE`, and only for active mailboxes on a worker that is heartbeating.
 
@@ -62,7 +64,7 @@ How the channel behaves:
 
 - Each notification is authenticated by a client state derived from `AUTH_SECRET` and the mailbox id. An item without the matching value is ignored.
 - The endpoint answers `202` well inside Graph's 3-second limit. When the wake cannot be sent it answers `503`, and Graph retries for up to 4 hours.
-- A subscription lasts just under 7 days and is renewed with 2 days left. A `reauthorizationRequired` or `subscriptionRemoved` lifecycle event renews or reopens it at once; a `missed` event triggers a sync pass.
+- A subscription lasts just under 7 days and is renewed with 2 days left. A `reauthorizationRequired` or `subscriptionRemoved` lifecycle event renews or reopens it at once; a `missed` event triggers a check of the inbox and junk folders.
 - Changing `AUTH_SECRET` changes every client state. Workers reopen their subscriptions the next time the mailbox is reloaded, within about 30 minutes, and the 10-minute fallback poll covers the gap.
 - A subscription Microsoft could not create is retried after 30 minutes, or later when Microsoft sends `Retry-After`. One it refuses outright (a `4xx` other than throttling) is retried after 6 hours. The mailbox polls every minute meanwhile, and a changed notification URL or client state is tried at once.
 

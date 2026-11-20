@@ -14,27 +14,53 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func TestWakeRunsTheNextPassEarlyOnlyAfterACleanPass(t *testing.T) {
+func TestWakeRunsANarrowCheckOnlyAfterACleanPass(t *testing.T) {
 	w := &WMail{wake: make(chan struct{}, 1)}
 	w.Wake(false)
 	started := time.Now()
-	if !w.waitForPass(t.Context(), time.Hour, true) {
-		t.Fatal("wait ended without a pass")
+	narrow, ok := w.waitForPass(t.Context(), time.Now().Add(time.Hour), time.Time{}, true)
+	if !ok || !narrow {
+		t.Fatalf("a wake after a clean pass ran narrow=%v ok=%v, want a narrow check", narrow, ok)
 	}
-	if waited := time.Since(started); waited > config.SyncWakeMinGap+time.Second {
-		t.Fatalf("a wake waited %v, not the merge gap", waited)
+	if waited := time.Since(started); waited > config.SyncWakeSettle+time.Second {
+		t.Fatalf("a wake waited %v, not the settle delay", waited)
 	}
 
 	w.Wake(false)
 	started = time.Now()
-	if !w.waitForPass(t.Context(), 50*time.Millisecond, false) {
-		t.Fatal("wait ended without a pass")
+	narrow, ok = w.waitForPass(t.Context(), time.Now().Add(50*time.Millisecond), time.Time{}, false)
+	if !ok || narrow {
+		t.Fatalf("a wake during a backoff ran narrow=%v ok=%v, want the full pass", narrow, ok)
 	}
 	if time.Since(started) < 50*time.Millisecond {
 		t.Fatal("a wake cut short the backoff after a failed pass")
 	}
 	if len(w.wake) != 0 {
 		t.Fatal("a wake the timed pass covers was left for another pass")
+	}
+}
+
+// A wake inside the gap waits for it, and one whose check would start after the full pass is folded into it.
+func TestWakeKeepsTheGapBetweenChecks(t *testing.T) {
+	w := &WMail{wake: make(chan struct{}, 1)}
+	w.Wake(false)
+	started := time.Now()
+	narrow, ok := w.waitForPass(t.Context(), time.Now().Add(time.Hour), time.Now().Add(config.SyncWakeSettle+300*time.Millisecond), true)
+	if !ok || !narrow || time.Since(started) < config.SyncWakeSettle+300*time.Millisecond {
+		t.Fatalf("a wake inside the gap ran early: narrow=%v ok=%v after %v", narrow, ok, time.Since(started))
+	}
+
+	w.Wake(false)
+	started = time.Now()
+	narrow, ok = w.waitForPass(t.Context(), time.Now().Add(100*time.Millisecond), time.Now().Add(config.SyncWakeMinGap), true)
+	if !ok || narrow {
+		t.Fatalf("a wake held past the full pass ran narrow=%v ok=%v, want the full pass", narrow, ok)
+	}
+	if waited := time.Since(started); waited > time.Second {
+		t.Fatalf("the full pass waited %v for a held wake", waited)
+	}
+	if len(w.wake) != 0 {
+		t.Fatal("a wake the full pass covers was left for another check")
 	}
 }
 

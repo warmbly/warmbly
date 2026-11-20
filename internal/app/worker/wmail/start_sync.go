@@ -22,6 +22,10 @@ const syncBackoffMax = 5 * time.Minute
 // CONDSTORE) and keeps the inbox up to date by emitting NEW_EMAIL and the
 // other job events whenever the upstream mailbox changes.
 //
+// The full pass runs on a timer. A wake (push notification or IDLE event)
+// runs only a narrow check of what such an event can announce, at most once
+// per SyncWakeMinGap, and leaves the full pass's schedule where it was.
+//
 // The interval adapts: a mailbox held by fair use, or one the provider just
 // throttled, waits longer, and every wait carries jitter so a worker with
 // hundreds of mailboxes does not fire them all in the same second.
@@ -29,7 +33,7 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 	// A failed startup connection enters the same backoff as a failed sync.
 	err := w.syncStartupError
 	if err == nil {
-		err = w.syncOnce(ctx)
+		err = w.syncOnce(ctx, false)
 	} else {
 		if isTransportError(err) {
 			w.transportFailures++
@@ -40,19 +44,29 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 	if w.EmailType == models.InboxProviderSMTPIMAP {
 		go w.runImapWatcher(ctx)
 	}
+	last := time.Now()
+	due := last.Add(w.nextSyncDelay(w.pollInterval(), err))
 	for {
 		w.maintainPush(ctx)
-		if !w.waitForPass(ctx, w.nextSyncDelay(w.pollInterval(), err), err == nil) {
+		narrow, ok := w.waitForPass(ctx, due, last.Add(config.SyncWakeMinGap), err == nil)
+		if !ok {
 			return
 		}
-		err = w.syncOnce(ctx)
+		last = time.Now()
+		err = w.syncOnce(ctx, narrow)
+		// A clean check keeps the full pass's slot; a failure backs off and retries as a full pass.
+		if !narrow || err != nil {
+			due = time.Now().Add(w.nextSyncDelay(w.pollInterval(), err))
+		}
 	}
 }
 
-// waitForPass sleeps until the next pass is due or, when the last pass was
-// clean, a wake arrives. A wake never cuts short a backoff the provider asked for.
-func (w *WMail) waitForPass(ctx context.Context, delay time.Duration, wakeable bool) bool {
-	timer := time.NewTimer(delay)
+// waitForPass sleeps until the full pass is due, reporting false for narrow,
+// or, when the last check was clean, until a wake arrives and its check may
+// run, reporting true. A wake never cuts short a backoff the provider asked
+// for, and one whose check would start after the full pass is folded into it.
+func (w *WMail) waitForPass(ctx context.Context, due, notBefore time.Time, wakeable bool) (narrow, ok bool) {
+	timer := time.NewTimer(time.Until(due))
 	defer timer.Stop()
 	wake := w.wake
 	if !wakeable {
@@ -60,17 +74,33 @@ func (w *WMail) waitForPass(ctx context.Context, delay time.Duration, wakeable b
 	}
 	select {
 	case <-ctx.Done():
-		return false
+		return false, false
 	case <-timer.C:
-		// The pass about to run covers any wake that queued during the wait.
-		select {
-		case <-w.wake:
-		default:
-		}
-		return true
+		w.drainWake()
+		return false, true
 	case <-wake:
-		// Let the rest of a burst land so one pass covers it.
-		return sleepCtx(ctx, config.SyncWakeMinGap)
+	}
+	// Let the rest of a burst land, and keep to the gap between checks.
+	hold := max(config.SyncWakeSettle, time.Until(notBefore))
+	if until := time.Until(due); hold >= until {
+		if !sleepCtx(ctx, until) {
+			return false, false
+		}
+		w.drainWake()
+		return false, true
+	}
+	if !sleepCtx(ctx, hold) {
+		return false, false
+	}
+	// The check about to run covers any wake that queued while it waited.
+	w.drainWake()
+	return true, true
+}
+
+func (w *WMail) drainWake() {
+	select {
+	case <-w.wake:
+	default:
 	}
 }
 
@@ -108,10 +138,10 @@ func (w *WMail) nextSyncDelay(base time.Duration, last *errx.MailError) time.Dur
 	return d
 }
 
-// syncOnce runs one sync pass, containing panics: the worker is multi-tenant,
-// so one mailbox's bad server response must not take down every other
-// account's sync and send loops.
-func (w *WMail) syncOnce(ctx context.Context) (result *errx.MailError) {
+// syncOnce runs one sync pass (narrow: a wake's check), containing panics: the
+// worker is multi-tenant, so one mailbox's bad server response must not take
+// down every other account's sync and send loops.
+func (w *WMail) syncOnce(ctx context.Context, narrow bool) (result *errx.MailError) {
 	if w.tracker != nil {
 		w.tracker.tickComplete = false
 	}
@@ -126,7 +156,7 @@ func (w *WMail) syncOnce(ctx context.Context) (result *errx.MailError) {
 			result = &errx.MailError{Code: errx.MailErrorCodeImapUnknown, Type: errx.MailErrorWarning, Message: "mail sync pass interrupted"}
 		}
 	}()
-	if err := w.SyncMail(ctx); err != nil {
+	if err := w.syncMail(ctx, narrow); err != nil {
 		w.lifecycleMu.Lock()
 		stopped := w.stopped
 		w.lifecycleMu.Unlock()

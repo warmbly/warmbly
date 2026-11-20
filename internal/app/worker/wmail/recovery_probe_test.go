@@ -39,7 +39,7 @@ func TestRecoveryProbeCallerCancellationPreservesErrorWithoutProviderEvidence(t 
 	w.tracker = newSyncTracker(nil, func(models.SyncState) error { t.Fatal("cancelled pass published state"); return nil })
 	nodeevidence.Install(func(nodeevidence.Event) { observations++ })
 	defer nodeevidence.Install(nil)
-	if err := w.syncOnce(ctx); err != errx.ErrMailServerUnreachable {
+	if err := w.syncOnce(ctx, false); err != errx.ErrMailServerUnreachable {
 		t.Fatal("cancellation return identity changed")
 	}
 	if reports != 0 || observations != 0 || w.transportFailures != 2 || w.tracker.tickComplete || w.tracker.state.LastSyncedAt != nil {
@@ -54,7 +54,7 @@ func TestRecoveryProbeMissingStateTransportPassThenRecovery(t *testing.T) {
 	var relayed []models.SyncState
 	w.tracker = newSyncTracker(nil, func(st models.SyncState) error { relayed = append(relayed, st); return nil })
 	for range 2 {
-		if err := w.syncOnce(t.Context()); err != errx.ErrMailServerUnreachable {
+		if err := w.syncOnce(t.Context(), false); err != errx.ErrMailServerUnreachable {
 			t.Fatal("transport error identity changed")
 		}
 		if w.tracker.state.LastSyncedAt != nil || w.tracker.tickComplete {
@@ -65,7 +65,7 @@ func TestRecoveryProbeMissingStateTransportPassThenRecovery(t *testing.T) {
 		t.Fatal("live failed pass did not flush safe state and error observations")
 	}
 	conn.folderErr = nil
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	if w.tracker.state.LastSyncedAt == nil || !w.tracker.tickComplete || w.transportFailures != 0 {
@@ -90,7 +90,7 @@ func TestRecoveryProbeGraphMalformedPassRetainsCompletionAndRetries(t *testing.T
 	w := newGraphTestMail(t, srv, &events, &relayed)
 	previous := seedSyncTruth(w, &relayed)
 	w.transportFailures = 2
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal("non-MailError behavior changed")
 	}
 	assertNoSyncSuccess(t, w, previous)
@@ -101,7 +101,7 @@ func TestRecoveryProbeGraphMalformedPassRetainsCompletionAndRetries(t *testing.T
 		t.Fatal("raw Graph decode failure fabricated transport report")
 	}
 	broken.Store(false)
-	if err := w.syncOnce(t.Context()); err != nil {
+	if err := w.syncOnce(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	assertSyncCatchUp(t, w, previous)

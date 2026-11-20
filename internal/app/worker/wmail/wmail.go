@@ -111,6 +111,8 @@ type WMail struct {
 	relayCache relayCache
 	googleTick *tickStats
 	graphTick  *tickStats
+	// mapPage is the running page's batched message-map answers.
+	mapPage mapPage
 	// googleReconciledAt is when the Gmail folder reconciliation last ran;
 	// googleInboxChecked is when it last looked up an id and found it still
 	// in the inbox (or gone), so the next passes spend lookups elsewhere.

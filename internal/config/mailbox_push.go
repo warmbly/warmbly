@@ -13,10 +13,13 @@ const (
 	// SyncImapWatchedInterval is the poll for an IMAP mailbox whose INBOX is held
 	// in IDLE: only the other folders, such as spam, still wait for it.
 	SyncImapWatchedInterval = 3 * time.Minute
-	// SyncWakeMinGap merges a burst of change notifications into one sync pass.
-	SyncWakeMinGap = 2 * time.Second
-	// SyncWakeCoalesce is how long the control plane drops repeat wakes for one mailbox.
-	SyncWakeCoalesce = 2 * time.Second
+	// SyncWakeSettle lets the rest of a burst of change notifications land before a wake's check.
+	SyncWakeSettle = 2 * time.Second
+	// SyncWakeMinGap is the least time between the starts of two checks of one mailbox; a wake inside it waits.
+	SyncWakeMinGap = 30 * time.Second
+	// SyncWakeCoalesce is how long the control plane drops repeat wakes for one mailbox. It must not
+	// exceed SyncWakeSettle, or a change announced in the dropped window can land after the check.
+	SyncWakeCoalesce = SyncWakeSettle
 )
 
 // ImapIdleEnabled reports whether workers hold each IMAP INBOX in IDLE. On

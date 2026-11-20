@@ -13,7 +13,7 @@ import (
 )
 
 func (w *WMail) onGoogleMessageRemove(ctx context.Context, messageID string) error {
-	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, messageID)
+	internalMessage, err := w.lookupMap(ctx, messageID)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (w *WMail) onGoogleMessageLabelsRemoved(ctx context.Context, messageID stri
 }
 
 func (w *WMail) emitGoogleLabelEvents(ctx context.Context, messageID string, changed, current []string, added bool) error {
-	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, messageID)
+	internalMessage, err := w.lookupMap(ctx, messageID)
 	if err != nil {
 		return err
 	}
