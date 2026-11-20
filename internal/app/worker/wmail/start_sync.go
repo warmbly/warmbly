@@ -45,7 +45,7 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 		go w.runImapWatcher(ctx)
 	}
 	last := time.Now()
-	due := last.Add(w.nextSyncDelay(w.pollInterval(), err))
+	due := last.Add(w.nextSyncDelay(w.fullCheckInterval(), err))
 	pollGap := jitter(config.SyncNarrowPollInterval)
 	for {
 		w.maintainPush(ctx)
@@ -63,7 +63,7 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 		err = w.syncOnce(ctx, narrow)
 		// A clean check keeps the full pass's slot; a failure backs off and retries as a full pass.
 		if !narrow || err != nil {
-			due = time.Now().Add(w.nextSyncDelay(w.pollInterval(), err))
+			due = time.Now().Add(w.nextSyncDelay(w.fullCheckInterval(), err))
 		}
 	}
 }
@@ -163,36 +163,48 @@ func (w *WMail) drainWake() {
 	}
 }
 
-// nextSyncDelay picks the wait before the next pass.
+// fullCheckInterval is the wait between full passes, whatever announces the
+// mailbox's changes: the control plane's interval, or the default from an
+// older control plane that sends none.
+func (w *WMail) fullCheckInterval() time.Duration {
+	if w.gov != nil {
+		if s := w.gov.Policy().FullCheckSeconds; s > 0 {
+			return max(time.Duration(s)*time.Second, config.SyncFullCheckFloor)
+		}
+	}
+	return config.SyncFullCheckDefault
+}
+
+// syncRetryBase is the first step of the transport-error backoff.
+const syncRetryBase = time.Minute
+
+// nextSyncDelay picks the wait before the next full pass: base after a clean
+// one, and after a failure a backoff of its own that does not scale with base.
 func (w *WMail) nextSyncDelay(base time.Duration, last *errx.MailError) time.Duration {
 	d := base
-	minimum := base / 2
+	var floor time.Duration
 	switch {
 	case last != nil && last.RetryAfter > 0 && (isTransportError(last) || last.Code == errx.MailErrorCodeSendingTooFast):
 		// Service-unavailable responses can supply the same retry window as 429.
-		d = max(last.RetryAfter, base)
-		minimum = d
-	case last != nil && (last.Code == errx.MailErrorCodeSendingTooFast ||
-		last.Code == errx.MailErrorCodeTLSCertificateChanged || last.Code == errx.MailErrorCodeTLSCertificateUnconfirmed):
-		d = syncBackoffMax
+		d = max(last.RetryAfter, syncRetryBase)
+		floor = last.RetryAfter
 	case last != nil && isTransportError(last):
 		// The server is unreachable. Retry soon after the first failure (a
 		// dropped session reconnects on the next pass and costs one dial),
 		// then step back toward the ceiling while it stays down, so a server
 		// that is out for a day does not write a warning every minute.
-		d = min(base<<min(w.transportFailures, 8), syncBackoffMax)
+		d = min(syncRetryBase<<min(w.transportFailures, 8), syncBackoffMax)
+	case last != nil:
+		// Throttling, a certificate to confirm, or any other refusal: retry at the ceiling.
+		d = syncBackoffMax
 	case w.tracker != nil && w.tracker.state.ThrottledUntil != nil:
-		// Held by fair use: no point asking every minute; wake when the
-		// window rolls, bounded so a priority reply still lands promptly.
+		// Held by fair use: a hold only ever lengthens the wait, by at most the ceiling.
 		if until := time.Until(*w.tracker.state.ThrottledUntil); until > d {
-			d = min(until, syncBackoffMax)
+			d = max(d, min(until, syncBackoffMax))
 		}
 	}
 	d = jitter(d)
-	if d < minimum {
-		d = minimum
-	}
-	return d
+	return max(d, floor)
 }
 
 // syncOnce runs one sync pass (narrow: a wake's check), containing panics: the

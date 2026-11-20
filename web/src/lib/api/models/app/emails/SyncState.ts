@@ -45,6 +45,8 @@ export interface SyncPolicy {
     org_daily_messages: number;
     /** Folders the sync leaves alone, as the server lists them. IMAP only. */
     skip_folders?: string[];
+    /** Seconds between full checks of every followed folder; absent from an older backend. */
+    full_check_seconds?: number;
 }
 
 /** One folder the sync has seen on the server, with the canonical folder it files under. */

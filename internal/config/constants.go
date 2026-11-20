@@ -108,6 +108,10 @@ const (
 	SyncBackfillPerMinute           = 240   // backfill pacing per mailbox
 	SyncFloodPerHour                = 5_000 // new live messages observed in one hour that mark a mailbox as flooding
 	SyncThrottleEscalationDays      = 3     // throttled UTC days out of the last 7 that deactivate a mailbox
+	SyncFullCheckMinMinutesDefault  = 15    // full check interval for a workspace with room left under its plan
+	SyncFullCheckMaxMinutesDefault  = 60    // full check interval for a workspace at its plan's mailbox allowance
+	SyncFullCheckMinutesFloor       = 5     // shortest full check interval an operator may set
+	SyncFullCheckMinutesCeiling     = 180   // longest full check interval an operator may set
 	SyncSkipFoldersMax              = 50    // folders one mailbox may exclude from sync
 	SyncSkipFolderNameMax           = 255   // characters in one excluded folder name
 

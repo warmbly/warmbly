@@ -124,18 +124,6 @@ func (w *WMail) setImapIdle(held bool) bool {
 	return true
 }
 
-// pollInterval is the wait between passes: long when the provider announces
-// the mailbox's changes, short when only polling finds them.
-func (w *WMail) pollInterval() time.Duration {
-	if w.push.imapIdle.Load() {
-		return config.SyncImapWatchedInterval
-	}
-	if live, _ := w.liveSignal(); live {
-		return config.SyncPushFallbackInterval()
-	}
-	return ImapCheckInterval
-}
-
 // pushTarget names the channel the control plane asked for, so a changed topic or endpoint is tried at once.
 func pushTarget(want *models.AddWorkerEmailPushData) string {
 	if want == nil {

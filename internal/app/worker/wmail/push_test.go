@@ -81,23 +81,28 @@ func TestWakesCoalesce(t *testing.T) {
 	}
 }
 
-func TestPollIntervalFollowsThePushChannel(t *testing.T) {
+// The full check interval is the control plane's for every mailbox, push or IDLE alike.
+func TestFullCheckIntervalComesFromThePolicy(t *testing.T) {
 	w := &WMail{wake: make(chan struct{}, 1)}
-	if got := w.pollInterval(); got != ImapCheckInterval {
-		t.Fatalf("no push: %v", got)
+	if got := w.fullCheckInterval(); got != config.SyncFullCheckDefault {
+		t.Fatalf("no policy: %v", got)
 	}
-	w.ApplyPush(&models.AddWorkerEmailPushData{GraphNotificationURL: "https://x", GraphClientState: "s",
-		State: &models.MailboxPushState{Provider: models.MailboxPushGraph, SubscriptionID: "sub", ExpiresAt: time.Now().Add(time.Hour)}})
-	if got := w.pollInterval(); got != config.SyncPushFallbackInterval() {
-		t.Fatalf("live subscription: %v", got)
-	}
-	w.push.state.ExpiresAt = time.Now().Add(-time.Minute)
-	if got := w.pollInterval(); got != ImapCheckInterval {
-		t.Fatalf("an expired subscription must fall back to the normal poll, got %v", got)
-	}
-	w.push.imapIdle.Store(true)
-	if got := w.pollInterval(); got != config.SyncImapWatchedInterval {
-		t.Fatalf("IMAP in IDLE: %v", got)
+	for _, tc := range []struct {
+		seconds int
+		want    time.Duration
+	}{
+		{0, config.SyncFullCheckDefault},
+		{1800, 30 * time.Minute},
+		{60, time.Minute},
+		{5, config.SyncFullCheckFloor},
+	} {
+		w.gov = newGovernor(uuid.New(), nil, nil, models.SyncPolicy{FullCheckSeconds: tc.seconds})
+		w.ApplyPush(&models.AddWorkerEmailPushData{GraphNotificationURL: "https://x", GraphClientState: "s",
+			State: &models.MailboxPushState{Provider: models.MailboxPushGraph, SubscriptionID: "sub", ExpiresAt: time.Now().Add(time.Hour)}})
+		w.push.imapIdle.Store(true)
+		if got := w.fullCheckInterval(); got != tc.want {
+			t.Fatalf("%d seconds: interval %v, want %v", tc.seconds, got, tc.want)
+		}
 	}
 }
 

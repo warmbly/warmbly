@@ -437,7 +437,7 @@ func (s *emailService) preloadAddWorkerEmail(ctx context.Context, acc *models.Em
 	if err != nil {
 		return nil, err
 	}
-	syncData, err := s.syncDataFor(ctx, acc.ID, false)
+	syncData, err := s.syncDataFor(ctx, acc.ID, acc.OrganizationID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +508,7 @@ func (s *emailService) buildAddWorkerEmailSnapshot(ctx context.Context, acc *mod
 		sync = &copy
 	} else {
 		var err error
-		sync, err = s.syncDataFor(ctx, acc.ID, true)
+		sync, err = s.syncDataFor(ctx, acc.ID, acc.OrganizationID, true)
 		if err != nil {
 			return nil, err
 		}
@@ -696,7 +696,7 @@ func (s *emailService) lastHistoryFor(ctx context.Context, userID, emailID uuid.
 // state a previous worker left behind. Policy comes from instance settings
 // (compiled defaults when none are wired), so an operator's change applies at
 // the next load: onboarding, reassignment, or the reconciler's republish.
-func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID, readFolders bool) (*models.AddWorkerEmailSyncData, error) {
+func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID, orgID *uuid.UUID, readFolders bool) (*models.AddWorkerEmailSyncData, error) {
 	budget := instancesettings.DefaultSync()
 	if s.syncBudget != nil {
 		budget = s.syncBudget.SyncBudget(ctx)
@@ -707,6 +707,7 @@ func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID, readF
 			BackfillMessages: budget.BackfillMessages,
 			DailyMessages:    budget.DailyMessagesPerMailbox,
 			OrgDailyMessages: budget.DailyMessagesPerOrg,
+			FullCheckSeconds: int(s.fullCheckInterval(ctx, budget, orgID) / time.Second),
 		},
 	}
 	// The skip list is part of the policy a republish replaces on the loaded
@@ -725,6 +726,7 @@ func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID, readF
 		if linked, err := s.poolLink.GetMailboxByAccount(ctx, emailID); err == nil && linked != nil {
 			data.Policy.BackfillDays = 1
 			data.Policy.BackfillMessages = 25
+			data.Policy.FullCheckSeconds = config.SyncFullCheckFastSeconds
 		}
 	}
 	// A seed receives every workspace's test copies, so the per-mailbox budget
@@ -736,6 +738,7 @@ func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID, readF
 			data.Policy.OrgDailyMessages = max(data.Policy.OrgDailyMessages, config.PlacementSeedDailySyncMessages)
 			data.Policy.BackfillDays = 1
 			data.Policy.BackfillMessages = 25
+			data.Policy.FullCheckSeconds = config.SyncFullCheckFastSeconds
 		}
 	}
 	if s.syncState != nil {

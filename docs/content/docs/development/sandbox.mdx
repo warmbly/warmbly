@@ -68,7 +68,7 @@ Seeding ends by running one evaluation and printing what it found, so `make sand
 Real mail servers stand in for the internet's mail infrastructure:
 
 - **Mailpit** is the SMTP sink. Every mailbox's outbound server points at it, so all sends (campaign and warmup) are captured and visible in its UI.
-- **Dovecot** hosts the mailboxes' inboxes. It accepts any username with the password `sandbox` and auto-creates the maildir on first use. The worker's real IMAP sync polls it every minute.
+- **Dovecot** hosts the mailboxes' inboxes. It accepts any username with the password `sandbox` and auto-creates the maildir on first use. The worker's real IMAP sync holds INBOX in `IDLE`, so new mail appears within seconds; other folders wait for the full check.
 
 The simulator bridges the two and plays every human. It also plays the spam filter for the seed inboxes: a placement copy the content check scores below 70 goes to Junk, and a fixed share of the rest does too, more on the Microsoft and Yahoo seeds and more again for tracked copy, so a test and its tracking comparison both show a spread:
 

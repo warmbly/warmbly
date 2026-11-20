@@ -7,14 +7,16 @@ import (
 )
 
 const (
-	// SyncPushFallbackDefault is how often a mailbox whose provider pushes its
-	// changes is still polled, because push notifications can be delayed or lost.
-	SyncPushFallbackDefault = 10 * time.Minute
-	// SyncImapWatchedInterval is the poll for an IMAP mailbox whose INBOX is held
-	// in IDLE: only the other folders, such as spam, still wait for it.
-	SyncImapWatchedInterval = 3 * time.Minute
 	// SyncNarrowPollInterval is how often a mailbox with no live change signal gets the narrow check a wake would run.
 	SyncNarrowPollInterval = 5 * time.Minute
+	// SyncFullCheckDefault is a worker's full check interval when the control plane sends none.
+	SyncFullCheckDefault = time.Duration(SyncFullCheckMinMinutesDefault) * time.Minute
+	// SyncFullCheckFloor is the shortest full check interval a worker accepts.
+	SyncFullCheckFloor = time.Minute
+	// SyncFullCheckFastSeconds is the full check interval of placement seeds and pool-linked mailboxes.
+	SyncFullCheckFastSeconds = 60
+	// SyncFullCheckRecent is the longest two complete full checks are apart at any configured interval, jitter included.
+	SyncFullCheckRecent = time.Duration(SyncFullCheckMinutesCeiling+SyncFullCheckMinutesCeiling/10) * time.Minute
 	// SyncWakeSettle lets the rest of a burst of change notifications land before a wake's check.
 	SyncWakeSettle = 2 * time.Second
 	// SyncWakeMinGap is the least time between the starts of two checks of one mailbox; a wake inside it waits.
@@ -29,15 +31,6 @@ const (
 func ImapIdleEnabled() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("IMAP_IDLE")))
 	return v != "false" && v != "0" && v != "off"
-}
-
-// SyncPushFallbackInterval is SYNC_PUSH_FALLBACK_INTERVAL, bounded to 2-60 minutes.
-func SyncPushFallbackInterval() time.Duration {
-	d, err := time.ParseDuration(strings.TrimSpace(os.Getenv("SYNC_PUSH_FALLBACK_INTERVAL")))
-	if err != nil || d <= 0 {
-		return SyncPushFallbackDefault
-	}
-	return min(max(d, 2*time.Minute), time.Hour)
 }
 
 // GraphPushEnabled reports whether Outlook mailboxes subscribe to Graph change

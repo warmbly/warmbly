@@ -2865,6 +2865,11 @@ func main() {
 	}
 
 	monitoringRepo := repository.NewMonitoringRepository(instanceChecksDB)
+	if instanceSettings != nil {
+		monitoringRepo.WireSyncStaleAfter(func(ctx context.Context) time.Duration {
+			return 2 * time.Duration(instanceSettings.SyncBudget(ctx).FullCheckMaxMinutes) * time.Minute
+		})
+	}
 	monitoringSources := append(monitoringRepo.Sources(), monitoringRepo.BrokerSources(monitoringBus)...)
 	monitoringSources = append(monitoringSources, monitoring.UnobservedSources()...)
 	monitoringService := monitoring.New(monitoringSources)

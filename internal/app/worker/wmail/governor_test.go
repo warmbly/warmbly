@@ -166,23 +166,61 @@ func TestImapBackfillEligible(t *testing.T) {
 	}
 }
 
-// The next pass waits longer while fair use holds the mailbox, but never
-// beyond the backoff ceiling and never below half the base interval.
+// A clean pass waits the full interval with jitter; a fair-use hold only
+// lengthens a short interval, by at most the backoff ceiling.
 func TestNextSyncDelay(t *testing.T) {
-	w := &WMail{tracker: newSyncTracker(nil, func(models.SyncState) error { return nil })}
-	base := time.Minute
-	for i := 0; i < 50; i++ {
-		d := w.nextSyncDelay(base, nil)
-		if d < base/2 || d > base+base/10 {
-			t.Fatalf("plain delay %v out of band", d)
+	near := func(t *testing.T, got, want time.Duration) {
+		t.Helper()
+		if got < want-want/10 || got > want+want/10 {
+			t.Fatalf("delay %v, want %v within 10%%", got, want)
 		}
 	}
-	until := time.Now().Add(3 * time.Hour)
-	w.tracker.state.ThrottledUntil = &until
-	for i := 0; i < 50; i++ {
-		d := w.nextSyncDelay(base, nil)
-		if d < syncBackoffMax-syncBackoffMax/10 || d > syncBackoffMax+syncBackoffMax/10 {
-			t.Fatalf("throttled delay %v not near the ceiling", d)
+	for _, base := range []time.Duration{time.Minute, 15 * time.Minute, time.Hour} {
+		w := &WMail{tracker: newSyncTracker(nil, func(models.SyncState) error { return nil })}
+		spread := map[time.Duration]bool{}
+		for i := 0; i < 50; i++ {
+			d := w.nextSyncDelay(base, nil)
+			near(t, d, base)
+			spread[d] = true
+		}
+		if len(spread) < 2 {
+			t.Fatalf("base %v: no jitter", base)
+		}
+		until := time.Now().Add(3 * time.Hour)
+		w.tracker.state.ThrottledUntil = &until
+		for i := 0; i < 50; i++ {
+			near(t, w.nextSyncDelay(base, nil), max(base, syncBackoffMax))
+		}
+	}
+}
+
+// A failure backs off on its own schedule whatever the interval: one
+// transport error never waits half of an hour-long interval, and no error
+// retries sooner than it did when every mailbox polled once a minute.
+func TestNextSyncDelayErrorsBackOffOnTheirOwnSchedule(t *testing.T) {
+	transport := errx.MError(errx.MailErrorWarning, errx.MailErrorCodeServerUnreachable, "down", errx.MailErrorResolveMethodRetry)
+	auth := errx.MError(errx.MailErrorCritical, errx.MailErrorCodeAuthenticationFailed, "refused", errx.MailErrorResolveMethodReload)
+	tooFast := errx.MError(errx.MailErrorWarning, errx.MailErrorCodeSendingTooFast, "slow down", errx.MailErrorResolveMethodRetry)
+	for _, base := range []time.Duration{time.Minute, 15 * time.Minute, time.Hour} {
+		for _, tc := range []struct {
+			name     string
+			err      *errx.MailError
+			failures int
+			want     time.Duration
+		}{
+			{"first transport error", transport, 1, 2 * time.Minute},
+			{"second transport error", transport, 2, 4 * time.Minute},
+			{"a long outage", transport, 20, syncBackoffMax},
+			{"a refusal", auth, 0, syncBackoffMax},
+			{"throttled without a retry window", tooFast, 0, syncBackoffMax},
+		} {
+			w := &WMail{transportFailures: tc.failures}
+			for i := 0; i < 50; i++ {
+				d := w.nextSyncDelay(base, tc.err)
+				if d < tc.want-tc.want/10 || d > tc.want+tc.want/10 {
+					t.Fatalf("base %v, %s: delay %v, want %v within 10%%", base, tc.name, d, tc.want)
+				}
+			}
 		}
 	}
 }
