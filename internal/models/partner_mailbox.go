@@ -47,6 +47,18 @@ const (
 // this instance's app. The only value of partner_mailboxes.action_required and store_mailboxes.action_required.
 const ActionMicrosoftConsent = "microsoft_consent"
 
+// Why the automatic Microsoft 365 approval with a purchased domain's admin mailbox stopped and left it to a person;
+// the values of store_mailboxes.action_reason.
+const (
+	ConsentReasonMFA         = "mfa_required"
+	ConsentReasonPassword    = "wrong_password"
+	ConsentReasonNotAdmin    = "not_admin"
+	ConsentReasonWrongTenant = "wrong_tenant"
+	ConsentReasonBlocked     = "sign_in_blocked"
+	ConsentReasonNoSignIn    = "no_admin_sign_in"
+	ConsentReasonFailed      = "failed"
+)
+
 // PartnerMailbox is one mailbox of a partner-managed workspace as the partner API knows it.
 type PartnerMailbox struct {
 	ID               uuid.UUID         `json:"id"`

@@ -1,5 +1,5 @@
-// The one step a person takes for purchased Microsoft 365 mailboxes: the domain's administrator approves Warmbly once,
-// in Microsoft, and lands back on this order. One card per domain still waiting on it.
+// The step a person takes for purchased Microsoft 365 mailboxes only when Warmbly could not approve itself with the
+// domain's admin mailbox: the administrator approves Warmbly once, in Microsoft, and lands back on this order.
 import React from "react";
 import toast from "react-hot-toast/headless";
 import { AnimatePresence } from "framer-motion";
@@ -9,7 +9,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { signInStoreMailbox, startStoreMicrosoftConsent } from "@/lib/api/client/app/store/store";
 import { useStoreMailboxes } from "@/lib/api/hooks/app/store/useStore";
 import type { MailboxSignIn, Order, StoreMailbox } from "@/lib/api/models/app/store/Store";
-import { waitingForApproval, type Waiting } from "@/lib/buy/approval";
+import { approvalReason, waitingForApproval, type Waiting } from "@/lib/buy/approval";
 import { storeErrorMessage } from "@/lib/buy/errors";
 import { PressButton } from "./Press";
 import SignInDialog from "./SignInDialog";
@@ -77,8 +77,9 @@ function Card({ waiting, orderId, admin }: { waiting: Waiting; orderId: string; 
                 <ShieldCheckIcon className="w-4 h-4 text-sky-600 mt-px shrink-0" />
                 <div className="min-w-0 flex-1">
                     <div className="text-[12.5px] font-semibold text-slate-900">Approve in Microsoft 365</div>
+                    <p className="mt-0.5 text-[12px] font-medium text-slate-800 leading-relaxed">{approvalReason(waiting.reason, waiting.domain, admin?.email)}</p>
                     <p className="mt-0.5 text-[12px] text-slate-600 leading-relaxed">
-                        Microsoft 365 needs the administrator of {waiting.domain} to approve Warmbly once before {boxes} can connect. Sign in as{" "}
+                        Approve Warmbly once for {waiting.domain} so {boxes} can connect. Sign in as{" "}
                         {admin ? <span className="font-medium text-slate-900 break-all">{admin.email}</span> : "the domain's admin mailbox"} when Microsoft
                         asks, then accept. You come back here when it is done.
                     </p>

@@ -7,3 +7,9 @@ ALTER TABLE public.partner_mailboxes
 
 ALTER TABLE public.store_mailboxes
     ADD COLUMN action_required text CHECK (action_required IN ('microsoft_consent'));
+
+-- Why a store mailbox's step fell to a person: what stopped the automatic
+-- approval with the domain's admin mailbox. NULL while it has not been tried.
+ALTER TABLE public.store_mailboxes
+    ADD COLUMN action_reason text CHECK (action_reason IN ('mfa_required', 'wrong_password', 'not_admin',
+        'wrong_tenant', 'sign_in_blocked', 'no_admin_sign_in', 'failed'));

@@ -6,6 +6,7 @@
 package delegation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/gmail/v1"
 
 	"github.com/warmbly/warmbly/internal/config"
@@ -149,6 +151,8 @@ type Service struct {
 	// consentAttempts and consentPause bound the wait for a fresh consent to reach the token endpoint.
 	consentAttempts int
 	consentPause    time.Duration
+	// autoConsents runs one automatic tenant consent per workspace and tenant at a time.
+	autoConsents singleflight.Group
 
 	sources sync.Map // cache key -> oauth2.TokenSource
 }
@@ -328,29 +332,45 @@ func (e *apiError) Error() string { return fmt.Sprintf("status %d", e.status) }
 
 // getJSON calls a Google or Graph endpoint with a token from ts.
 func (s *Service) getJSON(ctx context.Context, ts oauth2.TokenSource, u string, out any) error {
+	return s.doJSON(ctx, ts, http.MethodGet, u, nil, out)
+}
+
+// doJSON sends in, when not nil, as a JSON body and decodes the answer into out.
+func (s *Service) doJSON(ctx context.Context, ts oauth2.TokenSource, method, u string, in, out any) error {
 	tok, err := ts.Token()
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	var body io.Reader
+	if in != nil {
+		raw, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
 	req.Header.Set("Accept", "application/json")
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := s.http.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode >= 300 {
-		return &apiError{status: resp.StatusCode, body: truncate(string(body), 300)}
+		return &apiError{status: resp.StatusCode, body: truncate(string(raw), 300)}
 	}
 	if out == nil {
 		return nil
 	}
-	return json.Unmarshal(body, out)
+	return json.Unmarshal(raw, out)
 }
 
 func truncate(s string, n int) string {

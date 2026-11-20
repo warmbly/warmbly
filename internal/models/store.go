@@ -143,7 +143,9 @@ type StoreMailbox struct {
 	ConnectError    string
 	ConnectAttempts int
 	// ActionRequired is the step only a person can take before the mailbox connects (ActionMicrosoftConsent), nil when none.
-	ActionRequired   *string
+	ActionRequired *string
+	// ActionReason is why it fell to a person: what stopped the automatic approval (ConsentReason*), nil when unknown.
+	ActionReason     *string
 	BillingFailures  int
 	PendingChargeKey *string
 	// PendingChargeMicros is what the pending charge takes for this mailbox, fixed when it was reserved.

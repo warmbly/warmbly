@@ -77,8 +77,8 @@ func TestLiveStoreRevisionTwoStatements(t *testing.T) {
 	if err != nil || !box.IsAdmin {
 		t.Fatalf("mailbox = %+v, %v", box, err)
 	}
-	if admin, _ := repo.DomainAdminEmail(ctx, org, conn.ID); admin != "ada@r2-own.test" {
-		t.Fatalf("admin = %q", admin)
+	if admin, _ := repo.DomainAdminMailbox(ctx, org, conn.ID); admin == nil || admin.Email != "ada@r2-own.test" || admin.GraphKitMailboxID != box.GraphKitMailboxID {
+		t.Fatalf("admin = %+v", admin)
 	}
 	if held, _ := repo.HasLiveMailboxes(ctx, org); !held {
 		t.Fatal("a live purchased mailbox is not seen")

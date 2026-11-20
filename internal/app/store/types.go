@@ -301,6 +301,8 @@ type Mailbox struct {
 	ConnectState   string     `json:"connect_state"`
 	// ActionRequired is microsoft_consent while the domain's Microsoft 365 administrator has not approved Warmbly, else null.
 	ActionRequired *string `json:"action_required"`
+	// ActionReason is why the automatic approval left it to the administrator, set only with ActionRequired.
+	ActionReason *string `json:"action_reason"`
 	// Photo is the profile photo at the provider: none, pending (sent, not taken yet) or set.
 	Photo     string    `json:"photo"`
 	CreatedAt time.Time `json:"created_at"`

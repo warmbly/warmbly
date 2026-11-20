@@ -138,7 +138,7 @@ func mailboxView(m *models.StoreMailbox, unplanned bool) Mailbox {
 	return Mailbox{ID: m.ID, Email: m.Email, DomainID: m.DomainID, Provider: m.Provider, Status: m.Status, FirstName: m.FirstName,
 		LastName: m.LastName, IsAdmin: m.IsAdmin, Paused: unplanned && liveStatus(m.Status), MonthlyMicros: int64(m.MonthlyRetailMicros),
 		PaidThrough: m.PaidThrough, CancelsAt: m.CancelsAt, CancelledAt: m.CancelledAt, EmailAccountID: m.EmailAccountID, ConnectState: m.ConnectState,
-		ActionRequired: actionRequired(m), Photo: photoState(m), CreatedAt: m.CreatedAt}
+		ActionRequired: actionRequired(m), ActionReason: actionReason(m), Photo: photoState(m), CreatedAt: m.CreatedAt}
 }
 
 // photoState is none, pending (chosen, not taken by the provider yet) or set.
@@ -414,4 +414,13 @@ func actionRequired(m *models.StoreMailbox) *string {
 	}
 	a := *m.ActionRequired
 	return &a
+}
+
+// actionReason is why the step fell to a person, alongside actionRequired.
+func actionReason(m *models.StoreMailbox) *string {
+	if actionRequired(m) == nil || m.ActionReason == nil {
+		return nil
+	}
+	r := *m.ActionReason
+	return &r
 }

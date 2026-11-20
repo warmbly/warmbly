@@ -215,8 +215,7 @@ func (s *Service) chainConsentSignin(ctx context.Context, st ConsentState, in Co
 	return s.microsoftSigninConfig().AuthCodeURL(next, signinOptions(signin, oauth2.SetAuthURLParam("domain_hint", st.Domain))...), true
 }
 
-// recordTenantConsent proves the tenant's administrator signed in, waits for the app to work there, records the
-// workspace's grant for the tenant and wakes the connects waiting on it.
+// recordTenantConsent proves the tenant's administrator signed in, then records the consent like any other.
 func (s *Service) recordTenantConsent(ctx context.Context, st ConsentState, code string) *errx.Error {
 	tenant, xerr := s.microsoftAdminTenant(ctx, code, st)
 	if xerr != nil {
@@ -225,21 +224,27 @@ func (s *Service) recordTenantConsent(ctx context.Context, st ConsentState, code
 	if !strings.EqualFold(tenant, st.Tenant) {
 		return errx.NewWithIdentifier(errx.Forbidden, ErrIDProof, "The administrator signed in to another organization than the one "+st.Domain+" belongs to.")
 	}
-	if xerr := s.awaitTenantConsent(ctx, st.Tenant); xerr != nil {
+	return s.finishTenantConsent(ctx, st.OrgID, st.UserID, st.Domain, st.Tenant)
+}
+
+// finishTenantConsent follows an administrator's consent in tenant: it waits for the app to work there, records the
+// workspace's grant for the tenant and wakes the connects waiting on it. Both the callback and the automatic consent end here.
+func (s *Service) finishTenantConsent(ctx context.Context, orgID, userID uuid.UUID, domain, tenant string) *errx.Error {
+	if xerr := s.awaitTenantConsent(ctx, tenant); xerr != nil {
 		return xerr
 	}
-	g, xerr := s.verifyMicrosoft(ctx, st.Tenant)
+	g, xerr := s.verifyMicrosoft(ctx, tenant)
 	if xerr != nil {
 		return xerr
 	}
-	domains := map[string]bool{st.Domain: true}
+	domains := map[string]bool{domain: true}
 	for _, d := range g.Domains {
 		domains[d] = true
 	}
 	g.Purchased = true
-	if list, err := s.repo.List(ctx, st.OrgID); err == nil {
+	if list, err := s.repo.List(ctx, orgID); err == nil {
 		for _, prev := range list {
-			if prev.Provider == models.GrantProviderMicrosoft && strings.EqualFold(prev.Tenant, st.Tenant) {
+			if prev.Provider == models.GrantProviderMicrosoft && strings.EqualFold(prev.Tenant, tenant) {
 				g.Purchased = prev.Purchased
 				for _, d := range prev.Domains {
 					domains[d] = true
@@ -248,11 +253,11 @@ func (s *Service) recordTenantConsent(ctx context.Context, st ConsentState, code
 		}
 	}
 	g.Domains = sortedKeys(domains)
-	g.ID, g.OrganizationID = uuid.New(), st.OrgID
-	if err := s.repo.Upsert(ctx, g, st.UserID); err != nil {
+	g.ID, g.OrganizationID = uuid.New(), orgID
+	if err := s.repo.Upsert(ctx, g, userID); err != nil {
 		return errx.InternalError()
 	}
-	s.wake(ctx, st.OrgID, g.Domains)
+	s.wake(ctx, orgID, g.Domains)
 	return nil
 }
 

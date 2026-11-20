@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -51,6 +52,21 @@ type memDelegator struct {
 	awaitConsent bool
 	// consents are the tenant consents started, as "domain returnURL".
 	consents []string
+	// autoConsent answers the automatic tenant consent; nil approves the tenant, which ends awaitConsent.
+	autoConsent error
+	// autoConsents are the automatic consents run, as "domain admin password-given".
+	autoConsents []string
+}
+
+func (d *memDelegator) ConsentPurchasedTenantWithAdmin(_ context.Context, _, _ uuid.UUID, domain, admin, password string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.autoConsents = append(d.autoConsents, fmt.Sprintf("%s %s %t", domain, admin, password != ""))
+	if d.autoConsent != nil {
+		return d.autoConsent
+	}
+	d.awaitConsent = false
+	return nil
 }
 
 func (d *memDelegator) StartPurchasedMicrosoftConsent(_ context.Context, _, _ uuid.UUID, domain, returnURL string) (*delegation.MicrosoftConsent, *errx.Error) {
