@@ -155,12 +155,12 @@ export default function DomainSearch({
                             animate="show"
                             variants={{ hidden: {}, show: { transition: { staggerChildren: reduced ? 0 : 0.04, delayChildren: reduced ? 0 : 0.03 } } }}
                             // Hairline dividers come from the gap, so the rows read the same in one column or two.
-                            className={cn("grid gap-px 2xl:grid-cols-2 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 transition-opacity", settling && "opacity-70")}
+                            className={cn("grid gap-px rounded-xl border border-slate-200 overflow-hidden bg-slate-100 transition-opacity", shown.length > 1 && "2xl:grid-cols-2", settling && "opacity-70")}
                         >
                             {shown.map((r) => (
                                 <ResultRow key={r.domain} r={r} added={inOrder(r.domain)} onToggle={() => onToggle(r)} atCost={atCost} />
                             ))}
-                            {shown.length % 2 === 1 && <li aria-hidden="true" className="hidden 2xl:block bg-white" />}
+                            {shown.length > 1 && shown.length % 2 === 1 && <li aria-hidden="true" className="hidden 2xl:block bg-white" />}
                         </motion.ul>
                         <div className="mt-2 flex flex-wrap items-start gap-x-4 gap-y-1.5">
                             {results && results.length > FIRST_RESULTS && !showAll && (
@@ -206,13 +206,13 @@ function ResultRow({ r, added, onToggle, atCost }: { r: DomainSearchResult; adde
                         <span className="font-semibold">{stem}</span>
                         <span className={cn("whitespace-nowrap", r.available ? "text-slate-500" : undefined)}>{tld}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-slate-500">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0 text-[11px] text-slate-500">
                         {r.exact && (
                             <span className="shrink-0 h-4 px-1.5 rounded-full bg-sky-50 border border-sky-100 text-sky-700 text-[10px] font-medium inline-flex items-center">
                                 Exact match
                             </span>
                         )}
-                        <span className="truncate">
+                        <span>
                             {r.available
                                 ? `${(r.years ?? 1) > 1 ? `First ${r.years} years, then ` : "Renews at "}${fmtYearly(r.renew_micros)}${atCost ? " · at cost" : ""}`
                                 : (REASON[r.reason ?? ""] ?? "Unavailable")}

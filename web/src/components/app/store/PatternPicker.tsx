@@ -77,10 +77,10 @@ export default function PatternPicker({
                                 initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.85, transition: { duration: 0.1 } }}
-                                className="h-6 pl-1 pr-2 rounded-md bg-slate-100/80 border border-slate-200/70 inline-flex items-center gap-1 max-w-full"
+                                className="min-h-6 pl-1 pr-2 rounded-md bg-slate-100/80 border border-slate-200/70 inline-flex items-center gap-1 max-w-full"
                             >
                                 <span className="size-4 rounded bg-white text-[9.5px] font-semibold text-slate-500 tabular-nums inline-flex items-center justify-center shrink-0">{i + 1}</span>
-                                <span className="truncate text-[12px] font-medium text-slate-800">{patternExample(sample, p)}@</span>
+                                <span className="text-[12px] font-medium text-slate-800 [overflow-wrap:anywhere]">{patternExample(sample, p)}@</span>
                             </motion.span>
                         ))}
                     </AnimatePresence>
@@ -99,7 +99,7 @@ export default function PatternPicker({
                         exit={{ opacity: 0, y: placement === "top" ? 4 : -4 }}
                         transition={{ duration: 0.12 }}
                         className={cn(
-                            "absolute left-0 z-30 w-[min(340px,calc(100vw-32px))] rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] overflow-hidden",
+                            "absolute left-0 z-30 w-[min(380px,calc(100vw-32px))] rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] overflow-hidden",
                             placement === "top" ? "bottom-full mb-1" : "top-full mt-1",
                         )}
                     >
@@ -129,11 +129,14 @@ export default function PatternPicker({
                                                 e.preventDefault();
                                                 move(p, e.key === "ArrowUp" ? -1 : 1);
                                             }}
-                                            className="flex-1 min-w-0 h-8 px-1.5 rounded flex items-center gap-2 text-left outline-none hover:bg-slate-100 focus-visible:bg-slate-100 transition-colors"
+                                            className="flex-1 min-w-0 min-h-8 py-1 px-1.5 rounded flex items-center gap-2 text-left outline-none hover:bg-slate-100 focus-visible:bg-slate-100 transition-colors"
                                         >
                                             <CheckSquare checked={on} tone="slate" />
-                                            <span className="min-w-0 truncate text-[12.5px] font-medium text-slate-800">{patternExample(sample, p)}@</span>
-                                            <span className="ml-auto pl-2 truncate text-[11px] text-slate-400">{on ? ordinal(at + 1) : PATTERN_NAMES[p]}</span>
+                                            {/* Nothing here truncates: the address is what the person is choosing, so a long one wraps. */}
+                                            <span className="min-w-0 flex-1 flex flex-col">
+                                                <span className="text-[12.5px] font-medium text-slate-800 [overflow-wrap:anywhere]">{patternExample(sample, p)}@</span>
+                                                <span className="text-[11px] text-slate-400 leading-snug">{on ? `${ordinal(at + 1)} · ${PATTERN_NAMES[p]}` : PATTERN_NAMES[p]}</span>
+                                            </span>
                                         </button>
                                         {on && value.length > 1 && (
                                             <span className="flex items-center shrink-0">

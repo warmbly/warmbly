@@ -331,7 +331,7 @@ function Lines({ cart, prices, checkout, monthlyMicros }: { cart: Cart; prices: 
                             >
                                 <div className="py-2.5">
                                     <div className="flex items-baseline justify-between gap-3">
-                                        <span className="min-w-0 truncate text-[12.5px] font-medium text-slate-900">{d.domain}</span>
+                                        <span className="min-w-0 [overflow-wrap:anywhere] text-[12.5px] font-medium text-slate-900">{d.domain}</span>
                                         {d.kind === "owned" ? <span className="text-[11.5px] text-slate-400 shrink-0">Yours</span> : <Amount micros={domainAmount} pending={checkout.quoteLoading} />}
                                     </div>
                                     {d.kind === "new" && (
