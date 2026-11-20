@@ -297,7 +297,7 @@ function FailureNote({ order }: { order: Order }) {
             <AlertTriangleIcon className="w-4 h-4 text-amber-600 mt-px shrink-0" />
             <div className="text-[12px] text-amber-900 leading-relaxed">
                 {order.refunded_micros > 0 ? `${fmtMicros(order.refunded_micros)} went back to your balance. ` : ""}
-                {order.mailboxes.length > 0
+                {order.mailboxes.some((m) => m.connect_state === "connected")
                     ? "The mailboxes that were created are connected and warming up below."
                     : "Nothing else was charged. You can try again with another domain."}
             </div>
