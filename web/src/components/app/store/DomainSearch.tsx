@@ -201,21 +201,22 @@ function ResultRow({ r, added, onToggle, atCost }: { r: DomainSearchResult; adde
             <div className={cn("h-full px-3 sm:px-4 py-2.5 flex items-center gap-3 transition-colors", added ? "bg-sky-50/60" : r.available ? "hover:bg-slate-50/70" : "")}>
                 <span className={cn("size-2 rounded-full shrink-0", r.available ? "bg-emerald-500" : "bg-slate-300")} title={r.available ? "Available" : (REASON[r.reason ?? ""] ?? "Unavailable")} />
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        <span className={cn("text-[13.5px] truncate", r.available ? "text-slate-900" : "text-slate-400 line-through decoration-slate-300")}>
-                            <span className="font-semibold">{stem}</span>
-                            <span className={r.available ? "text-slate-500" : undefined}>{tld}</span>
-                        </span>
+                    {/* The full name always shows: a long one wraps, and the TLD never splits off or truncates. */}
+                    <div className={cn("text-[13.5px] leading-snug [overflow-wrap:anywhere]", r.available ? "text-slate-900" : "text-slate-400 line-through decoration-slate-300")} title={name}>
+                        <span className="font-semibold">{stem}</span>
+                        <span className={cn("whitespace-nowrap", r.available ? "text-slate-500" : undefined)}>{tld}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-slate-500">
                         {r.exact && (
-                            <span className="shrink-0 h-[18px] px-1.5 rounded-full bg-sky-50 border border-sky-100 text-sky-700 text-[10.5px] font-medium inline-flex items-center">
+                            <span className="shrink-0 h-4 px-1.5 rounded-full bg-sky-50 border border-sky-100 text-sky-700 text-[10px] font-medium inline-flex items-center">
                                 Exact match
                             </span>
                         )}
-                    </div>
-                    <div className="text-[11px] text-slate-500 truncate">
-                        {r.available
-                            ? `${(r.years ?? 1) > 1 ? `First ${r.years} years, then ` : "Renews at "}${fmtYearly(r.renew_micros)}${atCost ? " · at cost" : ""}`
-                            : (REASON[r.reason ?? ""] ?? "Unavailable")}
+                        <span className="truncate">
+                            {r.available
+                                ? `${(r.years ?? 1) > 1 ? `First ${r.years} years, then ` : "Renews at "}${fmtYearly(r.renew_micros)}${atCost ? " · at cost" : ""}`
+                                : (REASON[r.reason ?? ""] ?? "Unavailable")}
+                        </span>
                     </div>
                 </div>
                 {r.available && (

@@ -251,7 +251,7 @@ export default function PurchasedDomains({ query }: { query: string }) {
                                         </span>
                                     )}
                                     <div className="min-w-0">
-                                        <div className="text-[12.5px] text-slate-900 font-medium truncate">{d.name}</div>
+                                        <div className="text-[12.5px] text-slate-900 font-medium [overflow-wrap:anywhere]">{d.name}</div>
                                         <div className={cn("md:hidden text-[11px] truncate", TONE[exp.tone])}>
                                             {exp.text} · {d.mailbox_count} {d.mailbox_count === 1 ? "mailbox" : "mailboxes"}
                                         </div>
@@ -427,7 +427,7 @@ function DomainDrawer({
                 <div className="shrink-0 px-5 h-14 flex items-center gap-3 border-b border-slate-200">
                     {d.provider ? <ProviderLogo id={d.provider} size="xl" /> : <GlobeIcon className="w-4 h-4 text-slate-400" />}
                     <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-medium text-slate-900 truncate">{d.name}</div>
+                        <div className="text-[13px] font-medium text-slate-900 [overflow-wrap:anywhere]">{d.name}</div>
                         <div className={cn("text-[10.5px] truncate", TONE[exp.tone])}>
                             {exp.text} · {d.mailbox_count} {d.mailbox_count === 1 ? "mailbox" : "mailboxes"}
                         </div>
