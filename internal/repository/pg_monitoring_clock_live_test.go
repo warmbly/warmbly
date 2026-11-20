@@ -275,7 +275,7 @@ func TestLiveMonitoringDatabaseClockSingleSnapshot(t *testing.T) {
 	f := newWarmupUsageFixture(t, pool)
 	worker := monitoringWorkerNode(t, pool, "worker", true, nil)
 	f.exec(`UPDATE email_accounts SET status='active',worker_id=$2 WHERE id=$1`, f.account, worker)
-	old := monitoringWorkerClock(t, pool).Add(-time.Hour)
+	old := monitoringWorkerClock(t, pool).Add(-defaultSyncStaleAfter - time.Hour)
 	f.exec(`INSERT INTO email_sync_state(email_id,user_id,last_synced_at) VALUES($1,$2,$3)`, f.account, f.user, old)
 	trace := &monitoringClockTrace{}
 	ro := monitoringClockPool(t, pool, trace, monitoringScope{nodes: []uuid.UUID{worker}, orgs: []uuid.UUID{f.org}})
