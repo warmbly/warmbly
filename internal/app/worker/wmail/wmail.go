@@ -144,7 +144,9 @@ type WMail struct {
 
 	// wake runs the next sync pass early; push is the provider channel that fills it.
 	wake chan struct{}
-	push pushChannel
+	// signal is poked when the mailbox's change signal (IDLE or a push channel) may have come or gone.
+	signal chan struct{}
+	push   pushChannel
 
 	Ctx           context.Context
 	Cancel        context.CancelFunc
@@ -184,6 +186,7 @@ func NewWMail(
 		Cancel:        cancel,
 		TerminateFunc: terminate,
 		wake:          make(chan struct{}, 1),
+		signal:        make(chan struct{}, 1),
 
 		Cache:                     cache,
 		Storage:                   storage,

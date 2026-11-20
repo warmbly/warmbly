@@ -14,11 +14,18 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// waitLegacy waits for a mailbox with a live signal, so only wakes and the full pass matter.
+func waitLegacy(t *testing.T, w *WMail, due, notBefore time.Time, wakeable bool) (narrow, ok bool) {
+	t.Helper()
+	step := w.waitForPass(t.Context(), syncPlan{due: due, notBefore: notBefore, wakeable: wakeable})
+	return step == stepNarrow, step != stepStop
+}
+
 func TestWakeRunsANarrowCheckOnlyAfterACleanPass(t *testing.T) {
 	w := &WMail{wake: make(chan struct{}, 1)}
 	w.Wake(false)
 	started := time.Now()
-	narrow, ok := w.waitForPass(t.Context(), time.Now().Add(time.Hour), time.Time{}, true)
+	narrow, ok := waitLegacy(t, w, time.Now().Add(time.Hour), time.Time{}, true)
 	if !ok || !narrow {
 		t.Fatalf("a wake after a clean pass ran narrow=%v ok=%v, want a narrow check", narrow, ok)
 	}
@@ -28,7 +35,7 @@ func TestWakeRunsANarrowCheckOnlyAfterACleanPass(t *testing.T) {
 
 	w.Wake(false)
 	started = time.Now()
-	narrow, ok = w.waitForPass(t.Context(), time.Now().Add(50*time.Millisecond), time.Time{}, false)
+	narrow, ok = waitLegacy(t, w, time.Now().Add(50*time.Millisecond), time.Time{}, false)
 	if !ok || narrow {
 		t.Fatalf("a wake during a backoff ran narrow=%v ok=%v, want the full pass", narrow, ok)
 	}
@@ -45,14 +52,14 @@ func TestWakeKeepsTheGapBetweenChecks(t *testing.T) {
 	w := &WMail{wake: make(chan struct{}, 1)}
 	w.Wake(false)
 	started := time.Now()
-	narrow, ok := w.waitForPass(t.Context(), time.Now().Add(time.Hour), time.Now().Add(config.SyncWakeSettle+300*time.Millisecond), true)
+	narrow, ok := waitLegacy(t, w, time.Now().Add(time.Hour), time.Now().Add(config.SyncWakeSettle+300*time.Millisecond), true)
 	if !ok || !narrow || time.Since(started) < config.SyncWakeSettle+300*time.Millisecond {
 		t.Fatalf("a wake inside the gap ran early: narrow=%v ok=%v after %v", narrow, ok, time.Since(started))
 	}
 
 	w.Wake(false)
 	started = time.Now()
-	narrow, ok = w.waitForPass(t.Context(), time.Now().Add(100*time.Millisecond), time.Now().Add(config.SyncWakeMinGap), true)
+	narrow, ok = waitLegacy(t, w, time.Now().Add(100*time.Millisecond), time.Now().Add(config.SyncWakeMinGap), true)
 	if !ok || narrow {
 		t.Fatalf("a wake held past the full pass ran narrow=%v ok=%v, want the full pass", narrow, ok)
 	}

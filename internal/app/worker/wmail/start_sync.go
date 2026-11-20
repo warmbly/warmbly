@@ -46,13 +46,20 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 	}
 	last := time.Now()
 	due := last.Add(w.nextSyncDelay(w.pollInterval(), err))
+	pollGap := jitter(config.SyncNarrowPollInterval)
 	for {
 		w.maintainPush(ctx)
-		narrow, ok := w.waitForPass(ctx, due, last.Add(config.SyncWakeMinGap), err == nil)
-		if !ok {
+		narrowAt, signalUntil := w.narrowPoll(last, pollGap, err == nil)
+		step := w.waitForPass(ctx, syncPlan{due: due, notBefore: last.Add(config.SyncWakeMinGap), narrowAt: narrowAt, signalUntil: signalUntil, wakeable: err == nil})
+		if step == stepStop {
 			return
 		}
+		if step == stepReplan {
+			continue
+		}
+		narrow := step == stepNarrow
 		last = time.Now()
+		pollGap = jitter(config.SyncNarrowPollInterval)
 		err = w.syncOnce(ctx, narrow)
 		// A clean check keeps the full pass's slot; a failure backs off and retries as a full pass.
 		if !narrow || err != nil {
@@ -61,40 +68,92 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 	}
 }
 
-// waitForPass sleeps until the full pass is due, reporting false for narrow,
-// or, when the last check was clean, until a wake arrives and its check may
-// run, reporting true. A wake never cuts short a backoff the provider asked
-// for, and one whose check would start after the full pass is folded into it.
-func (w *WMail) waitForPass(ctx context.Context, due, notBefore time.Time, wakeable bool) (narrow, ok bool) {
-	timer := time.NewTimer(time.Until(due))
+// narrowPoll is when a mailbox with no live change signal gets its timed
+// narrow check (zero while a signal holds or after a failed check), and when a
+// live push channel lapses so the timer can take over then.
+func (w *WMail) narrowPoll(last time.Time, gap time.Duration, clean bool) (narrowAt, signalUntil time.Time) {
+	live, until := w.liveSignal()
+	if !live && clean {
+		narrowAt = last.Add(gap)
+	}
+	return narrowAt, until
+}
+
+// syncStep is what the loop does after a wait.
+type syncStep int
+
+const (
+	stepStop syncStep = iota
+	stepFull
+	stepNarrow
+	// stepReplan: the mailbox's change signal came or went, so the timers are worked out again.
+	stepReplan
+)
+
+// syncPlan is what one wait is for: the full pass, the earliest a narrow check
+// may start, the narrow poll when the mailbox has no live change signal, and
+// when its live signal lapses.
+type syncPlan struct {
+	due, notBefore, narrowAt, signalUntil time.Time
+	wakeable                              bool
+}
+
+// waitForPass sleeps until the full pass is due, a narrow poll falls due, the
+// change signal changes, or, when the last check was clean, a wake arrives and
+// its check may run. A wake never cuts short a backoff the provider asked
+// for, and a narrow check that would start after the full pass is folded into it.
+func (w *WMail) waitForPass(ctx context.Context, p syncPlan) syncStep {
+	timer := time.NewTimer(time.Until(p.due))
 	defer timer.Stop()
+	var poll, lapse <-chan time.Time
+	if !p.narrowAt.IsZero() && p.narrowAt.Before(p.due) {
+		t := time.NewTimer(time.Until(p.narrowAt))
+		defer t.Stop()
+		poll = t.C
+	}
+	if !p.signalUntil.IsZero() && p.signalUntil.Before(p.due) {
+		t := time.NewTimer(time.Until(p.signalUntil))
+		defer t.Stop()
+		lapse = t.C
+	}
 	wake := w.wake
-	if !wakeable {
+	if !p.wakeable {
 		wake = nil
 	}
 	select {
 	case <-ctx.Done():
-		return false, false
+		return stepStop
 	case <-timer.C:
 		w.drainWake()
-		return false, true
+		return stepFull
+	case <-lapse:
+		return stepReplan
+	case <-w.signal:
+		return stepReplan
+	case <-poll:
 	case <-wake:
 	}
 	// Let the rest of a burst land, and keep to the gap between checks.
-	hold := max(config.SyncWakeSettle, time.Until(notBefore))
-	if until := time.Until(due); hold >= until {
+	hold := max(config.SyncWakeSettle, time.Until(p.notBefore))
+	if until := time.Until(p.due); hold >= until {
 		if !sleepCtx(ctx, until) {
-			return false, false
+			return stepStop
 		}
 		w.drainWake()
-		return false, true
+		return stepFull
 	}
 	if !sleepCtx(ctx, hold) {
-		return false, false
+		return stepStop
 	}
 	// The check about to run covers any wake that queued while it waited.
 	w.drainWake()
-	return true, true
+	return stepNarrow
+}
+
+// jitter spreads d by ±10% so a fleet does not check in lockstep.
+func jitter(d time.Duration) time.Duration {
+	spread := d / 10
+	return d + time.Duration(rand.Int64N(int64(2*spread)+1)) - spread
 }
 
 func (w *WMail) drainWake() {
@@ -129,9 +188,7 @@ func (w *WMail) nextSyncDelay(base time.Duration, last *errx.MailError) time.Dur
 			d = min(until, syncBackoffMax)
 		}
 	}
-	// ±10% jitter.
-	spread := d / 10
-	d += time.Duration(rand.Int64N(int64(2*spread)+1)) - spread
+	d = jitter(d)
 	if d < minimum {
 		d = minimum
 	}
