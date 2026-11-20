@@ -153,7 +153,8 @@ func stuckOrder(o *models.StoreOrder, now time.Time) bool {
 	case models.StoreOrderCharging:
 		return now.Sub(o.UpdatedAt) > 30*time.Minute
 	case models.StoreOrderProcessing:
-		return now.Sub(o.CreatedAt) > 48*time.Hour
+		// GraphKit may wait 24 h on DNS and then 48 h on the mailbox vendor before it settles an order.
+		return now.Sub(o.CreatedAt) > 72*time.Hour
 	}
 	return false
 }
