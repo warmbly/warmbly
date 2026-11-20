@@ -260,7 +260,7 @@ func (r *storeRepository) OrgNames(ctx context.Context, ids []uuid.UUID) (map[uu
 
 func (r *storeRepository) ResetConnect(ctx context.Context, orgID, id uuid.UUID) (bool, error) {
 	n, err := r.affected(ctx, `UPDATE store_mailboxes SET connect_state = 'waiting', connect_attempts = 0, connect_error = '',
-		connect_attempted_at = NULL, updated_at = now()
+		connect_attempted_at = NULL, action_required = NULL, action_reason = NULL, updated_at = now()
 		WHERE organization_id = $1 AND id = $2 AND email_account_id IS NULL AND status = 'active'`, orgID, id)
 	return n > 0, err
 }

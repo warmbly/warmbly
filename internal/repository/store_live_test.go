@@ -145,6 +145,40 @@ func TestLiveStoreRepositoryIsOrganizationScoped(t *testing.T) {
 	if pending, _ := repo.PendingConnects(ctx, time.Now(), 10); len(pending) != 0 {
 		t.Fatal("a fresh claim is pending again")
 	}
+	// A connect waiting on its administrator is retried half-hourly, spends no attempt, and a consent wakes it at once.
+	if err := repo.AwaitConnectAction(ctx, org, box.ID, models.ActionMicrosoftConsent, ""); err != nil {
+		t.Fatal(err)
+	}
+	if reason, err := repo.DomainActionReason(ctx, org, box.DomainID, models.ActionMicrosoftConsent); err != nil || reason != "" {
+		t.Fatalf("reason with none recorded = %q %v", reason, err)
+	}
+	if ok, _ := repo.ClaimConnect(ctx, org, box.ID, time.Now()); ok {
+		t.Fatal("a mailbox waiting on its administrator was claimed at once")
+	}
+	if ok, _ := repo.ClaimConnect(ctx, org, box.ID, time.Now().Add(31*time.Minute)); !ok {
+		t.Fatal("a waiting mailbox was not retried after half an hour")
+	}
+	if err := repo.AwaitConnectAction(ctx, org, box.ID, models.ActionMicrosoftConsent, models.ConsentReasonMFA); err != nil {
+		t.Fatal(err)
+	}
+	if reason, err := repo.DomainActionReason(ctx, org, box.DomainID, models.ActionMicrosoftConsent); err != nil || reason != models.ConsentReasonMFA {
+		t.Fatalf("domain reason = %q %v", reason, err)
+	}
+	if reason, _ := repo.DomainActionReason(ctx, other, box.DomainID, models.ActionMicrosoftConsent); reason != "" {
+		t.Fatalf("another workspace read the reason %q", reason)
+	}
+	if woken, _ := repo.WakeConnectAction(ctx, other, models.ActionMicrosoftConsent, []string{"acmeoutreach.com"}); len(woken) != 0 {
+		t.Fatal("another workspace woke the connect")
+	}
+	if woken, err := repo.WakeConnectAction(ctx, org, models.ActionMicrosoftConsent, []string{"acmeoutreach.com"}); err != nil || len(woken) != 1 || woken[0].ActionRequired != nil || woken[0].ActionReason != nil {
+		t.Fatalf("woken = %+v %v", woken, err)
+	}
+	if ok, _ := repo.ClaimConnect(ctx, org, box.ID, time.Now()); !ok {
+		t.Fatal("a woken connect was not claimable")
+	}
+	if m, _ := repo.GetMailbox(ctx, org, box.ID); m == nil || m.ConnectAttempts != 1 {
+		t.Fatalf("attempts after waiting = %+v", m)
+	}
 	billable, err := repo.MailboxesDue(ctx, org, time.Now().AddDate(0, 2, 0), time.Now())
 	if err != nil || len(billable) != 1 || billable[0].ID != box.ID {
 		t.Fatalf("due mailboxes = %+v, %v", billable, err)

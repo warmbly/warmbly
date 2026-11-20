@@ -264,6 +264,22 @@ On a [domain you already own](#a-domain-you-already-own) there is nothing to reg
 
 Purchased mailboxes connect without a password or a sign-in screen. Warmbly is given access to them during setup, the same way an [admin grant](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) gives it access to a whole domain. On the rare domain where that is not possible, Warmbly connects the mailbox over IMAP and SMTP with credentials it receives once and stores encrypted.
 
+### Microsoft 365 approval
+
+Microsoft 365 mailboxes connect on their own. Microsoft asks the administrator of the domain's Microsoft 365 account to approve Warmbly once, and Warmbly does that in the background by signing in as the domain's [admin mailbox](#the-admin-mailbox). Until then the mailboxes show the usual connecting progress, and there is nothing for you to do.
+
+Sometimes Microsoft asks for something Warmbly cannot do in the background: an extra sign-in step such as multi-factor authentication, a password that changed, or a sign-in policy on the account. The mailboxes then wait with **Needs approval** on the order page, under an **Approve in Microsoft 365** card for each domain. The card says in one line why the background approval did not finish. To approve:
+
+1. Open the order and select **Approve in Microsoft 365**.
+2. Sign in to Microsoft as the domain's admin mailbox. The card names it, and **Admin sign-in** shows its password.
+3. Accept the permissions Warmbly asks for. Microsoft signs you in once more to confirm you are the administrator, then sends you back to the order.
+
+The order page then says whether the approval went through, and the mailboxes on that domain connect within a minute. If you cancel, or sign in with another account, nothing changes and you can start again. The link is valid for an hour. One approval covers every mailbox on the domain's Microsoft 365 account, including mailboxes you add to it later. Until you approve, Warmbly checks again every half hour, and a waiting mailbox is never marked as failed. Once Microsoft has refused the background sign-in for a domain, Warmbly does not try it again, so a changed password cannot lock the admin mailbox out.
+
+If Microsoft does not answer, Warmbly retries the background approval a few minutes later and shows no card.
+
+Either way the approval is the standard Microsoft 365 admin consent for Warmbly's app, with the permissions to read and send mail and to list the account's users. You can remove it at any time in the Microsoft Entra admin center under **Enterprise applications**, which stops Warmbly from reaching the mailboxes.
+
 Warmup is turned on for each new mailbox with your workspace's default warmup settings, where your plan includes warmup, and each mailbox's sender name is set from its first and last name, and its [signature](#signatures) from the order. A new mailbox should warm for a few weeks before it carries cold campaigns; see [warmup](/guides/warmup/).
 
 New mailboxes start sending gently and ramp up on their own. Starting warmup puts each one under the [warmup graduation](/guides/warmup/#graduating-to-cold-sending) ceiling, so in a campaign whose ramp-up is **As replies come in**, the default, it starts cold sending at five a day and earns more as real recipients reply, up to the mailbox's daily cap of `50`. There is nothing to set up. A campaign set to ramp on a schedule or send at full volume uses that instead; see [ramp-up](/guides/campaigns/#ramp-up). No starting volume guarantees inbox placement.
@@ -427,6 +443,7 @@ Moving the registration does not move the mailboxes. If the new registrar's DNS 
 | Connect, check or remove a domain you already own | **Manage mailboxes** |
 | Add, edit or delete a domain's DNS records | **Manage mailboxes** |
 | Show the admin sign-in | **Manage mailboxes** and a recent sign-in |
+| Start the Microsoft 365 approval | **Manage mailboxes** |
 | Pay for an order, renew a domain, turn auto-renew on or off | **Manage billing** and a recent sign-in |
 | Cancel or resume a mailbox | **Manage billing** and a recent sign-in |
 | Get a domain's transfer code | **Manage billing** and a recent sign-in |

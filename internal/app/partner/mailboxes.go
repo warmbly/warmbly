@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -60,7 +61,9 @@ type MailboxDeps struct {
 	Warmup    WarmupScheduler
 	Credits   Credits
 	Links     ConnectLinks
-	Portals   PortalChecker
+	// Consents opens Microsoft 365 tenant consent for mailboxes bought through the partner's infrastructure; nil turns the links off.
+	Consents MicrosoftConsents
+	Portals  PortalChecker
 	// BrandsChanged drops cached brands after a group's changed.
 	BrandsChanged func()
 }
@@ -105,19 +108,21 @@ type MailboxWarmup struct {
 
 // Mailbox is the partner API's view of one mailbox.
 type Mailbox struct {
-	ID                      string        `json:"id"`
-	Email                   string        `json:"email"`
-	Provider                string        `json:"provider"`
-	Source                  string        `json:"source"`
-	PartnerMailboxID        *string       `json:"partner_mailbox_id"`
-	InfrastructureMailboxID *string       `json:"infrastructure_mailbox_id"`
-	Status                  string        `json:"status"`
-	StatusError             *string       `json:"status_error"`
-	Enablement              string        `json:"enablement"`
-	SendsToday              int           `json:"sends_today"`
-	DailySendLimit          int           `json:"daily_send_limit"`
-	Warmup                  MailboxWarmup `json:"warmup"`
-	CreatedAt               time.Time     `json:"created_at"`
+	ID                      string  `json:"id"`
+	Email                   string  `json:"email"`
+	Provider                string  `json:"provider"`
+	Source                  string  `json:"source"`
+	PartnerMailboxID        *string `json:"partner_mailbox_id"`
+	InfrastructureMailboxID *string `json:"infrastructure_mailbox_id"`
+	Status                  string  `json:"status"`
+	StatusError             *string `json:"status_error"`
+	// ActionRequired names the step a person has to take before the mailbox connects (microsoft_consent), null when none.
+	ActionRequired *string       `json:"action_required"`
+	Enablement     string        `json:"enablement"`
+	SendsToday     int           `json:"sends_today"`
+	DailySendLimit int           `json:"daily_send_limit"`
+	Warmup         MailboxWarmup `json:"warmup"`
+	CreatedAt      time.Time     `json:"created_at"`
 }
 
 // mailboxView builds the answer for a row; limit is its workspace's daily cap.
@@ -140,6 +145,14 @@ func mailboxView(v *repository.PartnerMailboxView, limit int, now time.Time) Mai
 			msg = "Access to the mailbox was revoked."
 		}
 		out.StatusError = &msg
+	}
+	if v.ActionRequired != nil {
+		action := *v.ActionRequired
+		out.ActionRequired = &action
+		if m.ConnectError != nil && *m.ConnectError != "" {
+			msg := *m.ConnectError
+			out.StatusError = &msg
+		}
 	}
 	out.Warmup = mailboxWarmup(v, now)
 	return out
@@ -171,7 +184,7 @@ func mailboxWarmup(v *repository.PartnerMailboxView, now time.Time) MailboxWarmu
 
 // publishedState is the fingerprint the change feed compares against.
 func publishedState(v *repository.PartnerMailboxView) string {
-	return repository.PartnerPublishedState(v.Status, v.Mailbox.Enablement, v.WarmupState)
+	return repository.PartnerPublishedState(v.Status, v.Mailbox.Enablement, v.WarmupState, v.ActionRequired)
 }
 
 // AttachInput is the PUT /organizations/{external_id}/mailboxes/{partner_mailbox_id} body.
@@ -391,16 +404,51 @@ func (s *Service) attachNew(ctx context.Context, c *Caller, po *models.PartnerOr
 		row.EmailAccountID = &acc.ID
 		return s.insertMailbox(ctx, row)
 	default:
-		if xerr := s.checkDelegation(ctx, c.Partner, orgID, in.Connection.Method, in.Provider, in.Email); xerr != nil {
+		if xerr := s.checkDelegation(ctx, c.Partner, orgID, in.Source, in.Connection.Method, in.Provider, in.Email); xerr != nil {
 			return xerr
 		}
 		// Brokered and delegated mailboxes connect in the background: the partner records the attach first,
 		// and its token broker answers only for a mailbox it has attached.
 		next := s.now().Add(connectFirstDelay)
 		row.ConnectState, row.NextConnectAt = models.PartnerConnectPending, &next
-		return s.insertMailbox(ctx, row)
+		if xerr := s.insertMailbox(ctx, row); xerr != nil {
+			return xerr
+		}
+		return s.markConsentPending(ctx, c.Partner, orgID, row)
 	}
 }
+
+// consentPending reports an infrastructure Microsoft 365 mailbox whose tenant has not approved this instance's app
+// for the workspace: no grant of the workspace covers its domain, and the operator did not vouch for it.
+func (s *Service) consentPending(ctx context.Context, p *models.Partner, orgID uuid.UUID, row *models.PartnerMailbox) (bool, *errx.Error) {
+	method := ""
+	if row.ConnectionMethod != nil {
+		method = *row.ConnectionMethod
+	}
+	if !infrastructureMicrosoft(row.Source, row.Provider, method) || delegationVouched(p, row.Email) || s.mb.Delegator == nil {
+		return false, nil
+	}
+	g, xerr := s.mb.Delegator.PartnerDelegationGrant(ctx, orgID, grantProvider(row.Provider), row.Email)
+	if xerr != nil {
+		return false, xerr
+	}
+	return g == nil, nil
+}
+
+// markConsentPending records the approval a just-attached mailbox waits on, so the attach answer already carries it.
+func (s *Service) markConsentPending(ctx context.Context, p *models.Partner, orgID uuid.UUID, row *models.PartnerMailbox) *errx.Error {
+	pending, xerr := s.consentPending(ctx, p, orgID, row)
+	if xerr != nil || !pending {
+		// A grant check that failed leaves the decision to the background connect.
+		return nil
+	}
+	if err := s.mb.Repo.AwaitPartnerAction(ctx, row.ID, models.ActionMicrosoftConsent, delegation.TenantConsentMessage(emailDomain(row.Email)), *row.NextConnectAt); err != nil {
+		return internal(err)
+	}
+	return nil
+}
+
+func emailDomain(address string) string { return address[strings.LastIndex(address, "@")+1:] }
 
 func (s *Service) insertMailbox(ctx context.Context, row *models.PartnerMailbox) *errx.Error {
 	err := s.mb.Repo.InsertPartnerMailbox(ctx, row)
@@ -462,7 +510,7 @@ func (s *Service) reattach(ctx context.Context, c *Caller, po *models.PartnerOrg
 			}
 			row.EmailAccountID, row.ConnectState, row.NextConnectAt = &acc.ID, models.PartnerConnectConnected, nil
 		} else {
-			if xerr := s.checkDelegation(ctx, c.Partner, orgID, method, row.Provider, row.Email); xerr != nil {
+			if xerr := s.checkDelegation(ctx, c.Partner, orgID, row.Source, method, row.Provider, row.Email); xerr != nil {
 				return xerr
 			}
 			next := s.now().Add(connectFirstDelay)
@@ -474,6 +522,11 @@ func (s *Service) reattach(ctx context.Context, c *Caller, po *models.PartnerOrg
 			return errx.NewWithIdentifier(errx.Conflict, "mailbox_exists", "This mailbox is already attached under another id.")
 		}
 		return internal(err)
+	}
+	if needsConnect && row.ConnectState == models.PartnerConnectPending {
+		if xerr := s.markConsentPending(ctx, c.Partner, orgID, row); xerr != nil {
+			return xerr
+		}
 	}
 	if row.EmailAccountID != nil && s.mb.Emails != nil {
 		name := s.senderName(row.FirstName, row.LastName, row.Email)
@@ -492,6 +545,12 @@ func grantProvider(provider string) string {
 	return models.GrantProviderGoogle
 }
 
+// infrastructureMicrosoft is a Microsoft 365 mailbox bought through the partner's infrastructure and delegated to this
+// instance's own app, which its tenant's administrator approves through a consent link.
+func infrastructureMicrosoft(source, provider, method string) bool {
+	return source == models.PartnerSourceInfrastructure && provider == "microsoft" && method == "delegation"
+}
+
 // delegationVouched reports a domain the operator allowed the partner to delegate.
 func delegationVouched(p *models.Partner, address string) bool {
 	at := strings.LastIndex(address, "@")
@@ -508,8 +567,9 @@ func delegationVouched(p *models.Partner, address string) bool {
 }
 
 // checkDelegation refuses a delegation attach for a domain the workspace never proved and the operator never vouched for.
-func (s *Service) checkDelegation(ctx context.Context, p *models.Partner, orgID uuid.UUID, method, provider, address string) *errx.Error {
-	if method != "delegation" || delegationVouched(p, address) {
+func (s *Service) checkDelegation(ctx context.Context, p *models.Partner, orgID uuid.UUID, source, method, provider, address string) *errx.Error {
+	// An infrastructure Microsoft 365 mailbox waits for its tenant's consent instead (microsoftConsentPending).
+	if method != "delegation" || delegationVouched(p, address) || infrastructureMicrosoft(source, provider, method) {
 		return nil
 	}
 	if s.mb.Delegator == nil {

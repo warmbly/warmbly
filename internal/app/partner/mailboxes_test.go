@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 func TestEnablementLanes(t *testing.T) {
@@ -103,5 +104,30 @@ func TestParseMonth(t *testing.T) {
 		if _, xerr := ParseMonth(bad, now); xerr == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// A mailbox waiting on its tenant's consent says which step and why; one with nothing to do keeps its old fingerprint.
+func TestMailboxViewCarriesActionRequired(t *testing.T) {
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	msg := "Approve Warmbly in Microsoft 365 for getacme.com with the domain's admin mailbox."
+	action := models.ActionMicrosoftConsent
+	v := &repository.PartnerMailboxView{Status: "connecting", WarmupState: "off", ActionRequired: &action,
+		Mailbox: models.PartnerMailbox{ID: uuid.New(), Email: "ada@getacme.com", Provider: "microsoft", Source: models.PartnerSourceInfrastructure,
+			Enablement: models.PartnerEnablementOff, ConnectError: &msg}}
+	got := mailboxView(v, 50, now)
+	if got.ActionRequired == nil || *got.ActionRequired != "microsoft_consent" || got.StatusError == nil || *got.StatusError != msg || got.Status != "connecting" {
+		t.Fatalf("view = %+v", got)
+	}
+	if publishedState(v) != "connecting|off|off|microsoft_consent" {
+		t.Fatalf("fingerprint = %q", publishedState(v))
+	}
+	v.ActionRequired = nil
+	got = mailboxView(v, 50, now)
+	if got.ActionRequired != nil || got.StatusError != nil {
+		t.Fatalf("view without a step = %+v", got)
+	}
+	if publishedState(v) != "connecting|off|off" {
+		t.Fatalf("fingerprint without a step = %q", publishedState(v))
 	}
 }

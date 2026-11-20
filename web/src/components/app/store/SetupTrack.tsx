@@ -12,6 +12,8 @@ import { fmtMicros } from "@/lib/buy/money";
 import { activityLine, deriveTrack, stepCount, stepsDone, type StepCount, type Track, type TrackRow } from "@/lib/buy/track";
 import { cn } from "@/lib/utils";
 import { DoneIllustration } from "./Illustrations";
+import MicrosoftApproval from "./MicrosoftApproval";
+import { waitingForApproval } from "@/lib/buy/approval";
 import { EASE, HOVER_LIFT, PRESS_SPRING } from "@/lib/buy/motion";
 
 const NODE = 28;
@@ -28,6 +30,7 @@ export default function SetupTrack({ order, loading, onBuyMore }: { order: Order
     return (
         <div>
             <Progress track={track} />
+            {order && waitingForApproval(order).length > 0 && <MicrosoftApproval order={order} />}
             <AnimatePresence mode="wait" initial={false}>
                 {done && order ? (
                     <motion.div key="done" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -303,6 +306,9 @@ function FailureNote({ order }: { order: Order }) {
 }
 
 function chip(m: StoreMailbox): { label: string; tone: string } {
+    if (m.action_required === "microsoft_consent" && m.connect_state === "waiting") {
+        return { label: "Needs approval", tone: "bg-sky-50 border-sky-200 text-sky-800" };
+    }
     switch (m.connect_state) {
         case "connected":
             return { label: "Warming up", tone: "bg-emerald-50 border-emerald-100 text-emerald-700" };

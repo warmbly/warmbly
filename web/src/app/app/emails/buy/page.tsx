@@ -4,6 +4,8 @@
 import React from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast/headless";
 import { ArrowLeftIcon, Loader2Icon, StoreIcon } from "lucide-react";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { Page } from "@/components/layout/Page";
@@ -12,13 +14,14 @@ import OrderList from "@/components/app/store/OrderList";
 import Senders from "@/components/app/store/Senders";
 import { SummaryPanel, SummarySheet } from "@/components/app/store/OrderSummary";
 import SetupTrack from "@/components/app/store/SetupTrack";
+import { approvalOutcome } from "@/lib/buy/approval";
 import StoreLocked from "@/components/app/store/StoreLocked";
 import { OrdersLink } from "@/components/app/store/StoreLinks";
 import { useCheckout } from "@/components/app/store/useCheckout";
 import { useUserProfile } from "@/hooks/context/user";
 import { LG_QUERY, useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePermission } from "@/hooks/usePermission";
-import { storeState, useOrder, useStoreStatus } from "@/lib/api/hooks/app/store/useStore";
+import { orderQuery, storeState, useOrder, useStoreStatus } from "@/lib/api/hooks/app/store/useStore";
 import usePartnerManaged from "@/hooks/usePartnerManaged";
 import { storePhotoFromProfile } from "@/lib/api/client/app/store/store";
 import { storeErrorCode } from "@/lib/buy/errors";
@@ -180,6 +183,7 @@ function Setup({ id }: { id: string }) {
     const reduced = useReducedMotion();
     const navigate = useNavigate();
     const order = useOrder(id);
+    useApprovalReturn(id);
     return (
         <div className="max-w-[680px] mx-auto">
             <motion.section
@@ -201,6 +205,22 @@ function Setup({ id }: { id: string }) {
             </motion.section>
         </div>
     );
+}
+
+/** Says how the Microsoft 365 approval went when the administrator lands back here, then drops it from the address. */
+function useApprovalReturn(orderId: string) {
+    const queryClient = useQueryClient();
+    React.useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const outcome = approvalOutcome(params.get("status"), params.get("domain"));
+        if (!outcome) return;
+        window.history.replaceState(window.history.state, "", window.location.pathname);
+        if (outcome.kind === "success") toast.success(outcome.text);
+        else if (outcome.kind === "error") toast.error(outcome.text);
+        else toast(outcome.text);
+        void queryClient.invalidateQueries({ queryKey: orderQuery(orderId).queryKey });
+        void queryClient.invalidateQueries({ queryKey: ["store", "mailboxes"] });
+    }, [orderId, queryClient]);
 }
 
 function Shell({ onOrder = false, orders = true, children }: { onOrder?: boolean; orders?: boolean; children?: React.ReactNode }) {

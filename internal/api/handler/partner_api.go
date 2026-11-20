@@ -309,6 +309,7 @@ func (h *Handler) mountPartnerOrganizationRoutes(org *gin.RouterGroup) {
 	org.DELETE("/mailboxes/:partner_mailbox_id", h.PartnerDetachMailbox)
 	org.PUT("/enablements/:mailbox_id", h.PartnerSetEnablement)
 	org.POST("/connect-links", h.PartnerCreateConnectLink)
+	org.POST("/microsoft-consent-links", h.PartnerCreateMicrosoftConsentLink)
 	org.GET("/balance", h.PartnerGetBalance)
 	org.POST("/balance/credits", h.PartnerCreditBalance)
 }

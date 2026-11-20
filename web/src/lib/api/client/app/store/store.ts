@@ -9,6 +9,7 @@ import type {
     DnsRecordPatch,
     DomainSearchResponse,
     MailboxSignIn,
+    MicrosoftConsentLink,
     List,
     Order,
     Quote,
@@ -170,4 +171,15 @@ export async function checkDnsRecords(id: string): Promise<DnsCheckResult> {
 /** A fresh sign-in for the mailbox; the caller shows it once and keeps no copy. */
 export async function signInStoreMailbox(id: string): Promise<MailboxSignIn> {
     return await Request<MailboxSignIn>({ method: "POST", url: `/store/mailboxes/${encodeURIComponent(id)}/sign-in`, data: {}, headers: idem(), authorization: true });
+}
+
+/** The Microsoft 365 approval for a purchased domain; the administrator lands back on the order, or the domains page. */
+export async function startStoreMicrosoftConsent(domainId: string, orderId?: string): Promise<MicrosoftConsentLink> {
+    return await Request<MicrosoftConsentLink>({
+        method: "POST",
+        url: `/store/domains/${encodeURIComponent(domainId)}/microsoft-consent`,
+        data: orderId ? { order_id: orderId } : {},
+        headers: idem(),
+        authorization: true,
+    });
 }

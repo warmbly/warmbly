@@ -138,7 +138,7 @@ func mailboxView(m *models.StoreMailbox, unplanned bool) Mailbox {
 	return Mailbox{ID: m.ID, Email: m.Email, DomainID: m.DomainID, Provider: m.Provider, Status: m.Status, FirstName: m.FirstName,
 		LastName: m.LastName, IsAdmin: m.IsAdmin, Paused: unplanned && liveStatus(m.Status), MonthlyMicros: int64(m.MonthlyRetailMicros),
 		PaidThrough: m.PaidThrough, CancelsAt: m.CancelsAt, CancelledAt: m.CancelledAt, EmailAccountID: m.EmailAccountID, ConnectState: m.ConnectState,
-		Photo: photoState(m), CreatedAt: m.CreatedAt}
+		ActionRequired: actionRequired(m), ActionReason: actionReason(m), Photo: photoState(m), CreatedAt: m.CreatedAt}
 }
 
 // photoState is none, pending (chosen, not taken by the provider yet) or set.
@@ -405,4 +405,22 @@ func (s *Service) SignIn(ctx context.Context, orgID, id uuid.UUID) (*SignIn, err
 		out.AdminConsoleURL = &admin
 	}
 	return out, nil
+}
+
+// actionRequired is the step a mailbox waits on, only while it is still waiting to connect.
+func actionRequired(m *models.StoreMailbox) *string {
+	if m.ActionRequired == nil || m.EmailAccountID != nil || m.ConnectState != models.StoreConnectWaiting {
+		return nil
+	}
+	a := *m.ActionRequired
+	return &a
+}
+
+// actionReason is why the step fell to a person, alongside actionRequired.
+func actionReason(m *models.StoreMailbox) *string {
+	if actionRequired(m) == nil || m.ActionReason == nil {
+		return nil
+	}
+	r := *m.ActionReason
+	return &r
 }

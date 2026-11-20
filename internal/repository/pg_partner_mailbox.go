@@ -27,6 +27,8 @@ type PartnerMailboxView struct {
 	CampaignSentToday  int
 	PlacementMajor     int
 	PlacementMajorSpam int
+	// ActionRequired is the step only a person can take before the mailbox connects, nil when none.
+	ActionRequired *string
 }
 
 // PartnerMailboxCursor pages a workspace's mailboxes oldest first.
@@ -81,6 +83,12 @@ type PartnerMailboxRepository interface {
 	SetPartnerMailboxPublished(ctx context.Context, id uuid.UUID, state string) error
 	ClaimPartnerConnects(ctx context.Context, limit int, lease time.Duration) ([]models.PartnerMailbox, error)
 	FinishPartnerConnect(ctx context.Context, id uuid.UUID, accountID *uuid.UUID, state string, connectErr *string, next *time.Time) error
+	// AwaitPartnerAction parks a connect on a step only a person can take, retrying at next without spending its attempts.
+	AwaitPartnerAction(ctx context.Context, id uuid.UUID, action, msg string, next time.Time) error
+	// WakePartnerAction makes a workspace's connects waiting on a step for these domains due now.
+	WakePartnerAction(ctx context.Context, orgID uuid.UUID, action string, domains []string) error
+	// PartnerMailboxOnDomain reports whether the partner has a live mailbox of provider on domain in the workspace.
+	PartnerMailboxOnDomain(ctx context.Context, partnerID uuid.UUID, mode models.PartnerMode, orgExternalID, provider, domain string) (bool, error)
 	// PartnerTokenMailbox is the token-method row for an address in a workspace, nil when none.
 	PartnerTokenMailbox(ctx context.Context, orgID uuid.UUID, email string) (*models.PartnerMailbox, error)
 	// PartnerMailboxLock is the display name of the partner holding an attached mailbox of the workspace, "" when none does.
@@ -158,21 +166,26 @@ const partnerWarmupStateSQL = `(CASE
 	WHEN ea.warmup_base + ea.warmup_increase * GREATEST(0, floor(extract(epoch FROM localtimestamp - ea.warmup) / 86400))::int < ea.warmup_max THEN 'ramping'
 	ELSE 'healthy' END)`
 
-// partnerPublishedStateSQL is what a mailbox.updated announces a change of.
-const partnerPublishedStateSQL = `(` + partnerMailboxStatusSQL + ` || '|' || pm.enablement || '|' || ` + partnerWarmupStateSQL + `)`
+// partnerActionRequiredSQL is the step a mailbox waits on, only while it is still waiting to connect.
+const partnerActionRequiredSQL = `(CASE WHEN pm.email_account_id IS NULL AND pm.connect_state IN ('pending', 'connecting')
+	AND pm.detached_at IS NULL AND pm.removed_at IS NULL THEN pm.action_required END)`
+
+// partnerPublishedStateSQL is what a mailbox.updated announces a change of; a mailbox with nothing to do keeps its old fingerprint.
+const partnerPublishedStateSQL = `(` + partnerMailboxStatusSQL + ` || '|' || pm.enablement || '|' || ` + partnerWarmupStateSQL +
+	` || COALESCE('|' || ` + partnerActionRequiredSQL + `, ''))`
 
 var partnerMailboxViewSelect = `SELECT ` + partnerMailboxColumns + `, ` + partnerMailboxStatusSQL + `, ` + partnerWarmupStateSQL + `,
 	ea.status::text, ea.warmup, ea.warmup_base, ea.warmup_max, ea.warmup_increase, wpp.last_health_reason,
 	CASE WHEN ea.id IS NULL THEN 0 ELSE (SELECT count(*) FROM tasks t WHERE t.email_account_id = ea.id AND t.task_type = 'warmup'
 		AND t.status = 'completed' AND t.completed_at > now() - interval '7 days') END,
 	CASE WHEN ea.id IS NULL THEN 0 ELSE ` + partnerCampaignSentTodaySQL("ea.id", "NULL::uuid") + ` END,
-	COALESCE(pe.major, 0), COALESCE(pe.major_spam, 0)` + partnerMailboxJoins + `
+	COALESCE(pe.major, 0), COALESCE(pe.major_spam, 0), ` + partnerActionRequiredSQL + partnerMailboxJoins + `
 	LEFT JOIN LATERAL (` + placementEvidenceSQL("ea.id", "now() - interval '7 days'") + `) pe ON true`
 
 func scanPartnerMailboxView(row pgx.Row) (*PartnerMailboxView, error) {
 	var v PartnerMailboxView
 	dest := append(partnerMailboxDest(&v.Mailbox), &v.Status, &v.WarmupState, &v.AccountStatus, &v.WarmupAt, &v.WarmupBase, &v.WarmupMax,
-		&v.WarmupIncrease, &v.HealthReason, &v.WarmupSent7d, &v.CampaignSentToday, &v.PlacementMajor, &v.PlacementMajorSpam)
+		&v.WarmupIncrease, &v.HealthReason, &v.WarmupSent7d, &v.CampaignSentToday, &v.PlacementMajor, &v.PlacementMajorSpam, &v.ActionRequired)
 	err := row.Scan(dest...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -419,8 +432,12 @@ func (r *partnerMailboxRepository) ChangedPartnerMailboxes(ctx context.Context, 
 }
 
 // PartnerPublishedState is the fingerprint ChangedPartnerMailboxes compares against, built the same way.
-func PartnerPublishedState(status string, e models.PartnerEnablement, warmupState string) string {
-	return status + "|" + string(e) + "|" + warmupState
+func PartnerPublishedState(status string, e models.PartnerEnablement, warmupState string, action *string) string {
+	out := status + "|" + string(e) + "|" + warmupState
+	if action != nil {
+		out += "|" + *action
+	}
+	return out
 }
 
 func (r *partnerMailboxRepository) SetPartnerMailboxPublished(ctx context.Context, id uuid.UUID, state string) error {
@@ -452,11 +469,33 @@ func (r *partnerMailboxRepository) ClaimPartnerConnects(ctx context.Context, lim
 
 func (r *partnerMailboxRepository) FinishPartnerConnect(ctx context.Context, id uuid.UUID, accountID *uuid.UUID, state string, connectErr *string, next *time.Time) error {
 	_, err := r.db.Exec(ctx, `UPDATE partner_mailboxes SET email_account_id = COALESCE($2, email_account_id), connect_state = $3,
-		connect_error = $4, next_connect_at = $5, updated_at = now() WHERE id = $1 AND detached_at IS NULL`, id, accountID, state, connectErr, next)
+		connect_error = $4, next_connect_at = $5, action_required = NULL, updated_at = now() WHERE id = $1 AND detached_at IS NULL`, id, accountID, state, connectErr, next)
 	if isUniqueViolation(err) {
 		return ErrPartnerMailboxTaken
 	}
 	return err
+}
+
+func (r *partnerMailboxRepository) AwaitPartnerAction(ctx context.Context, id uuid.UUID, action, msg string, next time.Time) error {
+	_, err := r.db.Exec(ctx, `UPDATE partner_mailboxes SET connect_state = 'pending', connect_error = $3, action_required = $2,
+		connect_attempts = 0, next_connect_at = $4, updated_at = now()
+		WHERE id = $1 AND detached_at IS NULL AND email_account_id IS NULL`, id, action, msg, next)
+	return err
+}
+
+func (r *partnerMailboxRepository) WakePartnerAction(ctx context.Context, orgID uuid.UUID, action string, domains []string) error {
+	_, err := r.db.Exec(ctx, `UPDATE partner_mailboxes SET next_connect_at = now(), updated_at = now()
+		WHERE organization_id = $1 AND action_required = $2 AND connect_state = 'pending' AND detached_at IS NULL
+		  AND email_account_id IS NULL AND split_part(email, '@', 2) = ANY($3)`, orgID, action, domains)
+	return err
+}
+
+func (r *partnerMailboxRepository) PartnerMailboxOnDomain(ctx context.Context, partnerID uuid.UUID, mode models.PartnerMode, orgExternalID, provider, domain string) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM partner_mailboxes WHERE partner_id = $1 AND mode = $2 AND org_external_id = $3
+		AND provider = $4 AND split_part(email, '@', 2) = $5 AND detached_at IS NULL AND removed_at IS NULL)`,
+		partnerID, mode, orgExternalID, provider, domain).Scan(&ok)
+	return ok, err
 }
 
 func (r *partnerMailboxRepository) PartnerTokenMailbox(ctx context.Context, orgID uuid.UUID, email string) (*models.PartnerMailbox, error) {

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -46,12 +48,42 @@ type memDelegator struct {
 	// signatures are the Gmail signatures set, as "address html"; signatureFail refuses that many first.
 	signatures    []string
 	signatureFail int
+	// awaitConsent answers every connect as a tenant still waiting on its administrator's consent.
+	awaitConsent bool
+	// consents are the tenant consents started, as "domain returnURL".
+	consents []string
+	// autoConsent answers the automatic tenant consent; nil approves the tenant, which ends awaitConsent.
+	autoConsent error
+	// autoConsents are the automatic consents run, as "domain admin password-given".
+	autoConsents []string
+}
+
+func (d *memDelegator) ConsentPurchasedTenantWithAdmin(_ context.Context, _, _ uuid.UUID, domain, admin, password string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.autoConsents = append(d.autoConsents, fmt.Sprintf("%s %s %t", domain, admin, password != ""))
+	if d.autoConsent != nil {
+		return d.autoConsent
+	}
+	d.awaitConsent = false
+	return nil
+}
+
+func (d *memDelegator) StartPurchasedMicrosoftConsent(_ context.Context, _, _ uuid.UUID, domain, returnURL string) (*delegation.MicrosoftConsent, *errx.Error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.consents = append(d.consents, domain+" "+returnURL)
+	return &delegation.MicrosoftConsent{URL: "https://login.example/adminconsent?state=x", ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 
 func (d *memDelegator) ConnectPurchased(_ context.Context, _, _ uuid.UUID, provider, address, _, _ string, brokered bool) (*models.Email, *errx.Error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.calls = append(d.calls, provider+":"+address)
+	if d.awaitConsent {
+		d.brokered = append(d.brokered, brokered)
+		return nil, errx.NewWithIdentifier(errx.Unprocessable, delegation.ErrIDMicrosoftTenantConsent, "approve it")
+	}
 	d.brokered = append(d.brokered, brokered)
 	return &models.Email{ID: uuid.New(), Email: address}, nil
 }

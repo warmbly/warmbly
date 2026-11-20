@@ -2207,6 +2207,7 @@ func main() {
 		storeService = store.New(storeDeps)
 		storeService.WireConnectionSettings(repository.NewStoreConnectionRepository(primaryDB.Pool, credEncrypter), storeCfg)
 		delegationService.WirePurchasedTokens(storeService)
+		delegationService.WireConsentWaker(storeService.WakeMicrosoftConsent)
 		// A card saved after a refused store charge pays what is unpaid at once.
 		if cs, ok := stripeService.(interface {
 			WireCardSaved(func(context.Context, uuid.UUID))
@@ -2526,6 +2527,8 @@ func main() {
 		}
 		if delegationService != nil {
 			partnerMailboxes.Delegator = delegationService
+			partnerMailboxes.Consents = delegationService
+			delegationService.WireConsentWaker(partnerService.WakeMicrosoftConsent)
 		}
 		if connectLinkService != nil {
 			partnerMailboxes.Links = connectLinkService

@@ -38,6 +38,7 @@ func TestStoreRoutesCarryTheirScopes(t *testing.T) {
 		"POST /domains/connect":                   m,
 		"POST /domains/:id/connection/check":      m,
 		"POST /domains/:id/connection/regenerate": m,
+		"POST /domains/:id/microsoft-consent":     m,
 		"DELETE /domains/:id":                     m,
 		"POST /domains/:id/dns":                   m,
 		"PATCH /domains/:id/dns/:record_id":       m,

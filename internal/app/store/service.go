@@ -70,6 +70,11 @@ type People interface {
 type Delegator interface {
 	ConnectPurchased(ctx context.Context, orgID, userID uuid.UUID, provider, address, name, admin string, brokered bool) (*models.Email, *errx.Error)
 	MicrosoftAppIdentity() (appID string, permissions []string, ok bool)
+	// ConsentPurchasedTenantWithAdmin approves the app in a purchased domain's tenant with its admin mailbox's sign-in;
+	// a *delegation.AutoConsentError says why it did not.
+	ConsentPurchasedTenantWithAdmin(ctx context.Context, orgID, userID uuid.UUID, domain, adminEmail, adminPassword string) error
+	// StartPurchasedMicrosoftConsent opens a purchased domain's Microsoft 365 tenant consent, ending at returnURL.
+	StartPurchasedMicrosoftConsent(ctx context.Context, orgID, userID uuid.UUID, domain, returnURL string) (*delegation.MicrosoftConsent, *errx.Error)
 	// GoogleAppIdentity is this instance's service account for domain-wide delegation; ok is false without one.
 	GoogleAppIdentity() (clientID string, scopes []string, ok bool)
 	// SetPurchasedSignature sets the Gmail send-as signature on a purchased Google mailbox's own address.

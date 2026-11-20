@@ -31,6 +31,8 @@ type memRepo struct {
 	seen      map[string]bool
 	cursor    string
 	attempted map[uuid.UUID]time.Time
+	// connectAt is each mailbox's last connect claim.
+	connectAt map[uuid.UUID]time.Time
 	aligned   map[uuid.UUID]bool
 	photos    map[uuid.UUID]*models.StorePhoto
 	photoTry  map[uuid.UUID]photoTry
@@ -44,7 +46,7 @@ type memRepo struct {
 func newMemRepo() *memRepo {
 	return &memRepo{accounts: map[uuid.UUID]*models.StoreAccount{}, quotes: map[uuid.UUID]*models.StoreQuote{},
 		orders: map[uuid.UUID]*models.StoreOrder{}, domains: map[uuid.UUID]*models.StoreDomain{},
-		mailboxes: map[uuid.UUID]*models.StoreMailbox{}, seen: map[string]bool{}, attempted: map[uuid.UUID]time.Time{}, aligned: map[uuid.UUID]bool{},
+		mailboxes: map[uuid.UUID]*models.StoreMailbox{}, seen: map[string]bool{}, attempted: map[uuid.UUID]time.Time{}, connectAt: map[uuid.UUID]time.Time{}, aligned: map[uuid.UUID]bool{},
 		photos: map[uuid.UUID]*models.StorePhoto{}, photoTry: map[uuid.UUID]photoTry{}, signatureTry: map[uuid.UUID]photoTry{}, now: time.Now}
 }
 
@@ -786,20 +788,24 @@ func (r *memRepo) detach(accountID uuid.UUID) {
 	}
 }
 
-func (r *memRepo) claimable(m *models.StoreMailbox) bool {
-	return m.EmailAccountID == nil && m.Status == "active" && m.CancelledAt == nil && (m.ConnectState == models.StoreConnectWaiting ||
-		(m.ConnectState == models.StoreConnectFailed && m.ConnectAttempts < 5))
+// claimable mirrors storeConnectRetry, with connectAt standing in for connect_attempted_at.
+func (r *memRepo) claimable(m *models.StoreMailbox, now time.Time) bool {
+	at, tried := r.connectAt[m.ID]
+	return m.EmailAccountID == nil && m.Status == "active" && m.CancelledAt == nil && ((m.ConnectState == models.StoreConnectWaiting &&
+		(m.ActionRequired == nil || !tried || at.Before(now.Add(-30*time.Minute)))) ||
+		(m.ConnectState == models.StoreConnectFailed && m.ConnectAttempts < 5 && at.Before(now.Add(-10*time.Minute*time.Duration(m.ConnectAttempts)))))
 }
 
-func (r *memRepo) ClaimConnect(_ context.Context, orgID, id uuid.UUID, _ time.Time) (bool, error) {
+func (r *memRepo) ClaimConnect(_ context.Context, orgID, id uuid.UUID, now time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m := r.mailbox(orgID, id)
-	if m == nil || !r.claimable(m) {
+	if m == nil || !r.claimable(m, now) {
 		return false, nil
 	}
 	m.ConnectState = models.StoreConnectConnecting
 	m.ConnectAttempts++
+	r.connectAt[m.ID] = now
 	return true, nil
 }
 
@@ -810,17 +816,55 @@ func (r *memRepo) FinishConnect(_ context.Context, orgID, id uuid.UUID, acc *uui
 		if acc != nil {
 			m.EmailAccountID = acc
 		}
-		m.ConnectState, m.ConnectError = state, msg
+		m.ConnectState, m.ConnectError, m.ActionRequired, m.ActionReason = state, msg, nil, nil
 	}
 	return nil
 }
 
-func (r *memRepo) PendingConnects(context.Context, time.Time, int) ([]models.StoreMailbox, error) {
+func (r *memRepo) AwaitConnectAction(_ context.Context, orgID, id uuid.UUID, action, reason string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m := r.mailbox(orgID, id); m != nil && m.EmailAccountID == nil {
+		m.ConnectState, m.ConnectError, m.ConnectAttempts, m.ActionRequired, m.ActionReason = models.StoreConnectWaiting, "", 0, &action, nil
+		if reason != "" {
+			m.ActionReason = &reason
+		}
+	}
+	return nil
+}
+
+func (r *memRepo) DomainActionReason(_ context.Context, orgID, domainID uuid.UUID, action string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, m := range r.mailboxes {
+		if m.OrganizationID == orgID && m.DomainID == domainID && m.EmailAccountID == nil && liveMailbox(m) &&
+			m.ActionRequired != nil && *m.ActionRequired == action && m.ActionReason != nil {
+			return *m.ActionReason, nil
+		}
+	}
+	return "", nil
+}
+
+func (r *memRepo) WakeConnectAction(_ context.Context, orgID uuid.UUID, action string, domains []string) ([]models.StoreMailbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []models.StoreMailbox
 	for _, m := range r.mailboxes {
-		if r.claimable(m) {
+		at := strings.LastIndex(m.Email, "@")
+		if m.OrganizationID == orgID && m.EmailAccountID == nil && m.ActionRequired != nil && *m.ActionRequired == action && slices.Contains(domains, m.Email[at+1:]) {
+			m.ActionRequired, m.ActionReason = nil, nil
+			out = append(out, *m)
+		}
+	}
+	return out, nil
+}
+
+func (r *memRepo) PendingConnects(_ context.Context, now time.Time, _ int) ([]models.StoreMailbox, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []models.StoreMailbox
+	for _, m := range r.mailboxes {
+		if r.claimable(m, now) {
 			out = append(out, *m)
 		}
 	}
@@ -1069,15 +1113,16 @@ func (r *memRepo) SetMailboxNotice(_ context.Context, id uuid.UUID, notice strin
 	return true, nil
 }
 
-func (r *memRepo) DomainAdminEmail(_ context.Context, orgID, domainID uuid.UUID) (string, error) {
+func (r *memRepo) DomainAdminMailbox(_ context.Context, orgID, domainID uuid.UUID) (*models.StoreMailbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, m := range r.mailboxes {
 		if m.OrganizationID == orgID && m.DomainID == domainID && m.IsAdmin && liveMailbox(m) {
-			return m.Email, nil
+			cp := *m
+			return &cp, nil
 		}
 	}
-	return "", nil
+	return nil, nil
 }
 
 func liveMailbox(m *models.StoreMailbox) bool {

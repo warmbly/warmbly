@@ -176,7 +176,8 @@ func (s *Service) gmailProfile(ctx context.Context, ts oauth2.TokenSource) (stri
 // marked purchased; an unbrokered one through this instance's own service
 // account, which GraphKit authorized in the Workspace, under an ordinary grant
 // read through admin, the domain's admin mailbox. A Microsoft 365 one goes
-// through this instance's app, which the purchase consented in the tenant.
+// through this instance's app once the tenant consented to it, and answers
+// ErrIDMicrosoftTenantConsent until then (StartPurchasedMicrosoftConsent).
 // It reuses the workspace's grant for the domain when one covers it.
 func (s *Service) ConnectPurchased(ctx context.Context, orgID, userID uuid.UUID, provider, address, name, admin string, brokered bool) (*models.Email, *errx.Error) {
 	address = strings.ToLower(strings.TrimSpace(address))
@@ -225,6 +226,13 @@ func (s *Service) ConnectPurchased(ctx context.Context, orgID, userID uuid.UUID,
 		tenant, err := s.microsoftTenant(ctx, domain)
 		if err != nil {
 			return nil, unavailableErr()
+		}
+		// A tenant that has not approved the app waits for its administrator, which the caller tells apart from a failure.
+		if err := s.microsoftProbe(ctx, tenant); err != nil {
+			if microsoftConsentMissing(err) {
+				return nil, errTenantConsent(domain)
+			}
+			return nil, s.microsoftErr(err)
 		}
 		domains := []string{domain}
 		for i := range list {

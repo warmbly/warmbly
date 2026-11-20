@@ -2,12 +2,14 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/displayname"
 	"github.com/warmbly/warmbly/internal/pkg/graphkit"
@@ -83,7 +85,13 @@ func (s *Service) connect(ctx context.Context, row *models.StoreMailbox, m *grap
 	if name == "" {
 		name = displayname.FromEmail(row.Email)
 	}
-	acc, cerr := s.connectBy(ctx, orgID, userID, row, m, name)
+	acc, cerr, waitReason := s.connectBy(ctx, orgID, userID, row, m, name)
+	if waitReason != "" {
+		// Not a failure: the domain's administrator approves the app once, and that wakes it (WakeMicrosoftConsent).
+		_ = s.Repo.AwaitConnectAction(context.WithoutCancel(ctx), orgID, row.ID, models.ActionMicrosoftConsent, waitReason)
+		s.publishMailbox(ctx, &models.StoreMailbox{ID: row.ID, OrganizationID: orgID, DomainID: row.DomainID, Status: row.Status, ConnectState: models.StoreConnectWaiting})
+		return
+	}
 	if cerr != "" {
 		_ = s.Repo.FinishConnect(context.WithoutCancel(ctx), orgID, row.ID, nil, models.StoreConnectFailed, cerr)
 		s.publishMailbox(ctx, &models.StoreMailbox{ID: row.ID, OrganizationID: orgID, DomainID: row.DomainID, Status: row.Status, ConnectState: models.StoreConnectFailed})
@@ -111,12 +119,13 @@ func (s *Service) connect(ctx context.Context, row *models.StoreMailbox, m *grap
 	}
 }
 
-// connectBy connects through the mailbox's method and returns a workspace-safe failure.
-func (s *Service) connectBy(ctx context.Context, orgID, userID uuid.UUID, row *models.StoreMailbox, m *graphkit.Mailbox, name string) (*models.Email, string) {
+// connectBy connects through the mailbox's method and returns a workspace-safe failure, or why a Microsoft 365 tenant
+// that has not approved this instance's app is left to its administrator, which is not a failure.
+func (s *Service) connectBy(ctx context.Context, orgID, userID uuid.UUID, row *models.StoreMailbox, m *graphkit.Mailbox, name string) (*models.Email, string, string) {
 	switch m.Connection.Method {
 	case graphkit.ConnectToken, graphkit.ConnectDelegation:
 		if s.Delegator == nil {
-			return nil, connectFailed
+			return nil, connectFailed, ""
 		}
 		provider := models.GrantProviderGoogle
 		if m.Provider == graphkit.ProviderMicrosoft {
@@ -124,24 +133,67 @@ func (s *Service) connectBy(ctx context.Context, orgID, userID uuid.UUID, row *m
 		}
 		// A Google Workspace delegated to this instance's own service account is
 		// read through its admin mailbox, like any administrator's grant.
-		admin, err := s.Repo.DomainAdminEmail(ctx, orgID, row.DomainID)
+		adminRow, err := s.Repo.DomainAdminMailbox(ctx, orgID, row.DomainID)
 		if err != nil {
-			return nil, connectFailed
+			return nil, connectFailed, ""
 		}
-		if admin == "" {
-			admin = row.Email
+		admin := row.Email
+		if adminRow != nil {
+			admin = adminRow.Email
 		}
 		brokered := m.Connection.Method == graphkit.ConnectToken
 		acc, xerr := s.Delegator.ConnectPurchased(ctx, orgID, userID, provider, row.Email, name, admin, brokered)
+		if xerr != nil && xerr.Identifier == delegation.ErrIDMicrosoftTenantConsent {
+			if failure, reason := s.approveTenant(ctx, orgID, userID, row, adminRow); failure != "" || reason != "" {
+				return nil, failure, reason
+			}
+			acc, xerr = s.Delegator.ConnectPurchased(ctx, orgID, userID, provider, row.Email, name, admin, brokered)
+		}
 		if xerr != nil {
 			log.Warn().Str("store_mailbox_id", row.ID.String()).Str("reason", xerr.ResponseCode()).Msg("store: connecting a purchased mailbox failed")
-			return nil, connectFailed
+			return nil, connectFailed, ""
 		}
-		return acc, ""
+		return acc, "", ""
 	case graphkit.ConnectPassword:
-		return s.connectPassword(ctx, orgID, userID, row, name)
+		acc, failure := s.connectPassword(ctx, orgID, userID, row, name)
+		return acc, failure, ""
 	}
-	return nil, connectFailed
+	return nil, connectFailed, ""
+}
+
+// approveTenant approves the app in the mailbox's tenant with the admin mailbox's sign-in: nothing when done, a failure to
+// retry soon, or why it is left to the administrator. A domain that fell back never signs in again, so nothing locks the account.
+func (s *Service) approveTenant(ctx context.Context, orgID, userID uuid.UUID, row *models.StoreMailbox, admin *models.StoreMailbox) (failure, reason string) {
+	if reason, err := s.Repo.DomainActionReason(ctx, orgID, row.DomainID, models.ActionMicrosoftConsent); err != nil {
+		return connectFailed, ""
+	} else if reason != "" {
+		return "", reason
+	}
+	if admin == nil || admin.GraphKitMailboxID == "" {
+		return "", models.ConsentReasonNoSignIn
+	}
+	creds, gerr := s.api().MailboxCredentials(ctx, admin.GraphKitMailboxID)
+	if gerr != nil {
+		logUpstream("mailbox.credentials", gerr)
+		if graphkit.Definitive(gerr) {
+			return "", models.ConsentReasonNoSignIn
+		}
+		return connectFailed, ""
+	}
+	username := creds.Username
+	if username == "" {
+		username = admin.Email
+	}
+	err := s.Delegator.ConsentPurchasedTenantWithAdmin(ctx, orgID, userID, row.Email[strings.LastIndex(row.Email, "@")+1:], username, creds.Password)
+	creds.Password, creds.AppPassword = "", ""
+	if err == nil {
+		return "", ""
+	}
+	var ae *delegation.AutoConsentError
+	if errors.As(err, &ae) && !ae.Retryable() {
+		return "", ae.Reason
+	}
+	return connectFailed, ""
 }
 
 // connectPassword fetches the credentials once and connects through the
@@ -201,4 +253,16 @@ func (s *Service) purchaser(ctx context.Context, row *models.StoreMailbox) uuid.
 		}
 	}
 	return uuid.Nil
+}
+
+// WakeMicrosoftConsent makes a workspace's mailboxes waiting on these domains' tenant consent connect on the next pass.
+func (s *Service) WakeMicrosoftConsent(ctx context.Context, orgID uuid.UUID, domains []string) {
+	rows, err := s.Repo.WakeConnectAction(ctx, orgID, models.ActionMicrosoftConsent, domains)
+	if err != nil {
+		log.Warn().Err(err).Str("org_id", orgID.String()).Msg("store: waking connects after a tenant consent failed")
+		return
+	}
+	for i := range rows {
+		s.publishMailbox(ctx, &rows[i])
+	}
 }

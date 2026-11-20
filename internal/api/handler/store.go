@@ -788,3 +788,30 @@ func (h *Handler) GetAgencyStore(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, out)
 }
+
+// StartStoreMicrosoftConsent is POST /v1/store/domains/:id/microsoft-consent: where the domain's Microsoft 365
+// administrator approves Warmbly, landing back on this dashboard. It changes nothing until they do.
+func (h *Handler) StartStoreMicrosoftConsent(c *gin.Context) {
+	orgID, userID, ok := h.storeCaller(c)
+	if !ok {
+		return
+	}
+	id, ok := storeID(c)
+	if !ok {
+		return
+	}
+	var in store.ConsentRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&in); err != nil {
+			errx.JSON(c, errx.InvalidBody(err))
+			return
+		}
+	}
+	link, err := h.StoreService.MicrosoftConsent(c.Request.Context(), orgID, userID, id, in)
+	if err != nil {
+		storeError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, link)
+}

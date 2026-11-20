@@ -166,6 +166,12 @@ func (h *Handler) renderOAuthCallback(c *gin.Context, provider string) {
 		return
 	}
 
+	// A purchased mailbox's tenant consent has no session; only the state carries who asked and where they return.
+	if delegation.IsPurchasedConsentState(state) {
+		h.finishPurchasedConsent(c, code, state, providerErr)
+		return
+	}
+
 	// Microsoft reports an admin consent with no code; the admin grant then needs a sign-in, same state.
 	if strings.HasPrefix(state, delegation.MicrosoftStatePrefix) && providerErr == "" && code == "" &&
 		strings.EqualFold(c.Query("admin_consent"), "true") && h.DelegationService != nil {
@@ -297,4 +303,21 @@ func (h *Handler) finishVendorConsent(c *gin.Context, provider, code, state, pro
 			c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"provider": acc.Provider, "email": acc.Email, "via": "vendor_consent"})
 	}
 	renderNotice(c, http.StatusOK, "Connected", "The mailbox is connected to Warmbly. You can close this window.")
+}
+
+// finishPurchasedConsent moves a tenant consent on: to the administrator's sign-in, then back where it started.
+func (h *Handler) finishPurchasedConsent(c *gin.Context, code, state, providerErr string) {
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("Cache-Control", "no-store")
+	if h.DelegationService != nil {
+		to, ok := h.DelegationService.FinishPurchasedMicrosoftConsent(c.Request.Context(), state, delegation.ConsentReturn{
+			AdminConsent: c.Query("admin_consent"), Tenant: c.Query("tenant"), Code: code, Error: providerErr,
+		})
+		if ok {
+			c.Redirect(http.StatusFound, to)
+			return
+		}
+	}
+	renderNotice(c, http.StatusBadRequest, "Link expired",
+		"This approval link was already used or has expired. Go back to where you started and open a new one.")
 }
