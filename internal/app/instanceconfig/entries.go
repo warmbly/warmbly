@@ -882,7 +882,7 @@ var table = []Entry{
 	},
 	{
 		Key: "IMAP_IDLE", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "Workers hold each IMAP INBOX open in IDLE on a second connection, so new mail in INBOX and junk syncs within seconds. false leaves IMAP mailboxes to the full check every 15 to 60 minutes.",
+		Effect:     "Workers hold each IMAP INBOX open in IDLE on a second connection, so new mail in INBOX and junk syncs within seconds. false checks INBOX and junk about every 5 minutes instead; other folders are checked every 15 to 60 minutes either way.",
 		DocsAnchor: docsMailboxSync,
 		Resolve:    envOr("IMAP_IDLE", "true"),
 	},

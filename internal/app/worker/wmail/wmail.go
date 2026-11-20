@@ -113,6 +113,8 @@ type WMail struct {
 	graphTick  *tickStats
 	// mapPage is the running page's batched message-map answers.
 	mapPage mapPage
+	// narrowDeferred is set by a narrow check that met work only the full pass does.
+	narrowDeferred bool
 	// googleReconciledAt is when the Gmail folder reconciliation last ran;
 	// googleInboxChecked is when it last looked up an id and found it still
 	// in the inbox (or gone), so the next passes spend lookups elsewhere.

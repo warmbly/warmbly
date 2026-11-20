@@ -46,6 +46,7 @@ func (w *WMail) imapWakeCheck(ctx context.Context) *errx.MailError {
 			return err
 		}
 		if view.UIDValidity != 0 && view.UIDValidity != before.UIDValidity {
+			w.narrowDeferred = true
 			continue
 		}
 		condStore := client.HasCondStore() && view.HighestModSeq > 0

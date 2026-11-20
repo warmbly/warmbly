@@ -17,11 +17,11 @@ func newSignalTestMail() *WMail {
 func TestNoSignalMailboxNarrowPollsOnTheTimer(t *testing.T) {
 	w := newSignalTestMail()
 	last := time.Now()
-	at, _ := w.narrowPoll(last, config.SyncNarrowPollInterval, true)
+	at, _ := w.narrowPoll(last, 1, true)
 	if !at.Equal(last.Add(config.SyncNarrowPollInterval)) {
 		t.Fatalf("no signal: narrow poll at %v, want five minutes after the last check", at)
 	}
-	if at, _ := w.narrowPoll(last, config.SyncNarrowPollInterval, false); !at.IsZero() {
+	if at, _ := w.narrowPoll(last, 1, false); !at.IsZero() {
 		t.Fatal("a narrow poll was scheduled inside a backoff")
 	}
 	started := time.Now()
@@ -45,11 +45,11 @@ func TestNoSignalMailboxNarrowPollsOnTheTimer(t *testing.T) {
 	}
 }
 
-// A mailbox with IDLE or a live push channel has no narrow timer.
+// A mailbox with IDLE has no narrow timer; a live push channel gets only the 15-minute safety check.
 func TestSignalledMailboxDoesNotNarrowPoll(t *testing.T) {
 	w := newSignalTestMail()
 	w.setImapIdle(true)
-	if at, _ := w.narrowPoll(time.Now(), config.SyncNarrowPollInterval, true); !at.IsZero() {
+	if at, _ := w.narrowPoll(time.Now(), 1, true); !at.IsZero() {
 		t.Fatal("an IDLE mailbox was given a narrow poll")
 	}
 
@@ -57,9 +57,10 @@ func TestSignalledMailboxDoesNotNarrowPoll(t *testing.T) {
 	expires := time.Now().Add(time.Hour)
 	push.ApplyPush(&models.AddWorkerEmailPushData{GraphNotificationURL: "https://x", GraphClientState: "s",
 		State: &models.MailboxPushState{Provider: models.MailboxPushGraph, SubscriptionID: "sub", ExpiresAt: expires}})
-	at, until := push.narrowPoll(time.Now(), config.SyncNarrowPollInterval, true)
-	if !at.IsZero() || !until.Equal(expires) {
-		t.Fatalf("live push channel: narrow poll %v, lapse %v", at, until)
+	last := time.Now()
+	at, until := push.narrowPoll(last, 1, true)
+	if !at.Equal(last.Add(config.SyncPushSafetyInterval)) || !until.Equal(expires) {
+		t.Fatalf("live push channel: narrow poll %v, lapse %v, want the 15-minute safety check", at, until)
 	}
 	<-push.signal
 	// The channel lapsing ends the wait so the timer takes over.
@@ -67,7 +68,7 @@ func TestSignalledMailboxDoesNotNarrowPoll(t *testing.T) {
 		t.Fatalf("a lapsing channel gave step %v", step)
 	}
 	push.push.state.ExpiresAt = time.Now().Add(-time.Second)
-	if at, _ := push.narrowPoll(time.Now(), config.SyncNarrowPollInterval, true); at.IsZero() {
+	if at, _ := push.narrowPoll(time.Now(), 1, true); at.IsZero() {
 		t.Fatal("a lapsed push channel did not fall back to the narrow poll")
 	}
 }
@@ -91,11 +92,11 @@ func TestLosingIdleSwitchesTheNarrowPollOn(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("losing IDLE did not end the wait")
 	}
-	if at, _ := w.narrowPoll(time.Now(), config.SyncNarrowPollInterval, true); at.IsZero() {
+	if at, _ := w.narrowPoll(time.Now(), 1, true); at.IsZero() {
 		t.Fatal("no narrow poll after IDLE dropped")
 	}
 	w.setImapIdle(true)
-	if at, _ := w.narrowPoll(time.Now(), config.SyncNarrowPollInterval, true); !at.IsZero() {
+	if at, _ := w.narrowPoll(time.Now(), 1, true); !at.IsZero() {
 		t.Fatal("the narrow poll kept running after IDLE came back")
 	}
 }

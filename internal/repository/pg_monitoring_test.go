@@ -31,7 +31,7 @@ func TestSyncStaleCutoffFollowsTheFullCheckInterval(t *testing.T) {
 	}
 	r.WireSyncStaleAfter(func(context.Context) time.Duration { return 6 * time.Hour })
 	query := monitoringStatementWith(monitoringSections["sync"], r.staleAfter(context.Background()))
-	if strings.Count(query, "INTERVAL '21600 seconds'") != 2 {
-		t.Fatalf("both stale metrics must use the wired cutoff: %s", query)
+	if strings.Count(query, "INTERVAL '21600 seconds'") != 3 {
+		t.Fatalf("every stale metric must use the wired cutoff: %s", query)
 	}
 }

@@ -24,7 +24,8 @@ func TestFullCheckIntervalScalesWithTheAllowance(t *testing.T) {
 		{"at the allowance", 10, &ten, 60 * time.Minute},
 		{"twice the allowance", 20, &ten, 60 * time.Minute},
 		{"unlimited", 500, nil, 15 * time.Minute},
-		{"no allowance", 3, &zero, 15 * time.Minute},
+		{"mailboxes kept on a zero allowance", 3, &zero, 60 * time.Minute},
+		{"zero allowance and no mailboxes", 0, &zero, 15 * time.Minute},
 	} {
 		if got := s.FullCheckInterval(tc.used, tc.allowance); got != tc.want {
 			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)

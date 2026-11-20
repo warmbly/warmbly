@@ -9,6 +9,10 @@ import (
 const (
 	// SyncNarrowPollInterval is how often a mailbox with no live change signal gets the narrow check a wake would run.
 	SyncNarrowPollInterval = 5 * time.Minute
+	// SyncPushSafetyInterval is the narrow check behind a live push channel, which can stop delivering without lapsing.
+	SyncPushSafetyInterval = 15 * time.Minute
+	// SyncCatchUpInterval spaces full passes while an import or recovery that only the full pass advances is unfinished.
+	SyncCatchUpInterval = time.Minute
 	// SyncFullCheckDefault is a worker's full check interval when the control plane sends none.
 	SyncFullCheckDefault = time.Duration(SyncFullCheckMinMinutesDefault) * time.Minute
 	// SyncFullCheckFloor is the shortest full check interval a worker accepts.

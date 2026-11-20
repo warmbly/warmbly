@@ -482,12 +482,16 @@ func (s *Sync) Normalize() {
 
 // FullCheckInterval is how often a workspace's mailboxes get a full check:
 // the maximum scaled by mailboxes used over the plan's allowance, within the
-// bounds. An unlimited workspace, or one with no allowance, gets the minimum.
+// bounds. An unlimited workspace (nil) or one with no mailboxes gets the
+// minimum; one holding mailboxes on a zero allowance gets the maximum.
 func (s Sync) FullCheckInterval(used int, allowance *int) time.Duration {
 	lo := time.Duration(s.FullCheckMinMinutes) * time.Minute
 	hi := time.Duration(s.FullCheckMaxMinutes) * time.Minute
-	if allowance == nil || *allowance <= 0 || used <= 0 {
+	if allowance == nil || used <= 0 {
 		return lo
+	}
+	if *allowance <= 0 {
+		return hi
 	}
 	return min(max(hi*time.Duration(used)/time.Duration(*allowance), lo), hi)
 }

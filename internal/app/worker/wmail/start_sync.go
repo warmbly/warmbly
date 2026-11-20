@@ -45,11 +45,11 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 		go w.runImapWatcher(ctx)
 	}
 	last := time.Now()
-	due := last.Add(w.nextSyncDelay(w.fullCheckInterval(), err))
-	pollGap := jitter(config.SyncNarrowPollInterval)
+	due := last.Add(w.nextSyncDelay(w.fullPassInterval(err), err))
+	pollScale := jitterScale()
 	for {
 		w.maintainPush(ctx)
-		narrowAt, signalUntil := w.narrowPoll(last, pollGap, err == nil)
+		narrowAt, signalUntil := w.narrowPoll(last, pollScale, err == nil)
 		step := w.waitForPass(ctx, syncPlan{due: due, notBefore: last.Add(config.SyncWakeMinGap), narrowAt: narrowAt, signalUntil: signalUntil, wakeable: err == nil})
 		if step == stepStop {
 			return
@@ -59,22 +59,44 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 		}
 		narrow := step == stepNarrow
 		last = time.Now()
-		pollGap = jitter(config.SyncNarrowPollInterval)
+		pollScale = jitterScale()
+		w.narrowDeferred = false
 		err = w.syncOnce(ctx, narrow)
-		// A clean check keeps the full pass's slot; a failure backs off and retries as a full pass.
-		if !narrow || err != nil {
-			due = time.Now().Add(w.nextSyncDelay(w.fullCheckInterval(), err))
+		switch {
+		case !narrow || err != nil:
+			// A failure backs off and retries as a full pass.
+			due = time.Now().Add(w.nextSyncDelay(w.fullPassInterval(err), err))
+		case w.narrowDeferred:
+			// The check met work only the full pass does; run it as soon as the gap allows.
+			if soon := last.Add(config.SyncWakeMinGap); soon.Before(due) {
+				due = soon
+			}
 		}
 	}
 }
 
-// narrowPoll is when a mailbox with no live change signal gets its timed
-// narrow check (zero while a signal holds or after a failed check), and when a
-// live push channel lapses so the timer can take over then.
-func (w *WMail) narrowPoll(last time.Time, gap time.Duration, clean bool) (narrowAt, signalUntil time.Time) {
+// fullPassInterval is the wait after a full pass: the full check interval, or
+// the catch-up cadence while an import or recovery only the full pass advances is unfinished.
+func (w *WMail) fullPassInterval(last *errx.MailError) time.Duration {
+	if last == nil && w.fullPassPending() {
+		return min(config.SyncCatchUpInterval, w.fullCheckInterval())
+	}
+	return w.fullCheckInterval()
+}
+
+// narrowPoll is when the mailbox gets its timed narrow check: every
+// SyncNarrowPollInterval with no live change signal, every
+// SyncPushSafetyInterval behind a push channel that may stop delivering
+// unannounced, never behind IDLE or after a failed check. scale carries the
+// jitter. signalUntil is when a live push channel lapses.
+func (w *WMail) narrowPoll(last time.Time, scale float64, clean bool) (narrowAt, signalUntil time.Time) {
 	live, until := w.liveSignal()
-	if !live && clean {
-		narrowAt = last.Add(gap)
+	switch {
+	case !clean:
+	case !live:
+		narrowAt = last.Add(time.Duration(float64(config.SyncNarrowPollInterval) * scale))
+	case !until.IsZero():
+		narrowAt = last.Add(time.Duration(float64(config.SyncPushSafetyInterval) * scale))
 	}
 	return narrowAt, until
 }
@@ -148,6 +170,11 @@ func (w *WMail) waitForPass(ctx context.Context, p syncPlan) syncStep {
 	// The check about to run covers any wake that queued while it waited.
 	w.drainWake()
 	return stepNarrow
+}
+
+// jitterScale is a factor within ±10%.
+func jitterScale() float64 {
+	return 0.9 + rand.Float64()*0.2
 }
 
 // jitter spreads d by ±10% so a fleet does not check in lockstep.

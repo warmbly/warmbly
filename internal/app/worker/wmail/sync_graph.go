@@ -48,6 +48,7 @@ func (w *WMail) syncGraph(ctx context.Context, narrow bool) *errx.MailError {
 	w.GraphData.Client.Recovering = w.graphRecovering
 	if w.SyncContext != nil && w.GraphData.Client.ImmutableIDMode() {
 		if narrow && !w.tracker.folder(graphIdentityCursor).Done {
+			w.narrowDeferred = true
 			return nil
 		}
 		done, err := w.graphUpgradeIDs(ctx)
@@ -98,6 +99,8 @@ func (w *WMail) graphWakeFolders() []string {
 	for _, folder := range msgraph.WakeFolders {
 		if w.GraphData.Client.DeltaLinks[folder] != "" && !w.graphRecovering(folder) {
 			folders = append(folders, folder)
+		} else {
+			w.narrowDeferred = true
 		}
 	}
 	return folders

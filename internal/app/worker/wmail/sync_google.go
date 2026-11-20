@@ -44,6 +44,7 @@ func (w *WMail) syncGoogle(ctx context.Context, narrow bool) *errx.MailError {
 	w.GoogleData.Client.OnHistoryPage = w.prefetchMaps
 	if w.tracker.state.BackfillCursor.GoogleRecovery != nil {
 		if narrow {
+			w.narrowDeferred = true
 			return nil
 		}
 		if err := w.googleRecoverHistory(ctx, stats); err != nil {
@@ -52,11 +53,13 @@ func (w *WMail) syncGoogle(ctx context.Context, narrow bool) *errx.MailError {
 		return nil
 	}
 	if narrow && w.GoogleData.LastHistoryID == 0 {
+		w.narrowDeferred = true
 		return nil
 	}
 
 	newHistoryID, caughtUp, err := w.GoogleData.Client.FetchHistoryPass(ctx, w.GoogleData.LastHistoryID)
 	if narrow && errors.Is(err, goog.ErrHistoryExpired) {
+		w.narrowDeferred = true
 		return nil
 	}
 	if errors.Is(err, goog.ErrHistoryExpired) {
