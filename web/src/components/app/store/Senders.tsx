@@ -181,11 +181,11 @@ export default function Senders({
                         id="buy-customize"
                         role="group"
                         aria-label="Customize the mailboxes"
-                        initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                        // Clips only while it slides; once open, the address dropdown inside may overhang it.
+                        initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0, overflow: "hidden" }}
+                        animate={{ opacity: 1, height: "auto", transitionEnd: { overflow: "visible" } }}
+                        exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0, overflow: "hidden" }}
                         transition={{ duration: 0.2, ease: EASE }}
-                        className="overflow-hidden"
                     >
                         <div className="px-3.5 py-3 border-t border-slate-100 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,1fr)_auto_auto] items-end">
                             <div className="min-w-0">
