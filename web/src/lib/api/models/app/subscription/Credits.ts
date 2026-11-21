@@ -31,6 +31,8 @@ export interface TopUpBounds {
     max_usd: number;
     presets_usd: number[];
     default_usd: number;
+    /** The card processing fee charged on top of the amount, in basis points; absent from an older backend. */
+    fee_bps?: number;
 }
 
 // GET /subscription/balance. With billing off only `unlimited: true` is sent.

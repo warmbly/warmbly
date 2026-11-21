@@ -11,7 +11,7 @@ import type { QuoteLine, StoreStatus } from "@/lib/api/models/app/store/Store";
 import { domainMailboxes, effectiveProvider, mailboxCount, type Cart, type PriceBook } from "@/lib/buy/cart";
 import { autoReloadLine, balanceLine, monthlyLine, type PayStep } from "@/lib/buy/checkout";
 import { fmtMicros, fmtMonthly, fmtYearly } from "@/lib/buy/money";
-import { fmtUsdTrim } from "@/lib/money";
+import { fmtUsd, fmtUsdTrim, topUpCharge } from "@/lib/money";
 import { EASE, PRESS_SPRING } from "@/lib/buy/motion";
 import { normalizePhone, REGISTRANT_LABELS, registrantProblems, type RegistrantField } from "@/lib/buy/registrant";
 import { cn } from "@/lib/utils";
@@ -228,7 +228,9 @@ function SummaryBody({ cart, status, prices, checkout }: Props) {
                                                 : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
                                         )}
                                     >
-                                        {checkout.topUp.chosen !== null ? `Adding ${fmtUsdTrim(checkout.topUp.offer)} · Undo` : `Add ${fmtUsdTrim(checkout.topUp.offer)} instead`}
+                                        {checkout.topUp.chosen !== null
+                                            ? `Adding ${fmtUsdTrim(checkout.topUp.offer)} + ${fmtUsd(topUpCharge(checkout.topUp.offer).feeUsd)} fee · Undo`
+                                            : `Add ${fmtUsdTrim(checkout.topUp.offer)} instead (+3% fee)`}
                                     </button>
                                 )}
                                 {checkout.autoReload.view?.kind === "offer" ? (

@@ -210,7 +210,7 @@ export function useCheckout({
     });
     const label = payLabel({
         metered,
-        due: plan && plan.cardCharge > 0 ? plan.cardCharge : due,
+        due: plan && plan.cardCharge > 0 ? plan.cardCharge + (plan.topUpFee ?? 0) : due,
         card: savedCard,
         cardEntry: wantsCard ? cardEntry : "inline",
         fromBalance: !!plan?.balanceCovers,

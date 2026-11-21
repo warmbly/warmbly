@@ -23,7 +23,7 @@ On **One-time**, pick **$10**, **$25**, **$50**, **$100** or **$250** ($25 is pi
 
 <Step>
 
-Select **Pay**. The saved card is charged and the money is added at once. With no saved card, or after **Change**, enter a card right in the dialog; it is saved for next time and becomes the card charged from then on, before anything is charged, with any check your bank asks for shown there. **Pay another way** finishes in Stripe Checkout instead.
+Below the amount, the dialog shows the 3% processing fee and the total, and **Pay** names the total: adding $25 charges $25.75. Select **Pay**. The saved card is charged and the money is added at once. With no saved card, or after **Change**, enter a card right in the dialog; it is saved for next time and becomes the card charged from then on, before anything is charged, with any check your bank asks for shown there. **Pay another way** finishes in Stripe Checkout instead.
 
 </Step>
 
@@ -153,6 +153,8 @@ The usage card above it shows spend today, this week and this month, a graph ove
 
 You can add any amount from **$5 to $5,000** ($10 or the store's minimum card charge where the store is on), in whole cents. Adding money needs an active paid plan.
 
+Every card payment into the balance adds a **3% processing fee** on top of the amount you add, rounded to the nearest cent, so the balance always grows by exactly the amount you chose: adding $100 charges $103.00. This covers one-click payments, Stripe Checkout and automatic reload. The fee is its own line on the invoice and receipt. It is not refunded, so a refund returns at most the amount that was added to the balance. [Store charges](/guides/buy-mailboxes/#paying) that pay an order carry no fee.
+
 - **One click on the saved card.** The card is charged at once and the money is added as soon as the payment goes through. If the payment is still going through when the page answers, the Balance tab says so and updates when it lands; Warmbly finishes it in the background, and another payment cannot start until it does. Each charge is billed as a Stripe invoice, so it has its own invoice and receipt.
 - **A new card in the dialog.** With no saved card, or after **Change**, the card is entered in the dialog, saved and made the workspace's card before it is charged, so a replaced card is never the one billed. If your bank asks to confirm, the check opens in the page.
 - **Pay another way.** With a saved card, opens Stripe Checkout for the amount, to pay with another card or method.
@@ -167,7 +169,7 @@ The card shown is the one on the workspace's Stripe billing account (brand and l
 
 ## Automatic reload
 
-Automatic reload adds money on the saved card when the balance falls below a threshold, so AI never pauses for an empty balance. Turning it on needs a saved card and an active paid plan; turning it off never does, so a workspace whose plan lapsed can still switch it off. Set it on the **Auto top-up** tab of **Add funds**, which starts from the values below.
+Automatic reload adds money on the saved card when the balance falls below a threshold, so AI never pauses for an empty balance. Each reload is charged with the 3% processing fee on top, so a $25 reload charges $25.75; the dialog shows both. Turning it on needs a saved card and an active paid plan; turning it off never does, so a workspace whose plan lapsed can still switch it off. Set it on the **Auto top-up** tab of **Add funds**, which starts from the values below.
 
 | Setting | Default | Range |
 |---------|---------|-------|
@@ -177,7 +179,7 @@ Automatic reload adds money on the saved card when the balance falls below a thr
 
 Where the store is on, a first setup starts at next month's mailbox charge (at least $10) for the threshold, $100 for each reload and $500 a month, and each reload adds at least the store's minimum card charge.
 
-The monthly limit counts every automatic reload in the calendar month. When less than a full reload is left under it, Warmbly adds what is left if that is at least $5, and otherwise waits for next month.
+The monthly limit counts what automatic reload added to the balance in the calendar month, not the fee. When less than a full reload is left under it, Warmbly adds what is left if that is at least $5, and otherwise waits for next month.
 
 When a reload is declined:
 
