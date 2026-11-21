@@ -39,7 +39,7 @@ Anything flagged on [Instance health](/development/instance-health/) links back 
 | `DEPLOYMENT_MODE` | `self_hosted` or `cloud`. Picks the auth defaults in [authentication](#authentication); every one stays individually overridable. A joining node receives the mode its control plane resolved | `self_hosted` under compose | yes |
 | `ALLOW_INSECURE_DEFAULTS` | `true` lets the backend boot even when a secret still holds its published default. Only for a throwaway instance | unset | yes |
 | `GIN_MODE` | `debug` or `release` | `release` | yes |
-| `LOG_LEVEL` | Lowest level the Go services (backend, consumer, worker, forms) write: `debug`, `info`, `warn` or `error`. `debug` adds a line for every event a service reads or publishes, so leave it off unless you are tracing something | `debug` when `APP_ENV=dev`, `info` otherwise | yes |
+| `LOG_LEVEL` | Lowest level of the structured log lines the Go services (backend, consumer, worker, forms) write: `debug`, `info`, `warn` or `error`. Startup messages and the HTTP access log are not filtered by it. `debug` adds a line for every event a service reads or publishes, so leave it off unless you are tracing something | `debug` when `APP_ENV=dev`, `info` otherwise | yes |
 | `ENV_LABEL` | A label the admin panel shows next to the instance name | unset | yes (container start) |
 | `WARMBLY_CLOUD_URL` | The Warmbly Cloud API an already linked self-hosted instance talks to for the hosted warmup pool ([guide](/guides/warmbly-cloud/)). Warmbly Cloud links no new instances. Outbound HTTPS only | `https://api.warmbly.com` | no |
 | `INSTANCE_NAME` | The name an instance gave Warmbly Cloud when it linked. Warmbly Cloud no longer links new instances, so it has no effect on one that is not linked | the hostname | no |
