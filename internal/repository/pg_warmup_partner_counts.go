@@ -21,28 +21,25 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 	if err != nil || len(orgs) == 0 {
 		return out, err
 	}
-	cands, err := r.partnerCohort(ctx, partnerCandidateColumns+`
-		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wpp.pool_id = wp.id
-		JOIN email_accounts ea ON ea.id = wpp.email_account_id
-		WHERE wp.pool_type = $1 AND `+partnerEligibleSQL,
-		poolType, models.WarmupPartnerOwnTier, poolType)
+	members, err := r.poolCohort(ctx, poolType)
 	if err != nil {
 		return nil, err
 	}
+	cands := make([]models.WarmupPartnerCandidate, 0, len(members))
+	for _, m := range members {
+		cands = append(cands, m.as(models.WarmupPartnerOwnTier))
+	}
 	borrowFrom, borrows := models.WarmupPoolBorrowsFrom(poolType)
 	if borrows {
-		borrowed, err := r.partnerCohort(ctx, partnerCandidateColumns+`
-			FROM warmup_pool_participants wpp
-			JOIN warmup_pools wp ON wpp.pool_id = wp.id
-			JOIN email_accounts ea ON ea.id = wpp.email_account_id
-			JOIN organizations o ON o.id = ea.organization_id
-			WHERE wp.pool_type = $1 AND `+partnerEligibleSQL+` AND `+partnerProvenSQL,
-			borrowFrom, models.WarmupPartnerBorrowed, borrowFrom, config.WarmupPoolFallbackMinAgeDays)
+		lenders, err := r.poolCohort(ctx, borrowFrom)
 		if err != nil {
 			return nil, err
 		}
-		cands = append(cands, borrowed...)
+		for _, m := range lenders {
+			if m.proven {
+				cands = append(cands, m.as(models.WarmupPartnerBorrowed))
+			}
+		}
 	}
 	returnTo, returnsTo := models.WarmupPoolReturnsTo(poolType)
 	if returnsTo {
