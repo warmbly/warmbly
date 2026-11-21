@@ -3,6 +3,7 @@ package linkedin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -42,6 +43,9 @@ const replyWindow = 7 * 24 * time.Hour
 // noAccountRetry is how soon a step waiting for a connected LinkedIn account is tried again.
 const noAccountRetry = 15 * time.Minute
 
+// actionTTL is how long a queued LinkedIn step may wait at GraphKit before it expires unsent.
+const actionTTL = 72 * time.Hour
+
 var stepTypes = map[string]string{
 	models.ActionLinkedInInvite:   graphkit.ActionInvite,
 	models.ActionLinkedInMessage:  graphkit.ActionMessage,
@@ -72,6 +76,12 @@ var skipReasons = map[string]string{
 	"recipient_unavailable": "their profile could not be reached",
 	"no_linkedin_url":       "the contact has no LinkedIn profile",
 	"no_linkedin_account":   "the campaign has no LinkedIn account to send from",
+	"campaign_deleted":      "the campaign was deleted",
+	"campaign_paused":       "the campaign was paused",
+	"removed_from_campaign": "they were removed from the campaign",
+	"unsubscribed":          "they unsubscribed",
+	"suppressed":            "they are on the suppression list",
+	"replied":               "they replied",
 }
 
 var errorReasons = map[string]string{
@@ -177,23 +187,33 @@ func (s *Service) RunCampaignStep(ctx context.Context, req models.LinkedInStepRe
 		in.Post = strp("latest")
 	}
 	if err := s.ready(ctx, req.OrganizationID); err != nil {
-		return s.attemptFailed(ctx, held, "")
+		return s.attemptFailed(ctx, held, err)
 	}
-	key := "wb:li:" + strings.TrimPrefix(ref, "wb:")
-	act, err := s.api().CreateAction(ctx, ext(req.OrganizationID), in, key)
-	if ge, ok := graphkit.AsError(err); ok && ge.Code == graphkit.CodeIdempotencyConflict {
-		act, err = s.actionByReference(ctx, req.OrganizationID, ref)
+	// Nothing stale goes out: GraphKit drops the action if it has not run in actionTTL.
+	expires := s.now().Add(actionTTL)
+	in.ExpiresAt = &expires
+	var act *graphkit.Action
+	if held.Attempts > 0 || s.now().Sub(held.CreatedAt) > time.Minute {
+		// GraphKit forgets an Idempotency-Key after a day, so a step tried before is looked up first.
+		if act, err = s.actionByReference(ctx, req.OrganizationID, ref); err != nil {
+			return s.attemptFailed(ctx, held, err)
+		}
 	}
-	if err != nil {
-		ge, ok := graphkit.AsError(err)
-		if ok && !ge.Retryable() && ge.Status >= 400 && ge.Status < 500 {
-			return s.finish(ctx, held, models.LinkedInActionFailed, nil, strp(ge.Code))
+	if act == nil {
+		key := "wb:li:" + strings.TrimPrefix(ref, "wb:")
+		act, err = s.api().CreateAction(ctx, ext(req.OrganizationID), in, key)
+		if ge, ok := graphkit.AsError(err); ok && ge.Code == graphkit.CodeIdempotencyConflict {
+			if act, err = s.actionByReference(ctx, req.OrganizationID, ref); err == nil && act == nil {
+				// The key is held by a request GraphKit has not finished; the step is read back next time.
+				return models.LinkedInStepOutcome{State: models.LinkedInStepRetry, Reason: "GraphKit is still taking the step", RetryAfter: linkedInBackoff(held.Attempts)}
+			}
 		}
-		code := ""
-		if ok {
-			code = ge.Code
+		if err != nil {
+			if ge, ok := graphkit.AsError(err); ok && !ge.Retryable() && ge.Status >= 400 && ge.Status < 500 {
+				return s.finish(ctx, held, models.LinkedInActionFailed, nil, strp(ge.Code))
+			}
+			return s.attemptFailed(ctx, held, err)
 		}
-		return s.attemptFailed(ctx, held, code)
 	}
 	if err := s.Repo.SetActionQueued(ctx, req.OrganizationID, held.ID, acct.ID, act.ID, actionStatus(act.Status)); err != nil {
 		// GraphKit holds the action under the step's key; the next pass reads it back.
@@ -226,26 +246,41 @@ func (s *Service) finish(ctx context.Context, a *models.LinkedInAction, status s
 	return settledOutcome(a)
 }
 
-// attemptFailed counts a try GraphKit may take later; the last allowed one fails the step.
-func (s *Service) attemptFailed(ctx context.Context, a *models.LinkedInAction, code string) models.LinkedInStepOutcome {
+// attemptFailed counts a try GraphKit may take later and backs off. A refusal fails the step at the attempt cap;
+// an outage or a network failure only once the step is older than an action may live, so it never burns the cap.
+func (s *Service) attemptFailed(ctx context.Context, a *models.LinkedInAction, cause error) models.LinkedInStepOutcome {
 	n, err := s.Repo.CountActionAttempt(ctx, a.OrganizationID, a.ID)
-	if err == nil && n >= config.CampaignSendMaxAttempts {
+	if err != nil {
+		n = a.Attempts + 1
+	}
+	ge, refused := graphkit.AsError(cause)
+	refused = (refused && ge.Status >= 400 && ge.Status < 500) || errors.Is(cause, errUnavailable)
+	if err == nil && n >= config.CampaignSendMaxAttempts && (refused || s.now().Sub(a.CreatedAt) > actionTTL) {
 		return s.finish(ctx, a, models.LinkedInActionFailed, nil, strp("unavailable"))
 	}
 	reason := "GraphKit did not take the step; trying again"
-	if code != "" {
-		reason += " (" + code + ")"
+	if ge != nil && ge.Code != "" {
+		reason += " (" + ge.Code + ")"
 	}
-	return models.LinkedInStepOutcome{State: models.LinkedInStepRetry, Reason: reason}
+	return models.LinkedInStepOutcome{State: models.LinkedInStepRetry, Reason: reason, RetryAfter: linkedInBackoff(n)}
 }
 
+// linkedInBackoff is how long a contact's step waits after n failed tries: two minutes, doubling, at most an hour.
+func linkedInBackoff(n int) time.Duration {
+	if n < 0 {
+		n = 0
+	}
+	if n > 5 {
+		return time.Hour
+	}
+	return min(2*time.Minute<<n, time.Hour)
+}
+
+// actionByReference is the action GraphKit holds for the step, nil when it holds none.
 func (s *Service) actionByReference(ctx context.Context, orgID uuid.UUID, ref string) (*graphkit.Action, error) {
 	page, err := s.api().ListActions(ctx, ext(orgID), graphkit.ActionFilter{Reference: ref, Limit: 1})
-	if err != nil {
+	if err != nil || len(page.Data) == 0 {
 		return nil, err
-	}
-	if len(page.Data) == 0 {
-		return nil, &graphkit.Error{Status: 409, Code: graphkit.CodeIdempotencyConflict, Message: "no action holds the step's reference"}
 	}
 	return &page.Data[0], nil
 }
@@ -392,6 +427,54 @@ func (s *Service) applyAction(ctx context.Context, orgID uuid.UUID, a *graphkit.
 	return nil
 }
 
+// stopBatch bounds how many queued steps one cancellation pass takes back.
+const stopBatch = 100
+
+// stopActions cancels at GraphKit the queued campaign steps whose contact should no longer get them;
+// contactID narrows the pass to one contact.
+func (s *Service) stopActions(ctx context.Context, contactID *uuid.UUID) error {
+	if !s.available() {
+		return nil
+	}
+	rows, err := s.Repo.ActionsToStop(ctx, contactID, stopBatch)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		r := &rows[i]
+		_, err := s.api().CancelAction(ctx, ext(r.OrganizationID), r.GraphKitID, "linkedin:cancel:"+r.ID.String())
+		if ge, ok := graphkit.AsError(err); ok && ge.Code == graphkit.CodeStateConflict {
+			// It ran or is running: record what GraphKit says rather than ask again every pass.
+			if act, gerr := s.api().GetAction(ctx, ext(r.OrganizationID), r.GraphKitID); gerr == nil {
+				if aerr := s.applyAction(ctx, r.OrganizationID, act); aerr != nil {
+					log.Warn().Err(aerr).Str("action_id", r.GraphKitID).Msg("linkedin: applying an action that could not be cancelled failed")
+				}
+			}
+			continue
+		}
+		if ge, ok := graphkit.AsError(err); ok && ge.Code == graphkit.CodeNotFound {
+			err = nil
+		}
+		if err != nil {
+			log.Warn().Err(err).Str("action_id", r.GraphKitID).Msg("linkedin: cancelling a queued step failed; retried on the next pass")
+			continue
+		}
+		if err := s.Repo.FinishAction(ctx, r.OrganizationID, r.ID, models.LinkedInActionCancelled, strp(r.Reason), nil); err != nil {
+			return err
+		}
+		row := &models.LinkedInAction{ID: r.ID, OrganizationID: r.OrganizationID, CampaignID: r.CampaignID, ContactID: r.ContactID,
+			Type: r.Type, Status: models.LinkedInActionCancelled, SkipReason: strp(r.Reason)}
+		s.logStep(ctx, row, "")
+		ev := pubsub.LinkedInEvent{BaseEvent: pubsub.BaseEvent{EventType: pubsub.EventLinkedInActionUpdated}, Status: row.Status,
+			ContactID: row.ContactID.String(), ActionType: row.Type}
+		if row.CampaignID != nil {
+			ev.CampaignID = row.CampaignID.String()
+		}
+		s.publish(ctx, r.OrganizationID, ev)
+	}
+	return nil
+}
+
 func (s *Service) logStep(ctx context.Context, row *models.LinkedInAction, name string) {
 	if s.CampaignLogs == nil || row.CampaignID == nil {
 		return
@@ -406,6 +489,8 @@ func (s *Service) logStep(ctx context.Context, row *models.LinkedInAction, name 
 		verb, event = "failed", "linkedin_failed"
 	case models.LinkedInActionExpired:
 		verb, event = "expired before it ran", "linkedin_failed"
+	case models.LinkedInActionCancelled:
+		verb, event = "was cancelled before it ran", "linkedin_cancelled"
 	}
 	reason := plainReason(row.SkipReason, row.ErrorCode)
 	_ = s.CampaignLogs.CreateLog(ctx, &repository.CampaignLogEntry{CampaignID: *row.CampaignID, EventType: event,
@@ -499,6 +584,12 @@ func (s *Service) noteMessage(ctx context.Context, conv *models.LinkedInConversa
 	if s.Replies != nil {
 		if xerr := s.Replies.ProcessLinkedInReply(context.WithoutCancel(ctx), in); xerr != nil {
 			log.Warn().Err(xerr).Str("conversation_id", conv.ID.String()).Msg("linkedin: the reply path failed for an inbound message")
+		}
+	}
+	if conv.ContactID != nil {
+		// The reply stops the contact's queued steps now; the reconcile pass catches a cancel that fails here.
+		if err := s.stopActions(context.WithoutCancel(ctx), conv.ContactID); err != nil {
+			log.Warn().Err(err).Str("conversation_id", conv.ID.String()).Msg("linkedin: stopping a replying contact's queued steps failed")
 		}
 	}
 	return nil

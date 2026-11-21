@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -367,8 +368,9 @@ func (s *Service) BuildQuery(ctx context.Context, orgID uuid.UUID, in AIRequest,
 		return nil, s.upstream(ctx, "social.search.ai", err)
 	}
 	if res.CostMicros > 0 {
+		// The query is already built; a charge that fails is logged, not turned into a failed request.
 		if _, err := s.Credits.ChargeAICost(context.WithoutCancel(ctx), orgID, models.Micro(res.CostMicros), "LinkedIn search builder", chargeKey); err != nil {
-			return nil, err
+			log.Warn().Err(err).Str("org_id", orgID.String()).Int64("cost_micros", res.CostMicros).Msg("linkedin: charging the search builder's AI cost failed")
 		}
 	}
 	return res, nil

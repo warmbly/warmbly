@@ -475,6 +475,11 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 			return nil
 		}
 		aerr := s.executeActionNode(ctx, campaign, contact, sequence.ID, &cfg)
+		if errors.Is(aerr, errUnknownAction) {
+			s.holdUnknownStep(ctx, campaign, contact, sequence.ID, cfg.Type, taskID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+		}
 		if aerr != nil {
 			log.Warn().Err(aerr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Str("action", cfg.Type).Msg("Action node execution failed")
 		}
@@ -1698,10 +1703,18 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		return nil
 	case "switch":
 		return s.execSequenceSwitchStep(ctx, campaign, contact, sequenceID, cfg)
-	default:
+	case "notify":
 		return nil
+	default:
+		return errUnknownAction
 	}
 }
+
+// errUnknownAction is a step type this release does not run; the contact is held on it rather than moved past it.
+var errUnknownAction = errors.New("this step type needs a newer Warmbly release")
+
+// unknownActionRetry is how long a contact waits on a step type this release does not know before it is offered again.
+const unknownActionRetry = 15 * time.Minute
 
 // createCampaignTask creates a new campaign task in GCP Cloud Tasks
 func (s *tasksService) createCampaignTask(ctx context.Context, campaignID, accountID uuid.UUID, scheduleTime time.Time) error {

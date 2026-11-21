@@ -158,22 +158,24 @@ type Price struct {
 }
 
 // seatPrice resolves the seat price by the plan the workspace pays at; an agency's client pays its agency's rate.
-func (s *Service) seatPrice(ctx context.Context, orgID uuid.UUID) Price {
+// A plan that cannot be read is an error, never the standard price.
+func (s *Service) seatPrice(ctx context.Context, orgID uuid.UUID) (Price, error) {
 	r := s.Store.StoreRetail(ctx)
 	var sub *models.Subscription
 	if s.Subscriptions != nil {
 		got, err := s.Subscriptions.GetByOrganizationID(ctx, orgID)
-		if err == nil {
-			sub = got
+		if err != nil {
+			return Price{}, err
 		}
+		sub = got
 	}
 	switch sub.EffectivePlanID() {
 	case models.AgencyProPlanID:
-		return Price{MonthlyMicros: r.LinkedInSeatAgencyPro(), Tier: TierAgencyPro}
+		return Price{MonthlyMicros: r.LinkedInSeatAgencyPro(), Tier: TierAgencyPro}, nil
 	case models.AgencyPlanID:
-		return Price{MonthlyMicros: r.LinkedInSeatAgency(), Tier: TierAgency}
+		return Price{MonthlyMicros: r.LinkedInSeatAgency(), Tier: TierAgency}, nil
 	}
-	return Price{MonthlyMicros: r.LinkedInSeatMonthly(), Tier: TierStandard}
+	return Price{MonthlyMicros: r.LinkedInSeatMonthly(), Tier: TierStandard}, nil
 }
 
 // buyBlocked is why the workspace cannot take a managed seat, "" when it can.
@@ -226,7 +228,11 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 		return st, nil
 	}
 	st.Available = true
-	st.Price = s.seatPrice(ctx, orgID)
+	price, err := s.seatPrice(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	st.Price = price
 	if ws, err := s.refreshWorkspace(ctx, orgID, 3*time.Second); err != nil {
 		if ge, ok := graphkit.AsError(err); ok && ge.Code == graphkit.CodeSocialUnavailable {
 			st.Available = false

@@ -31,6 +31,17 @@ type LinkedInActionUpdate struct {
 	CompletedAt *time.Time
 }
 
+// LinkedInActionStop is a queued campaign action whose contact should no longer get it, and why.
+type LinkedInActionStop struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	GraphKitID     string
+	ContactID      uuid.UUID
+	CampaignID     *uuid.UUID
+	Type           string
+	Reason         string
+}
+
 // ---- campaign accounts ----------------------------------------------------
 
 func (r *linkedInRepository) LeadsWithoutProfile(ctx context.Context, orgID, campaignID uuid.UUID) (int, error) {
@@ -205,6 +216,45 @@ func (r *linkedInRepository) ApplyActionUpdate(ctx context.Context, orgID uuid.U
 		return row, false, err
 	}
 	return row, row.Status != prev, nil
+}
+
+func (r *linkedInRepository) ActionsToStop(ctx context.Context, contactID *uuid.UUID, limit int) ([]LinkedInActionStop, error) {
+	query := `SELECT a.id, a.organization_id, a.graphkit_id, a.contact_id, a.campaign_id, a.type, x.reason
+		FROM linkedin_actions a
+		JOIN contacts c ON c.id = a.contact_id
+		LEFT JOIN campaigns ca ON ca.id = a.campaign_id AND ca.organization_id = a.organization_id
+		LEFT JOIN campaign_leads cl ON cl.campaign_id = ca.id AND cl.contact_id = a.contact_id
+		CROSS JOIN LATERAL (SELECT CASE
+			WHEN ca.id IS NULL THEN 'campaign_deleted'
+			WHEN ca.status::text NOT IN ('active', 'completed') THEN 'campaign_paused'
+			WHEN cl.contact_id IS NULL THEN 'removed_from_campaign'
+			WHEN c.subscribed IS FALSE THEN 'unsubscribed'
+			WHEN COALESCE(c.email, '') <> '' AND recipient_suppressed(a.organization_id, c.email) THEN 'suppressed'
+			WHEN ca.stop_on_reply AND (
+				EXISTS (SELECT 1 FROM campaign_contact_progress p
+					WHERE p.campaign_id = ca.id AND p.contact_id = a.contact_id AND p.replied_at > a.created_at)
+				OR EXISTS (SELECT 1 FROM linkedin_contact_state s
+					WHERE s.organization_id = a.organization_id AND s.contact_id = a.contact_id AND s.replied_at > a.created_at))
+				THEN 'replied'
+			END AS reason) x
+		WHERE a.status = 'queued' AND a.graphkit_id IS NOT NULL AND a.reference LIKE 'wb:%' AND x.reason IS NOT NULL
+		  AND ($1::uuid IS NULL OR a.contact_id = $1)
+		ORDER BY a.created_at LIMIT $2`
+	rows, err := r.db.Query(ctx, query, contactID, limit)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LinkedInActionStop
+	for rows.Next() {
+		var s LinkedInActionStop
+		if err := rows.Scan(&s.ID, &s.OrganizationID, &s.GraphKitID, &s.ContactID, &s.CampaignID, &s.Type, &s.Reason); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 func (r *linkedInRepository) StickyAccount(ctx context.Context, orgID, campaignID, contactID uuid.UUID, candidates []uuid.UUID) (*uuid.UUID, error) {

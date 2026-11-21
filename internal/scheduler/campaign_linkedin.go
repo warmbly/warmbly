@@ -45,10 +45,38 @@ func (s *schedulerService) placeWithoutMailbox(ctx context.Context, campaign *mo
 	if campaign.ContactOrderField != nil {
 		orderField = *campaign.ContactOrderField
 	}
+	// The daily new-lead cap holds here as on the mailbox path.
+	excludeNewLeads := false
+	if campaign.MaxNewLeadsPerDay > 0 {
+		started, nerr := s.campaignRepo.CountNewLeadsStartedToday(ctx, campaign.ID)
+		if nerr != nil {
+			return time.Time{}, nil, uuid.Nil, nerr
+		}
+		excludeNewLeads = started >= campaign.MaxNewLeadsPerDay
+	}
+	open := openClocks(campaign, time.Now())
 	candidates, recheckAt, _, err := s.campaignProgressRepo.FindRoutedPairs(ctx, campaign.ID, campaign.ContactOrderBy, campaign.ContactOrderDir,
-		orderField, campaign.PrioritizeNewLeads, false, nil, openClocks(campaign, time.Now()), config.CampaignPlacementCandidates)
+		orderField, campaign.PrioritizeNewLeads, excludeNewLeads, nil, open, config.CampaignPlacementCandidates)
 	if err != nil {
 		return time.Time{}, nil, uuid.Nil, err
+	}
+	if len(candidates) == 0 && excludeNewLeads {
+		again, againDue, _, aerr := s.campaignProgressRepo.FindRoutedPairs(ctx, campaign.ID, campaign.ContactOrderBy, campaign.ContactOrderDir,
+			orderField, campaign.PrioritizeNewLeads, false, nil, open, 1)
+		switch {
+		case aerr != nil:
+		case len(again) > 0:
+			s.logCampaignDecision(ctx, campaign.ID, "new_lead_cap_reached",
+				"Daily new-lead cap reached; deferring remaining new leads to tomorrow",
+				map[string]interface{}{"max_new_leads_per_day": campaign.MaxNewLeadsPerDay})
+			deferTime := s.deferToNextDay(campaign, false)
+			if recheckAt != nil && recheckAt.Before(deferTime) {
+				deferTime = *recheckAt
+			}
+			return deferTime, nil, wake, ErrCampaignDeferred
+		case againDue != nil && (recheckAt == nil || againDue.Before(*recheckAt)):
+			recheckAt = againDue
+		}
 	}
 	if len(candidates) == 0 {
 		if recheckAt != nil {

@@ -62,7 +62,8 @@ Each connected LinkedIn account is $49 a month, $32 on the Agency plan and $19 o
 - Connecting an account needs a Warmbly plan, like [buying mailboxes](/guides/buy-mailboxes/). Without one, link your own GraphKit workspace instead (see [use your own GraphKit workspace](#use-your-own-graphkit-workspace)).
 - The first month is charged when you start the connection, the next ones together with your purchased mailboxes, in one charge on the same billing day. Your billing day is set by your first purchased mailbox or first LinkedIn account.
 - Each month is charged at the price your plan has on that day, so a plan change moves the next month's price.
-- Removing an account stops its next charge. The month already paid is not refunded.
+- Removing an account stops its next charge. The month in progress is not refunded; a month already charged ahead of your billing day that has not started yet is refunded to the balance.
+- Connecting a removed account again starts a new month from the day it connects, charged like a new account. If its paid month has not run out yet, the new charge is refunded and the account runs to the end of that month.
 - Self-hosted instances set these prices in the admin panel; see [configuration](/development/configuration/).
 
 ### When a payment fails
@@ -113,7 +114,9 @@ Contacts carry a LinkedIn profile. Set it on a contact, send `linkedin_url` thro
 
 ## LinkedIn in campaigns
 
-Campaigns can invite, message, send InMail, visit, follow, like a post and withdraw an invitation as steps, and branch on whether a contact connected, replied or has an invitation pending. Pick which accounts run a campaign's LinkedIn steps in its settings; each contact stays on one account. See [LinkedIn steps](/guides/sequences/#linkedin-steps).
+Campaigns can invite, message, send InMail, visit, follow, like a post and withdraw an invitation as steps, and branch on whether a contact connected, replied or has an invitation pending. Pick which accounts run a campaign's LinkedIn steps in its settings; each contact stays on one account. A queued step that has not run yet is cancelled when the contact replies (with **Stop on reply** on), unsubscribes, is suppressed or leaves the campaign, or when the campaign is paused or deleted; one that has not run within 3 days expires unsent. See [LinkedIn steps](/guides/sequences/#linkedin-steps).
+
+LinkedIn steps need every Warmbly backend on the release that added them or a later one. Rolling back past that release makes the older backends move contacts past LinkedIn steps without running them.
 
 A contact's **LinkedIn** tab shows every LinkedIn step run for them, with its campaign and outcome, and their conversations. Campaign analytics add invitations sent and accepted, the acceptance rate, messages, InMails and replies.
 

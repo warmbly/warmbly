@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/pkg/graphkit"
@@ -14,8 +16,42 @@ import (
 
 const backfillBatch = 500
 
-// ApplySocialEvent implements store.Social: GraphKit's social.* webhooks, and their replay from its event log.
+// ApplySocialEvent implements store.Social: GraphKit's social.* webhooks, and their replay from its event log. An
+// event for a workspace this instance does not have, or one that can never apply, is skipped so the feed moves on.
 func (s *Service) ApplySocialEvent(ctx context.Context, orgID uuid.UUID, ev graphkit.Event) error {
+	exists, err := s.Repo.OrganizationExists(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		log.Debug().Str("event_id", ev.ID).Str("type", ev.Type).Msg("linkedin: skipping an event for a workspace this instance does not have")
+		return nil
+	}
+	err = s.applySocialEvent(ctx, orgID, ev)
+	if err != nil && inapplicable(err) {
+		log.Warn().Err(err).Str("event_id", ev.ID).Str("type", ev.Type).Str("org_id", orgID.String()).
+			Msg("linkedin: skipping an event that cannot be applied")
+		return nil
+	}
+	return err
+}
+
+// inapplicable is an error retrying the same event can never get past: an unreadable body, or a row the database refuses.
+func inapplicable(err error) bool {
+	var syntax *json.SyntaxError
+	var typ *json.UnmarshalTypeError
+	if errors.As(err, &syntax) || errors.As(err, &typ) {
+		return true
+	}
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		// Class 22 is a data exception, class 23 an integrity constraint violation.
+		return strings.HasPrefix(pg.Code, "22") || strings.HasPrefix(pg.Code, "23")
+	}
+	return false
+}
+
+func (s *Service) applySocialEvent(ctx context.Context, orgID uuid.UUID, ev graphkit.Event) error {
 	switch ev.Type {
 	case graphkit.EventSocialUpdated:
 		var ws graphkit.SocialWorkspace
@@ -67,7 +103,7 @@ func (s *Service) ApplySocialEvent(ctx context.Context, orgID uuid.UUID, ev grap
 func (s *Service) ReconcileSocial(ctx context.Context) error {
 	var errs []error
 	if s.available() {
-		errs = append(errs, s.reconcileSessions(ctx))
+		errs = append(errs, s.reconcileSessions(ctx), s.stopActions(ctx, nil), s.refundRemovedSeats(ctx))
 	}
 	errs = append(errs, s.backfillContacts(ctx), s.resumeImports(ctx))
 	return errors.Join(errs...)

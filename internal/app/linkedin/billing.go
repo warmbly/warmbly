@@ -35,7 +35,10 @@ func (s *Service) PendingSeatKeys(ctx context.Context, orgID uuid.UUID, before t
 
 // ReserveSeats implements store.Social, at the price the workspace's plan sets now.
 func (s *Service) ReserveSeats(ctx context.Context, orgID uuid.UUID, key string, dueBefore, retryBefore time.Time) (int, error) {
-	price := s.seatPrice(ctx, orgID)
+	price, err := s.seatPrice(ctx, orgID)
+	if err != nil {
+		return 0, err
+	}
 	return s.Repo.ReserveSeats(ctx, orgID, key, models.Micro(price.MonthlyMicros), dueBefore, retryBefore)
 }
 
@@ -54,8 +57,11 @@ func (s *Service) SeatsDue(ctx context.Context, orgID uuid.UUID, dueBefore time.
 	if err != nil {
 		return store.SeatBatch{}, err
 	}
-	price := s.seatPrice(ctx, orgID).MonthlyMicros
-	return seatBatch(rows, func(*models.LinkedInAccount) int64 { return price }), nil
+	price, err := s.seatPrice(ctx, orgID)
+	if err != nil {
+		return store.SeatBatch{}, err
+	}
+	return seatBatch(rows, func(*models.LinkedInAccount) int64 { return price.MonthlyMicros }), nil
 }
 
 func seatBatch(rows []models.LinkedInAccount, amount func(*models.LinkedInAccount) int64) store.SeatBatch {
@@ -170,6 +176,14 @@ func (s *Service) ExtendUnmeteredSeats(ctx context.Context, orgID uuid.UUID, due
 // EnforceUnpaidSeats implements store.Social: a seat whose month went unpaid is paused at GraphKit when that
 // month ends and removed a week later. A later payment resumes a paused seat (SettleSeats).
 func (s *Service) EnforceUnpaidSeats(ctx context.Context, orgID uuid.UUID) error {
+	// A seat paid since unpaid paused it, whose resume did not go through when it was paid, is resumed again.
+	paid, err := s.Repo.PausedPaidSeats(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	for i := range paid {
+		s.resumeUnpaid(ctx, &paid[i])
+	}
 	rows, err := s.Repo.UnpaidSeats(ctx, orgID)
 	if err != nil || len(rows) == 0 {
 		return err
@@ -224,6 +238,35 @@ func (s *Service) EnforceUnpaidSeats(ctx context.Context, orgID uuid.UUID) error
 		}
 	}
 	return nil
+}
+
+// refundRemovedSeats gives back, across workspaces, the paid months of removed seats that had not started.
+func (s *Service) refundRemovedSeats(ctx context.Context) error {
+	rows, err := s.Repo.RemovedSeatsPaidAhead(ctx, nil, stopBatch)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		s.refundUnstartedMonth(ctx, &rows[i])
+	}
+	return nil
+}
+
+// refundUnstartedMonth refunds a removed seat's month charged ahead of its start, keyed by the charge that paid it.
+func (s *Service) refundUnstartedMonth(ctx context.Context, a *models.LinkedInAccount) {
+	if a.PaidKey == nil || a.PaidMicros <= 0 || a.PaidThrough == nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	paid := *a.PaidKey
+	if _, err := s.Credits.RefundStore(ctx, a.OrganizationID, paid, "", paid+":refund:linkedin:removed:"+a.ID.String(), a.PaidMicros,
+		"Refund · LinkedIn seat · "+accountName(a)+" · "+store.MonthLabel(a.PaidThrough.AddDate(0, -1, 0))); err != nil {
+		log.Error().Err(err).Str("account_id", a.ID.String()).Msg("linkedin: refunding a removed seat's unstarted month failed; the reconcile pass retries")
+		return
+	}
+	if err := s.Repo.ReturnSeatMonth(ctx, a.OrganizationID, a.ID, paid); err != nil {
+		log.Error().Err(err).Str("account_id", a.ID.String()).Msg("linkedin: moving a refunded seat month back failed; the reconcile pass retries")
+	}
 }
 
 // accountName is a LinkedIn name safe to put in a notification or email.

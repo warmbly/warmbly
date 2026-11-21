@@ -78,8 +78,18 @@ func toAccount(a *models.LinkedInAccount) *Account {
 	return out
 }
 
-// record mirrors GraphKit's view of an account; userID attributes a new one and is otherwise kept.
+// record mirrors GraphKit's view of an account; userID attributes a new one and is otherwise kept. It never brings
+// back a removed seat: only a connect does (recordConnected).
 func (s *Service) record(ctx context.Context, orgID uuid.UUID, sa *graphkit.SocialAccount, userID *uuid.UUID) (*models.LinkedInAccount, error) {
+	return s.recordAccount(ctx, orgID, sa, userID, false)
+}
+
+// recordConnected records the account a connect just succeeded with, reviving it if it had been removed.
+func (s *Service) recordConnected(ctx context.Context, orgID uuid.UUID, sa *graphkit.SocialAccount, userID *uuid.UUID) (*models.LinkedInAccount, error) {
+	return s.recordAccount(ctx, orgID, sa, userID, true)
+}
+
+func (s *Service) recordAccount(ctx context.Context, orgID uuid.UUID, sa *graphkit.SocialAccount, userID *uuid.UUID, revive bool) (*models.LinkedInAccount, error) {
 	if sa == nil || sa.ID == "" {
 		return nil, nil
 	}
@@ -96,7 +106,12 @@ func (s *Service) record(ctx context.Context, orgID uuid.UUID, sa *graphkit.Soci
 		t := s.now()
 		row.RemovedAt = &t
 	}
-	got, err := s.Repo.UpsertAccount(ctx, row)
+	var snapshotAt *time.Time
+	if !sa.UpdatedAt.IsZero() {
+		t := sa.UpdatedAt.UTC()
+		snapshotAt = &t
+	}
+	got, err := s.Repo.UpsertAccount(ctx, row, revive, snapshotAt)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +259,8 @@ func (s *Service) AccountAction(ctx context.Context, orgID, id uuid.UUID, action
 	return toAccount(got), nil
 }
 
-// RemoveAccount removes an account at GraphKit. Its seat stops there; the month already paid is not refunded.
+// RemoveAccount removes an account at GraphKit. Its seat stops there; a month paid ahead that had not started is
+// refunded, the month in progress is not.
 func (s *Service) RemoveAccount(ctx context.Context, orgID, id uuid.UUID) (*models.LinkedInAccount, error) {
 	if err := s.ready(ctx, orgID); err != nil {
 		return nil, err
@@ -275,6 +291,12 @@ func (s *Service) RemoveAccount(ctx context.Context, orgID, id uuid.UUID) (*mode
 		}
 		a.Status = graphkit.SocialRemoved
 		s.publishAccount(ctx, a)
+	}
+	if got, err := s.Repo.GetAccount(ctx, orgID, a.ID); err == nil && got != nil {
+		a = got
+	}
+	if a.RemovedAt != nil && a.PaidThrough != nil && a.PaidThrough.AddDate(0, -1, 0).After(*a.RemovedAt) {
+		s.refundUnstartedMonth(ctx, a)
 	}
 	return a, nil
 }

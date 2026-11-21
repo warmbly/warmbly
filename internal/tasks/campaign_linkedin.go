@@ -57,7 +57,13 @@ func (s *tasksService) runLinkedInStep(ctx context.Context, campaign *models.Cam
 				Message:  fmt.Sprintf("LinkedIn step for %s is waiting: %s", who, out.Reason),
 				Metadata: map[string]interface{}{"contact_id": contact.ID.String(), "day": day.Format("2006-01-02")}}, "day", day.Format("2006-01-02"), day)
 		}
-		if cerr := s.createCampaignTask(ctx, campaign.ID, accountID, time.Now().UTC().Add(wait)); cerr != nil {
+		// Only this contact waits; the pass goes on to the next one.
+		resumeAt := nextTime
+		if derr := s.campaignProgressRepo.DeferStep(ctx, campaign.ID, contact.ID, sequence.ID, time.Now().UTC().Add(wait)); derr != nil {
+			log.Warn().Err(derr).Str("campaign_id", campaign.ID.String()).Msg("Failed to defer a LinkedIn step")
+			resumeAt = time.Now().UTC().Add(wait)
+		}
+		if cerr := s.createCampaignTask(ctx, campaign.ID, accountID, resumeAt); cerr != nil {
 			log.Warn().Err(cerr).Str("campaign_id", campaign.ID.String()).Msg("Failed to schedule a retry of a LinkedIn step")
 		}
 		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
@@ -88,6 +94,27 @@ func (s *tasksService) runLinkedInStep(ctx context.Context, campaign *models.Cam
 		}
 		_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{CampaignID: campaign.ID, EventType: evt, Message: msg,
 			Metadata: map[string]interface{}{"contact_id": contact.ID.String(), "step_id": sequence.ID.String(), "action_type": cfg.Type, "code": out.Code}})
+	}
+	s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+}
+
+// holdUnknownStep keeps a contact on a step type a newer release added, so a backend on this release never
+// marks it visited; the step is offered again later, by then perhaps to a backend that runs it.
+func (s *tasksService) holdUnknownStep(ctx context.Context, campaign *models.Campaign, contact *models.Contact, sequenceID uuid.UUID, stepType string, taskID, accountID uuid.UUID, nextTime time.Time) {
+	now := time.Now().UTC()
+	resumeAt := nextTime
+	if err := s.campaignProgressRepo.DeferStep(ctx, campaign.ID, contact.ID, sequenceID, now.Add(unknownActionRetry)); err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Msg("Failed to hold a contact on an unknown step")
+		resumeAt = now.Add(unknownActionRetry)
+	}
+	if s.campaignLogRepo != nil {
+		day := now.Truncate(24 * time.Hour).Format("2006-01-02")
+		_, _ = s.campaignLogRepo.CreateLogOnce(ctx, &repository.CampaignLogEntry{CampaignID: campaign.ID, EventType: "action_waiting",
+			Message:  fmt.Sprintf("Step '%s' for %s is waiting: it needs every Warmbly backend on a newer release", stepType, contactLabel(contact)),
+			Metadata: map[string]interface{}{"contact_id": contact.ID.String(), "step_id": sequenceID.String(), "day": day}}, "day", day, now.Truncate(24*time.Hour))
+	}
+	if err := s.createCampaignTask(ctx, campaign.ID, accountID, resumeAt); err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Msg("Failed to schedule the next task after an unknown step")
 	}
 	s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
 }

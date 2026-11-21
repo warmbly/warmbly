@@ -21,13 +21,16 @@ const LinkedInContactBackfillKey = "linkedin.contact_backfill"
 // drives is scoped by organization_id; only the billing and reconcile sweeps
 // read across workspaces, and each row they return carries its own.
 type LinkedInRepository interface {
+	// OrganizationExists reports whether this instance has the workspace a GraphKit event names.
+	OrganizationExists(ctx context.Context, orgID uuid.UUID) (bool, error)
 	GetWorkspace(ctx context.Context, orgID uuid.UUID) (*models.LinkedInWorkspace, error)
 	// SetWorkspace records the mode GraphKit reported; a link session id is kept unless replaced.
 	SetWorkspace(ctx context.Context, orgID uuid.UUID, mode string, name *string, linkedAt *time.Time) error
 	SetLinkSession(ctx context.Context, orgID uuid.UUID, sessionID *string) error
 
-	// UpsertAccount records GraphKit's view of an account, by its GraphKit id, within the workspace.
-	UpsertAccount(ctx context.Context, a *models.LinkedInAccount) (*models.LinkedInAccount, error)
+	// UpsertAccount records GraphKit's view of an account, by its GraphKit id, within the workspace. Only revive (a
+	// connect that succeeded) brings back a removed store seat; a snapshot older than the stored one is ignored.
+	UpsertAccount(ctx context.Context, a *models.LinkedInAccount, revive bool, snapshotAt *time.Time) (*models.LinkedInAccount, error)
 	GetAccount(ctx context.Context, orgID, id uuid.UUID) (*models.LinkedInAccount, error)
 	GetAccountByGraphKitID(ctx context.Context, orgID uuid.UUID, graphkitID string) (*models.LinkedInAccount, error)
 	// ListAccounts is the workspace's accounts newest first; removed ones only when withRemoved.
@@ -55,6 +58,12 @@ type LinkedInRepository interface {
 	ExtendUnmeteredSeats(ctx context.Context, orgID uuid.UUID, dueBefore time.Time) error
 	SeatsDue(ctx context.Context, orgID uuid.UUID, dueBefore time.Time) ([]models.LinkedInAccount, error)
 	SetSeatNotice(ctx context.Context, id uuid.UUID, notice string) (bool, error)
+	// RemovedSeatsPaidAhead are removed seats whose last paid month had not started when they were removed; orgID narrows it.
+	RemovedSeatsPaidAhead(ctx context.Context, orgID *uuid.UUID, limit int) ([]models.LinkedInAccount, error)
+	// ReturnSeatMonth moves such a seat's paid month back once it is refunded.
+	ReturnSeatMonth(ctx context.Context, orgID, id uuid.UUID, paidKey string) error
+	// PausedPaidSeats are seats unpaid had paused whose month has since been paid.
+	PausedPaidSeats(ctx context.Context, orgID uuid.UUID) ([]models.LinkedInAccount, error)
 
 	CreateSession(ctx context.Context, s *models.LinkedInConnectSession) error
 	GetSession(ctx context.Context, orgID uuid.UUID, id string) (*models.LinkedInConnectSession, error)
@@ -111,6 +120,9 @@ type LinkedInRepository interface {
 	FinishAction(ctx context.Context, orgID, id uuid.UUID, status string, skipReason, errorCode *string) error
 	// ApplyActionUpdate records GraphKit's status for an action; changed is false when it already had it.
 	ApplyActionUpdate(ctx context.Context, orgID uuid.UUID, u LinkedInActionUpdate) (row *models.LinkedInAction, changed bool, err error)
+	// ActionsToStop are queued campaign actions, across workspaces, whose contact replied, opted out, was suppressed or left
+	// the campaign, or whose campaign was paused or deleted; contactID narrows it to one contact.
+	ActionsToStop(ctx context.Context, contactID *uuid.UUID, limit int) ([]LinkedInActionStop, error)
 	// StickyAccount is the account a contact keeps in a campaign: the one used before, else one connected to or inviting them.
 	StickyAccount(ctx context.Context, orgID, campaignID, contactID uuid.UUID, candidates []uuid.UUID) (*uuid.UUID, error)
 	// OpenActionsToday counts actions not yet run per account and type, created since.
@@ -172,6 +184,12 @@ func (r *linkedInRepository) affected(ctx context.Context, query string, args ..
 }
 
 // ---- workspace ------------------------------------------------------------
+
+func (r *linkedInRepository) OrganizationExists(ctx context.Context, orgID uuid.UUID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1)`, orgID).Scan(&ok)
+	return ok, err
+}
 
 func (r *linkedInRepository) GetWorkspace(ctx context.Context, orgID uuid.UUID) (*models.LinkedInWorkspace, error) {
 	var w models.LinkedInWorkspace
@@ -242,7 +260,7 @@ func (r *linkedInRepository) accounts(ctx context.Context, query string, args ..
 	return out, rows.Err()
 }
 
-func (r *linkedInRepository) UpsertAccount(ctx context.Context, a *models.LinkedInAccount) (*models.LinkedInAccount, error) {
+func (r *linkedInRepository) UpsertAccount(ctx context.Context, a *models.LinkedInAccount, revive bool, snapshotAt *time.Time) (*models.LinkedInAccount, error) {
 	if a.ID == uuid.Nil {
 		a.ID = uuid.New()
 	}
@@ -252,24 +270,48 @@ func (r *linkedInRepository) UpsertAccount(ctx context.Context, a *models.Linked
 	if len(a.Snapshot) == 0 {
 		a.Snapshot = json.RawMessage(`{}`)
 	}
-	// Billing columns are the add-on's own and only set on insert; the conflict target never crosses workspaces.
-	return scanLinkedInAccount(r.db.QueryRow(ctx, `INSERT INTO linkedin_accounts (id, organization_id, user_id, graphkit_id, status,
+	// Billing columns are the add-on's own and only set on insert or revive; the conflict target never crosses
+	// workspaces. A removed account comes back only through a connect (revive), or a linked one through its link,
+	// and a snapshot older than the one stored changes nothing.
+	got, err := scanLinkedInAccount(r.db.QueryRow(ctx, `INSERT INTO linkedin_accounts (id, organization_id, user_id, graphkit_id, status,
 			status_reason, display_name, headline, avatar_url, profile_url, public_id, licences, snapshot, billing_mode,
 			monthly_retail_micros, connected_at, removed_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-		ON CONFLICT (graphkit_id) DO UPDATE SET status = EXCLUDED.status, status_reason = EXCLUDED.status_reason,
+		ON CONFLICT (graphkit_id) DO UPDATE SET
+			status = CASE WHEN EXCLUDED.status <> 'removed' AND linkedin_accounts.removed_at IS NOT NULL AND NOT `+revived+`
+				THEN 'removed' ELSE EXCLUDED.status END,
+			status_reason = EXCLUDED.status_reason,
 			display_name = EXCLUDED.display_name, headline = EXCLUDED.headline, avatar_url = EXCLUDED.avatar_url,
 			profile_url = EXCLUDED.profile_url, public_id = EXCLUDED.public_id, licences = EXCLUDED.licences,
-			snapshot = EXCLUDED.snapshot, connected_at = COALESCE(linkedin_accounts.connected_at, EXCLUDED.connected_at),
+			snapshot = EXCLUDED.snapshot,
+			connected_at = CASE WHEN `+revivedRemoved+` THEN now() ELSE COALESCE(linkedin_accounts.connected_at, EXCLUDED.connected_at) END,
+			unpaid_paused = CASE WHEN `+revivedRemoved+` THEN false ELSE linkedin_accounts.unpaid_paused END,
+			billing_failures = CASE WHEN `+revivedRemoved+` THEN 0 ELSE linkedin_accounts.billing_failures END,
+			unpaid_since = CASE WHEN `+revivedRemoved+` THEN NULL ELSE linkedin_accounts.unpaid_since END,
+			last_notice = CASE WHEN `+revivedRemoved+` THEN '' ELSE linkedin_accounts.last_notice END,
 			removed_at = CASE WHEN EXCLUDED.status = 'removed' THEN COALESCE(linkedin_accounts.removed_at, now())
-				WHEN linkedin_accounts.removed_at IS NOT NULL AND EXCLUDED.status <> 'removed' THEN NULL
+				WHEN `+revived+` THEN NULL
 				ELSE linkedin_accounts.removed_at END,
 			user_id = COALESCE(linkedin_accounts.user_id, EXCLUDED.user_id), updated_at = now()
 		WHERE linkedin_accounts.organization_id = EXCLUDED.organization_id
+		  AND ($19::timestamptz IS NULL
+		    OR COALESCE(NULLIF(linkedin_accounts.snapshot->>'updated_at', '')::timestamptz, '-infinity') <= $19)
 		RETURNING `+linkedInAccountColumns,
 		a.ID, a.OrganizationID, a.UserID, a.GraphKitID, a.Status, a.StatusReason, a.DisplayName, a.Headline, a.AvatarURL,
-		a.ProfileURL, a.PublicID, a.Licences, a.Snapshot, a.BillingMode, a.MonthlyRetailMicros, a.ConnectedAt, a.RemovedAt))
+		a.ProfileURL, a.PublicID, a.Licences, a.Snapshot, a.BillingMode, a.MonthlyRetailMicros, a.ConnectedAt, a.RemovedAt,
+		revive, snapshotAt))
+	if err != nil || got != nil {
+		return got, err
+	}
+	// A stale snapshot or another workspace's id wrote nothing; the stored row, if it is this workspace's, stands.
+	return r.GetAccountByGraphKitID(ctx, a.OrganizationID, a.GraphKitID)
 }
+
+// revived is true for the connect that brings an account back, or for a linked account whose link reports it again.
+const revived = `($18::bool OR (linkedin_accounts.billing_mode = 'linked' AND EXCLUDED.billing_mode = 'linked'))`
+
+// revivedRemoved is a removed store seat a connect brings back: it starts clean, unpaid state and all.
+const revivedRemoved = `($18::bool AND linkedin_accounts.removed_at IS NOT NULL AND EXCLUDED.status <> 'removed')`
 
 func (r *linkedInRepository) GetAccount(ctx context.Context, orgID, id uuid.UUID) (*models.LinkedInAccount, error) {
 	return scanLinkedInAccount(r.db.QueryRow(ctx, `SELECT `+linkedInAccountColumns+` FROM linkedin_accounts
@@ -295,8 +337,9 @@ func (r *linkedInRepository) CountAccounts(ctx context.Context, orgID uuid.UUID)
 }
 
 func (r *linkedInRepository) MarkRemoved(ctx context.Context, orgID, id uuid.UUID, at time.Time) error {
+	// A pending charge is kept, so settling its batch gives this seat's share back.
 	return r.exec(ctx, `UPDATE linkedin_accounts SET status = 'removed', removed_at = COALESCE(removed_at, $3),
-		pending_charge_key = NULL, updated_at = now() WHERE organization_id = $1 AND id = $2`, orgID, id, at)
+		updated_at = now() WHERE organization_id = $1 AND id = $2`, orgID, id, at)
 }
 
 func (r *linkedInRepository) ForgetLinkedAccounts(ctx context.Context, orgID uuid.UUID, at time.Time) (int64, error) {
@@ -393,6 +436,12 @@ func (r *linkedInRepository) UnpaidSeats(ctx context.Context, orgID uuid.UUID) (
 		ORDER BY paid_through, id`, orgID)
 }
 
+func (r *linkedInRepository) PausedPaidSeats(ctx context.Context, orgID uuid.UUID) ([]models.LinkedInAccount, error) {
+	return r.accounts(ctx, `SELECT `+linkedInAccountColumns+` FROM linkedin_accounts
+		WHERE organization_id = $1 AND `+linkedInSeat+` AND unpaid_paused AND billing_failures = 0 AND pending_charge_key IS NULL
+		AND paid_through > now() ORDER BY id`, orgID)
+}
+
 func (r *linkedInRepository) SetUnpaidPaused(ctx context.Context, orgID, id uuid.UUID, paused bool) error {
 	return r.exec(ctx, `UPDATE linkedin_accounts SET unpaid_paused = $3, updated_at = now()
 		WHERE organization_id = $1 AND id = $2`, orgID, id, paused)
@@ -407,6 +456,20 @@ func (r *linkedInRepository) ExtendUnmeteredSeats(ctx context.Context, orgID uui
 func (r *linkedInRepository) SeatsDue(ctx context.Context, orgID uuid.UUID, dueBefore time.Time) ([]models.LinkedInAccount, error) {
 	return r.accounts(ctx, `SELECT `+linkedInAccountColumns+` FROM linkedin_accounts
 		WHERE organization_id = $1 AND `+linkedInSeat+` AND paid_through < $2 ORDER BY paid_through, id`, orgID, dueBefore)
+}
+
+// paidAheadOfRemoval is a removed seat whose last paid month starts after it was removed.
+const paidAheadOfRemoval = `billing_mode = 'store' AND removed_at IS NOT NULL AND paid_key IS NOT NULL AND paid_micros > 0
+	AND paid_through IS NOT NULL AND paid_through - interval '1 month' > removed_at`
+
+func (r *linkedInRepository) RemovedSeatsPaidAhead(ctx context.Context, orgID *uuid.UUID, limit int) ([]models.LinkedInAccount, error) {
+	return r.accounts(ctx, `SELECT `+linkedInAccountColumns+` FROM linkedin_accounts
+		WHERE ($1::uuid IS NULL OR organization_id = $1) AND `+paidAheadOfRemoval+` ORDER BY removed_at, id LIMIT $2`, orgID, limit)
+}
+
+func (r *linkedInRepository) ReturnSeatMonth(ctx context.Context, orgID, id uuid.UUID, paidKey string) error {
+	return r.exec(ctx, `UPDATE linkedin_accounts SET paid_through = paid_through - interval '1 month', paid_key = NULL, paid_micros = 0,
+		updated_at = now() WHERE organization_id = $1 AND id = $2 AND paid_key = $3 AND `+paidAheadOfRemoval, orgID, id, paidKey)
 }
 
 func (r *linkedInRepository) SetSeatNotice(ctx context.Context, id uuid.UUID, notice string) (bool, error) {

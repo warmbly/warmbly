@@ -29,7 +29,10 @@ func (s *Service) Quote(ctx context.Context, orgID uuid.UUID, accountID *uuid.UU
 	if !s.available() {
 		return nil, errUnavailable
 	}
-	price := s.seatPrice(ctx, orgID)
+	price, err := s.seatPrice(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
 	q := &ConnectQuote{MonthlyMicros: price.MonthlyMicros, Tier: price.Tier, Free: true}
 	if accountID != nil {
 		if _, err := s.live(ctx, orgID, *accountID); err != nil {
@@ -124,7 +127,10 @@ func (s *Service) CreateConnection(ctx context.Context, orgID uuid.UUID, who Req
 	}
 	linked := ws.Mode == graphkit.SocialModeLinked
 	var due int64
-	price := s.seatPrice(ctx, orgID)
+	price, err := s.seatPrice(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
 	if !linked && reconnect == nil {
 		if err := s.requireBuyer(ctx, orgID); err != nil {
 			return nil, err
@@ -347,7 +353,12 @@ func (s *Service) observe(ctx context.Context, row *models.LinkedInConnectSessio
 	orgID := row.OrganizationID
 	var acct *models.LinkedInAccount
 	if gs.Account != nil {
-		a, err := s.record(ctx, orgID, gs.Account, row.UserID)
+		// Only the connect itself revives a removed account, never a later read of a session already settled.
+		record := s.record
+		if gs.Status == graphkit.ConnectSucceeded && row.AccountID == nil {
+			record = s.recordConnected
+		}
+		a, err := record(ctx, orgID, gs.Account, row.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -401,12 +412,15 @@ func (s *Service) startSeat(ctx context.Context, row *models.LinkedInConnectSess
 	}
 	monthly := models.Micro(0)
 	if s.Store.Metered() {
-		monthly = models.Micro(s.seatPrice(ctx, orgID).MonthlyMicros)
+		price, err := s.seatPrice(ctx, orgID)
+		if err != nil {
+			log.Warn().Err(err).Str("session_id", row.ID).Msg("linkedin: pricing a seat's month failed; retried on the next pass")
+			return nil, false
+		}
+		monthly = models.Micro(price.MonthlyMicros)
 	}
+	// The month starts now (a paid month that already ran out is behind it), so it never lands in the past.
 	start := s.now()
-	if acct.ConnectedAt != nil {
-		start = acct.ConnectedAt.UTC()
-	}
 	through := addMonth(start)
 	var paidKey *string
 	var paid models.Micro
