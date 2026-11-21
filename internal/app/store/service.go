@@ -179,6 +179,8 @@ type Service struct {
 	// links and signIns mint and remember purchased mailboxes' sign-in links (signin.go), wired after construction.
 	links   ConnectLinks
 	signIns repository.StoreSignInLinkRepository
+	// social is the LinkedIn add-on (social.go), wired after construction.
+	social Social
 }
 
 // WireManaged attaches the partner core's check, built after the store.
@@ -655,6 +657,8 @@ func NewAPI(cfg config.GraphKit) (graphkit.API, *graphkit.Fake, error) {
 	}
 	if cfg.Fake() {
 		f := graphkit.NewFake()
+		// The simulator's GraphKit link page is a stand-in the backend serves itself.
+		f.SetLinkPage(func(id string) string { return config.BackendPublicURL() + "/v1/linkedin/sandbox/link/" + id })
 		return f, f, nil
 	}
 	if cfg.APIKey == "" {

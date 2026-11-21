@@ -31,6 +31,7 @@ import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import BookACallButton from "@/components/app/integrations/BookACallButton";
+import { LinkedInLink } from "@/components/app/linkedin/LinkedInMark";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import NewMeetingDialog from "@/components/app/meetings/NewMeetingDialog";
@@ -115,6 +116,7 @@ function ContactEditPanel({
     const [email, setEmail] = React.useState(contact.email);
     const [company, setCompany] = React.useState(contact.company);
     const [phone, setPhone] = React.useState(contact.phone);
+    const [linkedinUrl, setLinkedinUrl] = React.useState(contact.linkedin_url ?? "");
     const [subscribed, setSubscribed] = React.useState(contact.subscribed);
     const [campaigns, setCampaigns] = React.useState<MiniCampaign[]>(contact.campaigns ?? []);
     const [categoryIds, setCategoryIds] = React.useState<string[]>(() => idsOf(contact.categories ?? []));
@@ -128,6 +130,7 @@ function ContactEditPanel({
         setEmail(contact.email);
         setCompany(contact.company);
         setPhone(contact.phone);
+        setLinkedinUrl(contact.linkedin_url ?? "");
         setSubscribed(contact.subscribed);
         setCampaigns(contact.campaigns ?? []);
         setCategoryIds(idsOf(contact.categories ?? []));
@@ -150,6 +153,7 @@ function ContactEditPanel({
         setEmail((v) => rebase(v, prev.email, contact.email));
         setCompany((v) => rebase(v, prev.company, contact.company));
         setPhone((v) => rebase(v, prev.phone, contact.phone));
+        setLinkedinUrl((v) => rebase(v, prev.linkedin_url ?? "", contact.linkedin_url ?? ""));
         setSubscribed((v) => rebase(v, prev.subscribed, contact.subscribed));
         setCampaigns((v) => rebase(v, prev.campaigns ?? [], contact.campaigns ?? [], sameCampaigns));
         setCategoryIds((v) =>
@@ -169,12 +173,13 @@ function ContactEditPanel({
         if (email !== contact.email) return true;
         if (company !== contact.company) return true;
         if (phone !== contact.phone) return true;
+        if (linkedinUrl !== (contact.linkedin_url ?? "")) return true;
         if (subscribed !== contact.subscribed) return true;
         if (!sameFields(customFields, fieldsOf(contact.custom_fields))) return true;
         if (!sameCampaigns(campaigns, contact.campaigns ?? [])) return true;
         if (!sameIDs(categoryIds, idsOf(contact.categories ?? []))) return true;
         return false;
-    }, [contact, firstName, lastName, email, company, phone, subscribed, customFields, campaigns, categoryIds]);
+    }, [contact, firstName, lastName, email, company, phone, linkedinUrl, subscribed, customFields, campaigns, categoryIds]);
 
     // What the user would lose on the way out, which is more than what would
     // be sent: a custom-field row they have typed a value into but not named
@@ -197,6 +202,7 @@ function ContactEditPanel({
         if (email !== contact.email) data.email = email;
         if (company !== contact.company) data.company = company;
         if (phone !== contact.phone) data.phone = phone;
+        if (linkedinUrl !== (contact.linkedin_url ?? "")) data.linkedin_url = linkedinUrl.trim();
         if (subscribed !== contact.subscribed) data.subscribed = subscribed;
         // Same comparisons `dirty` and the rebase use, so what counts as
         // changed is decided in exactly one place.
@@ -297,6 +303,8 @@ function ContactEditPanel({
                             setCompany={setCompany}
                             phone={phone}
                             setPhone={setPhone}
+                            linkedinUrl={linkedinUrl}
+                            setLinkedinUrl={setLinkedinUrl}
                             subscribed={subscribed}
                             setSubscribed={setSubscribed}
                             campaigns={campaigns}
@@ -392,6 +400,7 @@ function ContactHeader({
                     <h2 className="text-[14px] font-semibold text-slate-900 truncate leading-tight">
                         {displayName}
                     </h2>
+                    <LinkedInLink url={contact.linkedin_url} label={displayName} className="shrink-0" />
                     {statusPill}
                     <ResourceViewers resource={`contact:${contact.id}`} className="shrink-0" />
                     {dirty && (

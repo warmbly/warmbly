@@ -60,7 +60,40 @@ func (s *contactService) newAddresses(ctx context.Context, userID string, orgID 
 	return len(emails) - len(existing), nil
 }
 
+// errInvalidLinkedIn refuses a linkedin_url that names no LinkedIn profile.
+var errInvalidLinkedIn = errx.NewWithIdentifier(errx.BadRequest, "invalid_linkedin_url", "linkedin_url must be a LinkedIn profile URL (linkedin.com/in/...) or its public id.")
+
+// foldLinkedIn writes a requested LinkedIn profile into the custom field the column is derived from.
+func foldLinkedIn(raw *string, fields map[string]string) (map[string]string, *errx.Error) {
+	if raw == nil {
+		return fields, nil
+	}
+	if fields == nil {
+		fields = map[string]string{}
+	}
+	if strings.TrimSpace(*raw) == "" {
+		fields[models.ContactLinkedInField] = ""
+		return fields, nil
+	}
+	u, ok := models.NormalizeLinkedInURL(*raw)
+	if !ok {
+		return nil, errInvalidLinkedIn
+	}
+	fields[models.ContactLinkedInField] = u
+	return fields, nil
+}
+
 func (s *contactService) Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
+	for i := range contacts {
+		if contacts[i].LinkedInURL == nil || strings.TrimSpace(*contacts[i].LinkedInURL) == "" {
+			continue
+		}
+		fields, xerr := foldLinkedIn(contacts[i].LinkedInURL, contacts[i].CustomFields)
+		if xerr != nil {
+			return nil, xerr
+		}
+		contacts[i].CustomFields = fields
+	}
 	if xerr := s.checkContactLimit(ctx, orgID, len(contacts)); xerr != nil {
 		if xerr.Identifier != errx.ContactLimitReachedCode {
 			return nil, xerr
@@ -216,6 +249,17 @@ func (s *contactService) BulkUpdate(ctx context.Context, userID string, orgID uu
 }
 
 func (s *contactService) Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error) {
+	if data.LinkedInURL != nil {
+		var fields map[string]string
+		if data.CustomFields != nil {
+			fields = *data.CustomFields
+		}
+		fields, xerr := foldLinkedIn(data.LinkedInURL, fields)
+		if xerr != nil {
+			return nil, xerr
+		}
+		data.CustomFields = &fields
+	}
 	updated, xerr := s.contactRepository.Update(ctx, userID, contactID, orgID, data)
 	if xerr != nil {
 		return nil, xerr

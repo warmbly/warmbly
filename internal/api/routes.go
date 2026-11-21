@@ -378,6 +378,9 @@ func Run(
 	// GraphKit's store webhook: no session; every delivery is verified against
 	// the configured webhook secret (or the previous one) before it is read.
 	v1.POST("/webhooks/graphkit", h.GraphKitWebhook)
+	// The development simulator's stand-in for GraphKit's LinkedIn link page; not found anywhere else.
+	v1.GET("/linkedin/sandbox/link/:session", m.PublicIPRateLimitMiddleware(), h.LinkedInSandboxLink)
+	v1.POST("/linkedin/sandbox/link/:session", m.PublicIPRateLimitMiddleware(), h.LinkedInSandboxLink)
 
 	// The branded dashboard on a verified agency portal domain: its brand, and the challenge its sign-in embeds.
 	v1.GET("/auth/portal", m.PublicIPRateLimitMiddleware(), h.PortalInfo)
@@ -808,6 +811,65 @@ func Run(
 				storeSecrets.POST("/domains/:id/transfer-out", manage, m.RequireAccess(models.PermManageBilling, models.APIPermManageStore), middleware.RequireFreshAuth(), h.TransferOutStoreDomain)
 				// The admin mailbox's sign-in opens the whole Workspace or tenant, so a session needs a fresh sign-in.
 				storeSecrets.POST("/mailboxes/:id/sign-in", manage, middleware.RequireFreshAuth(), h.StoreMailboxSignIn)
+			}
+
+			// LinkedIn accounts on the store's GraphKit connection, lead search and conversations. Reads take
+			// READ_LINKEDIN and writes MANAGE_LINKEDIN; anything that charges or removes a seat also holds the
+			// member to manage_billing, and a session to a fresh sign-in.
+			linkedInRoutes := protected.Group("/linkedin")
+			linkedInRoutes.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"))
+			{
+				read := m.RequireAccess(models.PermManageEmails, models.APIPermReadLinkedIn)
+				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageLinkedIn)
+				billing := m.RequireAccess(models.PermManageBilling, models.APIPermManageLinkedIn)
+				search := m.RequireAccess(models.PermViewContacts, models.APIPermReadLinkedIn)
+				saved := m.RequireAccess(models.PermViewContacts, models.APIPermManageLinkedIn)
+				importer := m.RequireAccess(models.PermManageContacts, models.APIPermManageLinkedIn)
+				inbox := m.RequireAccess(models.PermAccessUnibox, models.APIPermReadLinkedIn)
+				reply := m.RequireAccess(models.PermAccessUnibox, models.APIPermManageLinkedIn)
+				linkedInRoutes.GET("/status", read, h.GetLinkedInStatus)
+				linkedInRoutes.POST("/link", manage, billing, h.StartLinkedInLink)
+				linkedInRoutes.POST("/link/:session/complete", manage, billing, h.CompleteLinkedInLink)
+				linkedInRoutes.DELETE("/link", manage, billing, h.UnlinkLinkedIn)
+				linkedInRoutes.GET("/connect-quote", read, h.GetLinkedInConnectQuote)
+				linkedInRoutes.POST("/connections", manage, billing, middleware.RequireFreshAuth(), h.CreateLinkedInConnection)
+				linkedInRoutes.GET("/connections/:session", read, h.GetLinkedInConnection)
+				linkedInRoutes.POST("/connections/:session/method", manage, h.LinkedInConnectionMethod)
+				linkedInRoutes.POST("/connections/:session/resend", manage, h.LinkedInConnectionResend)
+				linkedInRoutes.DELETE("/connections/:session", manage, h.CancelLinkedInConnection)
+				linkedInRoutes.GET("/accounts", read, h.ListLinkedInAccounts)
+				linkedInRoutes.GET("/accounts/:id", read, h.GetLinkedInAccount)
+				linkedInRoutes.PATCH("/accounts/:id", manage, h.PatchLinkedInAccount)
+				linkedInRoutes.POST("/accounts/:id/pause", manage, h.LinkedInAccountAction("pause"))
+				linkedInRoutes.POST("/accounts/:id/resume", manage, h.LinkedInAccountAction("resume"))
+				linkedInRoutes.POST("/accounts/:id/resync", manage, h.LinkedInAccountAction("resync"))
+				linkedInRoutes.DELETE("/accounts/:id", manage, billing, middleware.RequireFreshAuth(), h.RemoveLinkedInAccount)
+				linkedInRoutes.GET("/search/catalog", search, h.LinkedInSearchCatalog)
+				linkedInRoutes.POST("/search", search, h.LinkedInSearch)
+				linkedInRoutes.GET("/search/typeahead", search, h.LinkedInTypeahead)
+				linkedInRoutes.POST("/search/parse-url", search, h.LinkedInParseURL)
+				// The search builder is charged to the AI balance at GraphKit's cost.
+				linkedInRoutes.POST("/search/ai", search, h.LinkedInSearchAI)
+				linkedInRoutes.POST("/search/import", importer, h.LinkedInSearchImport)
+				linkedInRoutes.GET("/saved-searches", search, h.ListLinkedInSavedSearches)
+				linkedInRoutes.POST("/saved-searches", saved, h.CreateLinkedInSavedSearch)
+				linkedInRoutes.PATCH("/saved-searches/:id", saved, h.PatchLinkedInSavedSearch)
+				linkedInRoutes.DELETE("/saved-searches/:id", saved, h.DeleteLinkedInSavedSearch)
+				linkedInRoutes.GET("/profiles", search, h.GetLinkedInProfile)
+				linkedInRoutes.GET("/conversations", inbox, h.ListLinkedInConversations)
+				linkedInRoutes.GET("/conversations/:id", inbox, h.GetLinkedInConversation)
+				linkedInRoutes.GET("/conversations/:id/messages", inbox, h.ListLinkedInMessages)
+				linkedInRoutes.POST("/conversations/:id/messages", reply, h.SendLinkedInMessage)
+				linkedInRoutes.POST("/conversations/:id/read", inbox, h.MarkLinkedInConversationRead)
+			}
+			// A LinkedIn sign-in and a checkpoint code go to GraphKit once, so no hash of them is kept for replay.
+			linkedInSecrets := base.Group("/linkedin")
+			linkedInSecrets.Use(m.CombinedAuthMiddleware(), m.ResourceScopeGate(), h.PartnerReadOnlyGate(), m.APIKeyUsageMiddleware(),
+				m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageLinkedIn)
+				linkedInSecrets.POST("/connections/:session/sign-in", manage, h.LinkedInConnectionSignIn)
+				linkedInSecrets.POST("/connections/:session/answer", manage, h.LinkedInConnectionAnswer)
 			}
 
 			// Sending domains: tracking host per domain and the bare-domain redirect.

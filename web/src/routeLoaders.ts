@@ -39,6 +39,7 @@ import { signinMigrationQuery } from "./lib/api/hooks/app/emails/useMailboxGrant
 import { featureStatusQuery } from "./lib/api/hooks/app/subscription/useFeatureStatus";
 import { balanceBurnQuery, balanceQuery } from "./lib/api/hooks/app/subscription/useBalance";
 import { orderQuery, storeDomainsQuery, storeOrdersQuery, storeStatusQuery } from "./lib/api/hooks/app/store/useStore";
+import { linkedInAccountsQuery, linkedInStatusQuery } from "./lib/api/hooks/app/linkedin/useLinkedIn";
 import { creditUsageQuery } from "./lib/api/hooks/app/subscription/useCreditUsage";
 import { creditSettingsQuery } from "./lib/api/hooks/app/subscription/useCreditSettings";
 import { advisorFindingsQuery, advisorSurfaceQuery } from "./lib/api/hooks/app/advisor/useAdvisor";
@@ -184,6 +185,11 @@ export const domainsLoader = pageLoader((qc) => [
     can("MANAGE_EMAILS") && qc.prefetchQuery(sendingDomainsQuery),
     can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery),
     can("MANAGE_EMAILS") && qc.prefetchQuery(storeDomainsQuery),
+]);
+
+export const linkedinLoader = pageLoader((qc) => [
+    can("MANAGE_EMAILS") && qc.prefetchQuery(linkedInStatusQuery),
+    can("MANAGE_EMAILS") && qc.prefetchQuery(linkedInAccountsQuery),
 ]);
 
 export const buyLoader = pageLoader((qc) => [can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery)]);
@@ -375,6 +381,7 @@ export const clayLoader = pageLoader((qc, { params }) => [!!params.id && qc.pref
 export const leadsLoader = pageLoader((qc) => [
     can("VIEW_CONTACTS") && qc.prefetchQuery(leadFinderConfigQuery),
     can("VIEW_CONTACTS") && qc.prefetchQuery(leadSearchesQuery),
+    can("VIEW_CONTACTS") && qc.prefetchQuery(linkedInStatusQuery),
 ]);
 
 export const auditLoader = pageLoader((qc) => [canManageTeam() && qc.prefetchQuery(auditLogsQuery({ limit: 50 }))]);

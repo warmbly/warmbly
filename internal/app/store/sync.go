@@ -79,6 +79,13 @@ func (s *Service) apply(ctx context.Context, ev graphkit.Event) error {
 	if err != nil {
 		return nil
 	}
+	if strings.HasPrefix(ev.Type, "social.") {
+		// The add-on ignores a workspace it never set up here, as for another instance on the same key.
+		if sc := s.socialAddon(); sc != nil {
+			return sc.ApplySocialEvent(ctx, orgID, ev)
+		}
+		return nil
+	}
 	// An account this instance never opened is another instance's on the same partner key.
 	acct, err := s.Repo.GetAccount(ctx, orgID)
 	if err != nil {
@@ -175,7 +182,7 @@ func (s *Service) domainNoticeFor(ctx context.Context, typ string, row *models.S
 func (s *Service) Reconcile(ctx context.Context) error {
 	var errs []error
 	errs = append(errs, s.drainEvents(ctx), s.refreshOpenOrders(ctx), s.recoverOrders(ctx), s.retryConnects(ctx), s.retireEnded(ctx), s.setupTrackingDue(ctx),
-		s.retryPhotos(ctx), s.sweepPhotos(ctx), s.retrySignatures(ctx))
+		s.retryPhotos(ctx), s.sweepPhotos(ctx), s.retrySignatures(ctx), s.reconcileSocial(ctx))
 	return errors.Join(errs...)
 }
 

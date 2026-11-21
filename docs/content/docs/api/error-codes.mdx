@@ -859,6 +859,33 @@ Store charges and refunds also appear on the balance ledger, and `GET /subscript
 
 A key or OAuth token whose member lacks `manage_billing` gets `403` `forbidden` on the routes that charge, the same answer the member gets in the dashboard.
 
+#### LinkedIn refusals
+
+The [LinkedIn](/guides/linkedin/) routes (`/linkedin/*`, see [LinkedIn](/api/endpoints/#linkedin)) answer these codes. Payment refusals on a connection (`payment_method_required`, `insufficient_balance`, a card decline) are the store's, above, and nothing is charged when one comes back; the AI search builder answers the usual AI balance refusals.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `linkedin_invalid_request` | 400 | A value is malformed or out of range: a `query` that is not a JSON object, a time zone that is not one, an empty sign-in, or a limit above its ceiling (`details.fields` names those). The `message` says which |
+| `linkedin_acknowledgement_required` | 400 | `POST /linkedin/connections` without `acknowledged: true` |
+| `invalid_linkedin_url` | 400 | A contact's `linkedin_url` names no LinkedIn profile. Send `https://www.linkedin.com/in/<id>` or the bare id |
+| `linkedin_plan_required` | 402 | Connecting an account Warmbly bills needs a Warmbly plan. Choose a plan, or link a GraphKit workspace |
+| `linkedin_checkout_required` | 402 | The linked GraphKit workspace's plan has no free seat. `details.url` is GraphKit's billing page |
+| `linkedin_unpaid` | 402 | `POST /linkedin/accounts/:id/resume` on an account paused because its month went unpaid. Paying the month resumes it |
+| `store_managed_by_partner` | 403 | The workspace's seats are bought through its partner |
+| `linkedin_mode_conflict` | 409 | Linking a GraphKit workspace while accounts Warmbly bills are connected. Remove them first |
+| `linkedin_accept_required` | 409 | The connection is charged and `accept` was not `true`. `details.quote` is what it costs: `{"monthly_micros", "currency", "billed_by"}`, `billed_by` being `warmbly` or `linked_workspace` |
+| `linkedin_session_expired` | 409 | The connection expired or was never paid for. Start a new one |
+| `licence_required` | 409 | The search needs an account with a Sales Navigator or Recruiter licence |
+| `search_limit_reached` | 409 | The account used its searches for the day; `usage.resets_at` says when they return |
+| `stale_cursor` | 409 | The query changed since the cursor was issued. Search again from the first page |
+| `account_unavailable` | 409 | The account cannot be used now (restricted, reconnect required, removed), or the workspace has no account and no linked workspace to search with |
+| `linkedin_sign_in_failed` | 422 | LinkedIn refused the sign-in. The session takes at most 5 attempts |
+| `recipient_invalid` | 422 | The profile does not exist or cannot be reached |
+| `linkedin_too_many_sign_ins` | 429 | Too many refused sign-ins for the account today. Wait for `Retry-After` |
+| `linkedin_unavailable` | 503 | The instance has no GraphKit connection, or LinkedIn is unavailable right now. Retry after `Retry-After` when it is sent |
+| `search_busy` | 503 | LinkedIn search is busy. Wait for `Retry-After` and try again |
+| `ai_unavailable` | 503 | The AI search builder is unavailable. Nothing was charged |
+
 #### `google_personal_app_password`
 
 A `400` with `code: "google_personal_app_password"` comes from `POST /emails/onboarding/oauth/start` with `provider: "gmail"` and a `login_hint` on `gmail.com` or `googlemail.com`. Personal Gmail connects with an app password, not with Google sign-in. Nothing was started and nothing was stored.

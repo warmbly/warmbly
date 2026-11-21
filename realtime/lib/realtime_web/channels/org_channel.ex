@@ -583,6 +583,15 @@ defmodule RealtimeWeb.OrgChannel do
       String.starts_with?(event_type, "STORE_") ->
         has.(:manage_emails)
 
+      # LinkedIn conversations are inbox content; accounts, connects and the GraphKit link sit with the mailboxes.
+      String.starts_with?(event_type, "LINKEDIN_MESSAGE") ->
+        has.(:access_unibox)
+
+      String.starts_with?(event_type, "LINKEDIN_ACCOUNT") or
+        String.starts_with?(event_type, "LINKEDIN_CONNECTION") or
+          String.starts_with?(event_type, "LINKEDIN_LINK") ->
+        has.(:manage_emails)
+
       # Billing
       String.contains?(event_type, "SUBSCRIPTION") or String.contains?(event_type, "BILLING") ->
         has.(:manage_billing)

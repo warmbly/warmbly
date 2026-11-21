@@ -369,6 +369,7 @@ func (f *Fake) advanceLocked() []Event {
 		}
 	}
 	out = append(out, f.advanceDomainsLocked(now)...)
+	out = append(out, f.advanceSocialLocked(now)...)
 	return out
 }
 

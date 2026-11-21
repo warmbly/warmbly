@@ -95,6 +95,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/keystatus"
 	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/linkedin"
 	"github.com/warmbly/warmbly/internal/app/mailboxavatar"
 	"github.com/warmbly/warmbly/internal/app/mailboxconnect"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
@@ -436,6 +437,7 @@ func main() {
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
 	var leadFinderServiceForHandler *leadfinder.Service
+	var linkedInServiceForHandler *linkedin.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2211,6 +2213,12 @@ func main() {
 			storeService.WireSignIns(connectLinkService, repository.NewStoreSignInLinkRepository(primaryDB.Pool))
 			connectLinkService.WirePartnerLinks(storeService.SignInLinks())
 		}
+		// LinkedIn rides the store's GraphKit connection; its seats are billed in the store's run.
+		linkedInServiceForHandler = linkedin.New(linkedin.Deps{
+			Store: storeService, Repo: repository.NewLinkedInRepository(primaryDB), Credits: creditService,
+			Subscriptions: subscriptionRepository, Publisher: streamingPublisher, Contacts: contactService, Cipher: cipherService,
+		})
+		storeService.WireSocial(linkedInServiceForHandler)
 		delegationService.WirePurchasedTokens(storeService)
 		delegationService.WireConsentWaker(storeService.WakeMicrosoftConsent)
 		// A card saved after a refused store charge pays what is unpaid at once.
@@ -3037,6 +3045,7 @@ func main() {
 		CreditService:    creditService,
 		BalanceService:   balanceService,
 		StoreService:     storeService,
+		LinkedInService:  linkedInServiceForHandler,
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		TypeSafe:         typeSafeAsker(typeSafeClient),

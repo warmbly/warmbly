@@ -37,6 +37,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
     const [lastName, setLastName] = React.useState("");
     const [company, setCompany] = React.useState("");
     const [phone, setPhone] = React.useState("");
+    const [linkedinUrl, setLinkedinUrl] = React.useState("");
     const [categories, setCategories] = React.useState<string[]>([]);
     const [customFields, setCustomFields] = React.useState<CustomField[]>([]);
     const add = useAddContacts();
@@ -48,6 +49,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             setLastName("");
             setCompany("");
             setPhone("");
+            setLinkedinUrl("");
             setCategories([]);
             setCustomFields([]);
         }
@@ -75,6 +77,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             last_name: lastName.trim(),
             company: company.trim(),
             phone: phone.trim(),
+            ...(linkedinUrl.trim() ? { linkedin_url: linkedinUrl.trim() } : {}),
             campaigns: campaign ? [campaign.id] : [],
             categories,
             segments: segment ? [segment.id] : undefined,
@@ -175,6 +178,10 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
                             <div>
                                 <Label>Phone</Label>
                                 <TextInput value={phone} onChange={setPhone} className="w-full" />
+                            </div>
+                            <div>
+                                <Label>LinkedIn</Label>
+                                <TextInput value={linkedinUrl} onChange={setLinkedinUrl} className="w-full" maxLength={300} placeholder="https://www.linkedin.com/in/…" />
                             </div>
                             <div>
                                 <Label>Labels</Label>

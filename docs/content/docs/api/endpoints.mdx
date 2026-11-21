@@ -178,6 +178,64 @@ Money is integer micro-USD (`1000000` is $1.00) in fields ending `_micros`.
 
 List routes return `data` and `pagination` with an opaque cursor; a bad `cursor` or a `limit` outside 1 to 100 answers `400` (`invalid_cursor`, `invalid_limit`). Order, domain and mailbox changes reach the dashboard live as `STORE_ORDER_UPDATED`, `STORE_DOMAIN_UPDATED` and `STORE_MAILBOX_UPDATED` events, which members with `manage_emails` receive. Each carries `org_id`, `id` and `status`; a mailbox event adds `domain_id`, `email_account_id` once it is connected, and `connect_state`. Every store error code is listed under [domain and mailbox store refusals](/api/error-codes/#domain-and-mailbox-store-refusals).
 
+### LinkedIn
+
+The [LinkedIn](/guides/linkedin/) add-on: accounts run through GraphKit on the instance's store connection, lead search, and the accounts' conversations. Every `/linkedin/*` route accepts a session, an API key, an OAuth token, or an agency key acting in a client workspace, needs a current workspace and counts against the write rate limit. A key or token needs `READ_LINKEDIN` to read and `MANAGE_LINKEDIN` to change anything, and the member behind it needs the permission in the table, checked on every request. When the instance has no GraphKit connection, `GET /linkedin/status` answers `available: false` and every other route answers `503` `linkedin_unavailable`.
+
+| Method | Route | API permission | Member permission | Also needs |
+|--------|-------|----------------|-------------------|------------|
+| GET | `/linkedin/status` | `READ_LINKEDIN` | `manage_emails` | |
+| POST | `/linkedin/link` | `MANAGE_LINKEDIN` | `manage_emails`, `manage_billing` | |
+| POST | `/linkedin/link/:session/complete` | `MANAGE_LINKEDIN` | `manage_emails`, `manage_billing` | |
+| DELETE | `/linkedin/link` | `MANAGE_LINKEDIN` | `manage_emails`, `manage_billing` | |
+| GET | `/linkedin/connect-quote` | `READ_LINKEDIN` | `manage_emails` | |
+| POST | `/linkedin/connections` | `MANAGE_LINKEDIN` | `manage_emails`, `manage_billing` | recent confirmation |
+| GET | `/linkedin/connections/:session` | `READ_LINKEDIN` | `manage_emails` | |
+| POST | `/linkedin/connections/:session/sign-in` | `MANAGE_LINKEDIN` | `manage_emails` | |
+| POST | `/linkedin/connections/:session/answer` | `MANAGE_LINKEDIN` | `manage_emails` | |
+| POST | `/linkedin/connections/:session/method` | `MANAGE_LINKEDIN` | `manage_emails` | |
+| POST | `/linkedin/connections/:session/resend` | `MANAGE_LINKEDIN` | `manage_emails` | |
+| DELETE | `/linkedin/connections/:session` | `MANAGE_LINKEDIN` | `manage_emails` | |
+| GET | `/linkedin/accounts` | `READ_LINKEDIN` | `manage_emails` | |
+| GET | `/linkedin/accounts/:id` | `READ_LINKEDIN` | `manage_emails` | |
+| PATCH | `/linkedin/accounts/:id` | `MANAGE_LINKEDIN` | `manage_emails` | |
+| POST | `/linkedin/accounts/:id/pause`, `/resume`, `/resync` | `MANAGE_LINKEDIN` | `manage_emails` | |
+| DELETE | `/linkedin/accounts/:id` | `MANAGE_LINKEDIN` | `manage_emails`, `manage_billing` | recent confirmation |
+| GET | `/linkedin/search/catalog` | `READ_LINKEDIN` | `view_contacts` | |
+| POST | `/linkedin/search` | `READ_LINKEDIN` | `view_contacts` | |
+| GET | `/linkedin/search/typeahead` | `READ_LINKEDIN` | `view_contacts` | |
+| POST | `/linkedin/search/parse-url` | `READ_LINKEDIN` | `view_contacts` | |
+| POST | `/linkedin/search/ai` | `READ_LINKEDIN` | `view_contacts` | |
+| POST | `/linkedin/search/import` | `MANAGE_LINKEDIN` | `manage_contacts` | |
+| GET | `/linkedin/saved-searches` | `READ_LINKEDIN` | `view_contacts` | |
+| POST | `/linkedin/saved-searches` | `MANAGE_LINKEDIN` | `view_contacts` | |
+| PATCH, DELETE | `/linkedin/saved-searches/:id` | `MANAGE_LINKEDIN` | `view_contacts` | |
+| GET | `/linkedin/profiles` | `READ_LINKEDIN` | `view_contacts` | |
+| GET | `/linkedin/conversations` | `READ_LINKEDIN` | `access_unibox` | |
+| GET | `/linkedin/conversations/:id` | `READ_LINKEDIN` | `access_unibox` | |
+| GET | `/linkedin/conversations/:id/messages` | `READ_LINKEDIN` | `access_unibox` | |
+| POST | `/linkedin/conversations/:id/messages` | `MANAGE_LINKEDIN` | `access_unibox` | |
+| POST | `/linkedin/conversations/:id/read` | `READ_LINKEDIN` | `access_unibox` | |
+
+Every `POST`, `PATCH` and `DELETE` accepts an `Idempotency-Key`; send one with a connection so a retry never charges twice. The exceptions are `sign-in` and `answer`: they carry a LinkedIn password, cookie or code, which goes to GraphKit once and is never stored, so no copy of the request or answer is kept and a key sent with them is ignored. An `:id` that is not a UUID answers `400`. List routes return `data` and `pagination` with an opaque cursor (`limit` 1 to 100).
+
+Money is integer micro-USD in fields ending `_micros`.
+
+- `GET /linkedin/status` returns `available`, `mode` (`none`, `managed` for accounts Warmbly bills, `linked` for a linked GraphKit workspace), `linked_workspace` (`{"name"}` or `null`), `linked_at`, `can_buy` and `buy_blocked_reason` (`plan_required` or `partner_managed`, or `null`), `price` (`{"monthly_micros", "tier"}`, `tier` being `standard`, `agency` or `agency_pro`), `acknowledgement_version` and `accounts`, the count of connected accounts.
+- `POST /linkedin/link` answers `{"url", "expires_at"}`, GraphKit's page where the customer approves a workspace they administer; it returns to `/app/linkedin?link_session=…&status=linked|cancelled` on the dashboard. `POST /linkedin/link/:session/complete` reads the session back and answers with the status; repeating it changes nothing. A workspace with accounts Warmbly bills answers `409` `linkedin_mode_conflict`. `DELETE /linkedin/link` answers `204` and removes the linked accounts from Warmbly, leaving them in GraphKit.
+- `GET /linkedin/connect-quote?account_id=` answers `{"monthly_micros", "tier", "due_now_micros", "payment", "free"}`, `payment` being the store's [payment preview](#domains-and-mailboxes). A reconnect (`account_id` set), a linked workspace and an instance that charges nothing are `free`.
+- `POST /linkedin/connections` `{"account_id", "timezone", "accept", "acknowledged"}` answers `201` `{"session", "charged_micros"}`. `acknowledged` must be `true` (`400` `linkedin_acknowledgement_required`); a new account Warmbly bills needs `accept: true` (`409` `linkedin_accept_required` with `details.quote` otherwise), a paid plan (`402` `linkedin_plan_required`), and charges its first month now from the balance and the saved card, with the store's payment refusals. A linked workspace whose GraphKit plan has to be charged answers `409` `linkedin_accept_required` with GraphKit's `details.quote`, and one whose plan has no room `402` `linkedin_checkout_required` with `details.url`. A session that ends `failed`, `cancelled` or `expired` refunds the charge in full. `account_id` reconnects an account and is never charged.
+- A session carries `id`, `kind` (`connect` or `reconnect`), `channel`, `status` (`sign_in`, `checkpoint`, `succeeded`, `failed`, `cancelled` or `expired`), `checkpoint` (`type`, `delivery`, `choices`, `attempts_remaining`, `last_error`), `can_resend`, `account` (the account once it succeeded), `error` (`{"code", "message"}`), `expires_at` and `created_at`. `sign-in` takes `{"method": "password", "username", "password", "recruiter"}` or `{"method": "cookie", "li_at", "li_a", "recruiter"}`; `answer` takes `{"code"}`, `{"choice"}` or `{"choices"}`; `method` takes `{"challenge"}`. A refused sign-in answers `422` `linkedin_sign_in_failed`, too many refusals in a day `429` `linkedin_too_many_sign_ins`, and an expired session `409` `linkedin_session_expired`. `DELETE` cancels it and answers `204`.
+- An account carries `id`, `status` (`connecting`, `active`, `reconnect_required`, `restricted`, `paused`, `disconnected` or `removed`), `status_reason`, `display_name`, `headline`, `avatar_url`, `profile_url`, `public_id`, `licences`, `limits`, `weekly_limits`, `limit_ceilings`, `working_hours`, `timezone`, `warmup`, `usage`, `inmail_credits`, `pending_invites`, `acceptance_rate`, `withdraw_invites_after_days`, `billing` (`{"mode": "store" | "linked", "monthly_micros", "paid_through", "unpaid_since"}`), `connected_by`, `connected_at` and `updated_at`. `PATCH` takes `limits`, `weekly_limits`, `working_hours`, `timezone`, `warmup` (`{"enabled", "weeks", "start_percent"}`) and `withdraw_invites_after_days`; a limit above its ceiling answers `400` `linkedin_invalid_request` with `details.fields`. `resume` on an account paused for an unpaid month answers `402` `linkedin_unpaid`. `DELETE` removes the account and answers `204`; the paid month is not refunded.
+- `GET /linkedin/search/catalog` answers `{"data": [...]}`, each source with its groups, filters and cap. `POST /linkedin/search` `{"account_id", "query", "cursor", "limit"}` answers `data`, `next_cursor`, `total`, `cap`, `end_reason`, `account`, `usage` and `linkedin_url`. Each hit adds `warmbly`: `{"contact_id", "campaigns": [{"id", "name", "status"}], "outreach", "company_contacts"}`, where `outreach` is `none`, `invite_pending`, `connected`, `messaged` or `replied`. A workspace with no account and no linked workspace answers `409` `account_unavailable`. `GET /linkedin/search/typeahead?source=&filter=&q=&account_id=` answers `{"data": [{"id", "name", "label"}]}`. `POST /linkedin/search/parse-url` `{"url"}` answers `{"query"}`.
+- `POST /linkedin/search/ai` `{"prompt", "source", "current_query"}` answers `query`, `summary`, `changes`, `assumptions`, `unresolved`, `suggestions` and `cost_micros`, charged to the AI balance (`402` when it is empty, `429` at the spend limit). Send an `Idempotency-Key` so a retry is charged once.
+- `POST /linkedin/search/import` `{"query", "keys" | "max", "account_id", "segment_ids", "category_ids", "campaign_ids", "skip_existing"}` answers `{"created", "updated", "skipped", "no_email", "contact_ids"}`. A person already a contact, matched by LinkedIn profile, is updated (or kept with `skip_existing`) and joins the segments, categories and campaigns; a person with no contact is skipped and counted in `no_email`, since a contact needs an email address. At most 500 at once.
+- `GET /linkedin/saved-searches` lists `{"id", "name", "query", "created_by", "created_at", "updated_at"}`; `POST` takes `{"name", "query"}` and answers `201`; `PATCH` takes either; `DELETE` answers `204`.
+- `GET /linkedin/profiles?identifier=&account_id=` answers one profile, `recipient_invalid` (`422`) when it does not exist.
+- A conversation carries `id`, `account_id`, `contact_id`, `participant`, `kind`, `unread_count`, `last_message_at`, `last_message_preview`, `created_at` and `updated_at`; `GET /linkedin/conversations` filters by `account_id`, `contact_id` and `unread=true`. A message carries `id`, `conversation_id`, `direction` (`inbound` or `outbound`), `body`, `sent_at`, `status`, `kind`, `sent_by` and `created_at`. `POST .../messages` `{"body"}` (1 to 8,000 characters) sends from the conversation's account and answers `201`; `POST .../read` answers `204`.
+
+Changes reach the dashboard live as `LINKEDIN_ACCOUNT_UPDATED`, `LINKEDIN_CONNECTION_UPDATED` and `LINKEDIN_LINK_UPDATED` events, which members with `manage_emails` receive, and `LINKEDIN_MESSAGE`, which members with `access_unibox` receive. Each carries `org_id` and, as they apply, `account_id`, `session_id`, `conversation_id`, `status` and `direction`. Error codes are listed under [LinkedIn refusals](/api/error-codes/#linkedin-refusals).
+
 ### Campaigns and sequences
 
 Campaigns, steps and activity logs are scoped to the selected organization for session callers and the key's organization for API-key callers. Access depends on the permissions below, regardless of who created the campaign. Step updates and deletes also require the step to belong to the campaign in the URL. Campaign analytics, including daily, hourly and comparison endpoints, use this same organization boundary and require `READ_ANALYTICS` (or **View analytics** for session callers).
@@ -811,6 +869,7 @@ These changes require the session to have confirmed the account holder within th
 | Start a checkout, open the billing portal, change or cancel the plan, add money to the balance, save a card, change automatic reload or AI spend controls | `POST /subscription/checkout`, `POST /subscription/portal`, `POST /subscription/change-plan`, `POST /subscription/cancel`, `POST /subscription/balance/top-up`, `POST /subscription/balance/checkout`, `POST /subscription/balance/payment-method`, `POST /subscription/balance/setup-intent`, `POST /subscription/balance/setup-intent/default`, `PATCH /subscription/balance/auto-reload`, `PATCH /subscription/credits/settings`, `POST /pool-link/checkout` (the retired Warmup plan's checkout, which always refuses with `409` `warmup_plan_retired`), `POST /subscription/offers/:planId/checkout` |
 | Pay for domains and mailboxes, renew a domain or change its auto-renew, cancel or resume a purchased mailbox, get a domain's transfer code | `POST /store/orders`, `POST /store/domains/:id/renew`, `PATCH /store/domains/:id` (with `auto_renew`), `DELETE /store/mailboxes/:id`, `POST /store/mailboxes/:id/resume`, `POST /store/domains/:id/transfer-out` |
 | Show a purchased mailbox's sign-in, which for a domain's admin mailbox opens its whole Google Workspace or Microsoft 365 account | `POST /store/mailboxes/:id/sign-in` |
+| Connect a LinkedIn account, which charges its first month, or remove one | `POST /linkedin/connections`, `DELETE /linkedin/accounts/:id` |
 | Reveal or rotate a signing secret | `POST /webhooks/:id/rotate-secret`, `GET /integrations/connections/:id/webhook-secret`, `POST /oauth/applications/:id/rotate-secret`, `GET /oauth/applications/:id/webhook-secret`, `POST /oauth/applications/:id/webhook-secret/rotate` |
 | Record, use or remove an admin grant over a whole domain | `POST /emails/grants/google/finish`, `POST /emails/grants/microsoft/finish`, `POST /emails/grants/:id/connect`, `DELETE /emails/grants/:id` |
 | Admin panel: issue a fleet join token, change the worker fleet's size cap, grant admin permissions, export or import any workspace, issue a tester a new password, change a login-code exemption | `POST /admin/fleet/join-token`, `PATCH /admin/fleet/scale`, `POST /admin/admins/:userId/grant`, `POST /admin/organizations/:id/exports`, `POST /admin/organizations/:id/imports`, `POST /admin/testers/:id/password`, `PUT /admin/users/:id/login-code-exempt` |

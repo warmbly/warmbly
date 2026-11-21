@@ -56,6 +56,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadreview"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/linkedin"
 	"github.com/warmbly/warmbly/internal/app/mailboxconnect"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
@@ -287,7 +288,9 @@ type Handler struct {
 	CreditService  credits.CreditService
 	BalanceService *balance.Service
 	// StoreService sells domains and mailboxes; nil or disabled when GraphKit is not configured.
-	StoreService     *store.Service
+	StoreService *store.Service
+	// LinkedInService is the LinkedIn add-on on the store's GraphKit connection; nil when not wired.
+	LinkedInService  *linkedin.Service
 	WritingGenerator generation.WritingGenerator
 
 	// AI provider layer (RunAgent tool-loop backend) + pluggable web search,

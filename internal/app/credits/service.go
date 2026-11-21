@@ -134,6 +134,10 @@ type CreditService interface {
 	// generation caps do not apply. Undo it with RefundCharge.
 	ChargeUpfront(ctx context.Context, orgID uuid.UUID, u Usage, reason, idempotencyKey string) (models.Micro, error)
 
+	// ChargeAICost takes AI work a provider already priced (the LinkedIn query builder's cost_micros) from the
+	// AI balance at exactly that amount, once per key, like Charge: a short balance goes to zero.
+	ChargeAICost(ctx context.Context, orgID uuid.UUID, cost models.Micro, reason, idempotencyKey string) (models.Micro, error)
+
 	// ChargeAmount takes an exact price for something bought (a domain, a
 	// month of mailboxes), once per key, from the purchased pool only (never the
 	// plan's AI allowance or agency funding), refusing when it is short.
@@ -464,6 +468,15 @@ func (s *creditService) ChargeUpfront(ctx context.Context, orgID uuid.UUID, u Us
 	}
 	return s.debit(ctx, orgID, u, s.aiDebit(ctx, orgID, models.CreditDebit{
 		Amount: charge, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey, AgencyAllowance: s.agencyBilled,
+	}))
+}
+
+func (s *creditService) ChargeAICost(ctx context.Context, orgID uuid.UUID, cost models.Micro, reason, idempotencyKey string) (models.Micro, error) {
+	if s.selfHost || cost <= 0 {
+		return 0, nil
+	}
+	return s.debit(ctx, orgID, Usage{}, s.aiDebit(ctx, orgID, models.CreditDebit{
+		Amount: cost, Clamp: true, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey, AgencyAllowance: s.agencyBilled,
 	}))
 }
 

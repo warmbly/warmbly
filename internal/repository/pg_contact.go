@@ -461,6 +461,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 			ncon.CustomFields = map[string]string{}
 		}
 		ncon.IsNew = inserted
+		ncon.LinkedInURL = models.LinkedInOf(ncon.CustomFields)
 		ncontacts = append(ncontacts, ncon)
 		created = append(created, inserted)
 		if inserted {
@@ -689,6 +690,7 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		return nil, errx.InternalError()
 	}
 
+	contact.LinkedInURL = models.LinkedInOf(contact.CustomFields)
 	contact.Campaigns = []models.MiniCampaign{}
 	contact.Categories = []models.MiniCategory{}
 	return &contact, nil
@@ -1210,6 +1212,7 @@ func (r *contactRepository) scanLookupContact(ctx context.Context, query string,
 		db.CaptureError(err, query, args, "queryrow")
 		return nil, errx.InternalError()
 	}
+	contact.LinkedInURL = models.LinkedInOf(contact.CustomFields)
 	contact.Campaigns = []models.MiniCampaign{}
 	contact.Categories = []models.MiniCategory{}
 	return &contact, nil
@@ -1323,6 +1326,7 @@ func (r *contactRepository) GetByIDsAndOrganization(ctx context.Context, organiz
 		}
 		c.Campaigns = []models.MiniCampaign{}
 		c.Categories = []models.MiniCategory{}
+		c.LinkedInURL = models.LinkedInOf(c.CustomFields)
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -2015,6 +2019,7 @@ func (r *contactRepository) Search(
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
+		c.LinkedInURL = models.LinkedInOf(c.CustomFields)
 
 		// Per-campaign lead progress (single-campaign Leads view only). Derive
 		// the single display status from the counts + subscription flag.
@@ -2745,6 +2750,7 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 	} else {
 		updatedContact = c // No fields updated, use existing contact
 	}
+	updatedContact.LinkedInURL = models.LinkedInOf(updatedContact.CustomFields)
 
 	// The evidence ledger is a record of what a mailbox did, so it follows the
 	// address rather than the row. Leaving it would let the scorer hand the new
@@ -3833,6 +3839,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 	if detail.CustomFields == nil {
 		detail.CustomFields = map[string]string{}
 	}
+	detail.LinkedInURL = models.LinkedInOf(detail.CustomFields)
 	detail.Campaigns = []models.MiniCampaign{}
 	if len(campaignsJSON) > 0 {
 		var raw []struct {
