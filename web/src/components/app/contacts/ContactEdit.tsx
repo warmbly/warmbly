@@ -31,7 +31,7 @@ import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import BookACallButton from "@/components/app/integrations/BookACallButton";
-import { LinkedInLink } from "@/components/app/linkedin/LinkedInMark";
+import { SocialLinks } from "@/components/app/social/SocialLinks";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import NewMeetingDialog from "@/components/app/meetings/NewMeetingDialog";
@@ -41,7 +41,7 @@ import ActivityTab from "./contact-edit/ActivityTab";
 import DealsTab from "./contact-edit/DealsTab";
 import NotesTab from "./contact-edit/NotesTab";
 import ResearchTab from "./contact-edit/ResearchTab";
-import LinkedInTab from "./contact-edit/LinkedInTab";
+import SocialTab from "./contact-edit/SocialTab";
 import DetailsTab from "./contact-edit/DetailsTab";
 import { type CustomField, customFieldsPatch, customFieldsProblem } from "./customFields";
 import {
@@ -111,15 +111,13 @@ function ContactEditPanel({
 
     const [storedTab, setTab] = useBrowseState<ContactSlideTab>(`contacts:${contact.id}:panel:tab`, "overview", contactTabSchema,
         initialTab ? { initialOverride: initialTab } : undefined);
-    const hasLinkedIn = !!(detail.data?.linkedin_url ?? contact.linkedin_url);
-    const tab: ContactSlideTab = storedTab === "linkedin" && !hasLinkedIn ? "overview" : storedTab;
+    const tab: ContactSlideTab = storedTab;
 
     const [firstName, setFirstName] = React.useState(contact.first_name);
     const [lastName, setLastName] = React.useState(contact.last_name);
     const [email, setEmail] = React.useState(contact.email);
     const [company, setCompany] = React.useState(contact.company);
     const [phone, setPhone] = React.useState(contact.phone);
-    const [linkedinUrl, setLinkedinUrl] = React.useState(contact.linkedin_url ?? "");
     const [subscribed, setSubscribed] = React.useState(contact.subscribed);
     const [campaigns, setCampaigns] = React.useState<MiniCampaign[]>(contact.campaigns ?? []);
     const [categoryIds, setCategoryIds] = React.useState<string[]>(() => idsOf(contact.categories ?? []));
@@ -133,7 +131,6 @@ function ContactEditPanel({
         setEmail(contact.email);
         setCompany(contact.company);
         setPhone(contact.phone);
-        setLinkedinUrl(contact.linkedin_url ?? "");
         setSubscribed(contact.subscribed);
         setCampaigns(contact.campaigns ?? []);
         setCategoryIds(idsOf(contact.categories ?? []));
@@ -156,7 +153,6 @@ function ContactEditPanel({
         setEmail((v) => rebase(v, prev.email, contact.email));
         setCompany((v) => rebase(v, prev.company, contact.company));
         setPhone((v) => rebase(v, prev.phone, contact.phone));
-        setLinkedinUrl((v) => rebase(v, prev.linkedin_url ?? "", contact.linkedin_url ?? ""));
         setSubscribed((v) => rebase(v, prev.subscribed, contact.subscribed));
         setCampaigns((v) => rebase(v, prev.campaigns ?? [], contact.campaigns ?? [], sameCampaigns));
         setCategoryIds((v) =>
@@ -176,13 +172,12 @@ function ContactEditPanel({
         if (email !== contact.email) return true;
         if (company !== contact.company) return true;
         if (phone !== contact.phone) return true;
-        if (linkedinUrl !== (contact.linkedin_url ?? "")) return true;
         if (subscribed !== contact.subscribed) return true;
         if (!sameFields(customFields, fieldsOf(contact.custom_fields))) return true;
         if (!sameCampaigns(campaigns, contact.campaigns ?? [])) return true;
         if (!sameIDs(categoryIds, idsOf(contact.categories ?? []))) return true;
         return false;
-    }, [contact, firstName, lastName, email, company, phone, linkedinUrl, subscribed, customFields, campaigns, categoryIds]);
+    }, [contact, firstName, lastName, email, company, phone, subscribed, customFields, campaigns, categoryIds]);
 
     // What the user would lose on the way out, which is more than what would
     // be sent: a custom-field row they have typed a value into but not named
@@ -205,7 +200,6 @@ function ContactEditPanel({
         if (email !== contact.email) data.email = email;
         if (company !== contact.company) data.company = company;
         if (phone !== contact.phone) data.phone = phone;
-        if (linkedinUrl !== (contact.linkedin_url ?? "")) data.linkedin_url = linkedinUrl.trim();
         if (subscribed !== contact.subscribed) data.subscribed = subscribed;
         // Same comparisons `dirty` and the rebase use, so what counts as
         // changed is decided in exactly one place.
@@ -274,7 +268,7 @@ function ContactEditPanel({
                     onClose={requestClose}
                 />
 
-                <TabStrip tab={tab} setTab={setTab} linkedIn={hasLinkedIn} />
+                <TabStrip tab={tab} setTab={setTab} />
 
                 <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
                     {tab === "overview" && (
@@ -291,7 +285,7 @@ function ContactEditPanel({
                             defaultName={contact.company || (firstName || lastName ? displayName : contact.email)}
                         />
                     )}
-                    {tab === "linkedin" && <LinkedInTab contactId={contact.id} />}
+                    {tab === "social" && <SocialTab contact={detail.data ?? contact} />}
                     {tab === "notes" && <NotesTab contactId={contact.id} />}
                     {tab === "research" && <ResearchTab contactId={contact.id} />}
                     {tab === "details" && (
@@ -307,8 +301,6 @@ function ContactEditPanel({
                             setCompany={setCompany}
                             phone={phone}
                             setPhone={setPhone}
-                            linkedinUrl={linkedinUrl}
-                            setLinkedinUrl={setLinkedinUrl}
                             subscribed={subscribed}
                             setSubscribed={setSubscribed}
                             campaigns={campaigns}
@@ -404,7 +396,7 @@ function ContactHeader({
                     <h2 className="text-[14px] font-semibold text-slate-900 truncate leading-tight">
                         {displayName}
                     </h2>
-                    <LinkedInLink url={contact.linkedin_url} label={displayName} className="shrink-0" />
+                    <SocialLinks social={contact.social} label={displayName} className="shrink-0" />
                     {statusPill}
                     <ResourceViewers resource={`contact:${contact.id}`} className="shrink-0" />
                     {dirty && (
@@ -483,15 +475,13 @@ function ContactHeader({
 function TabStrip({
     tab,
     setTab,
-    linkedIn,
 }: {
     tab: ContactSlideTab;
     setTab: (t: ContactSlideTab) => void;
-    linkedIn: boolean;
 }) {
     return (
         <ScrollStrip activeKey={tab} className="shrink-0 border-b border-slate-200" innerClassName="px-3 gap-1">
-            {CONTACT_SLIDE_TABS.filter((t) => t.id !== "linkedin" || linkedIn).map((t) => {
+            {CONTACT_SLIDE_TABS.map((t) => {
                 const isActive = tab === t.id;
                 return (
                     <button

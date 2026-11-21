@@ -378,9 +378,9 @@ func Run(
 	// GraphKit's store webhook: no session; every delivery is verified against
 	// the configured webhook secret (or the previous one) before it is read.
 	v1.POST("/webhooks/graphkit", h.GraphKitWebhook)
-	// The development simulator's stand-in for GraphKit's LinkedIn link page; not found anywhere else.
-	v1.GET("/linkedin/sandbox/link/:session", m.PublicIPRateLimitMiddleware(), h.LinkedInSandboxLink)
-	v1.POST("/linkedin/sandbox/link/:session", m.PublicIPRateLimitMiddleware(), h.LinkedInSandboxLink)
+	// The development simulator's stand-in for GraphKit's link page; not found anywhere else.
+	v1.GET("/social/sandbox/link/:session", m.PublicIPRateLimitMiddleware(), h.SocialSandboxLink)
+	v1.POST("/social/sandbox/link/:session", m.PublicIPRateLimitMiddleware(), h.SocialSandboxLink)
 
 	// The branded dashboard on a verified agency portal domain: its brand, and the challenge its sign-in embeds.
 	v1.GET("/auth/portal", m.PublicIPRateLimitMiddleware(), h.PortalInfo)
@@ -813,65 +813,70 @@ func Run(
 				storeSecrets.POST("/mailboxes/:id/sign-in", manage, middleware.RequireFreshAuth(), h.StoreMailboxSignIn)
 			}
 
-			// LinkedIn accounts on the store's GraphKit connection, lead search and conversations. Reads take
-			// READ_LINKEDIN and writes MANAGE_LINKEDIN; anything that charges or removes a seat also holds the
+			// Social accounts on the store's GraphKit connection, LinkedIn lead search and conversations. Reads take
+			// READ_SOCIAL and writes MANAGE_SOCIAL; anything that charges or removes a seat also holds the
 			// member to manage_billing, and a session to a fresh sign-in.
-			linkedInRoutes := protected.Group("/linkedin")
-			linkedInRoutes.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"))
+			socialRoutes := protected.Group("/social")
+			socialRoutes.Use(m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"))
 			{
-				read := m.RequireAccess(models.PermManageEmails, models.APIPermReadLinkedIn)
-				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageLinkedIn)
-				billing := m.RequireAccess(models.PermManageBilling, models.APIPermManageLinkedIn)
-				search := m.RequireAccess(models.PermViewContacts, models.APIPermReadLinkedIn)
-				saved := m.RequireAccess(models.PermViewContacts, models.APIPermManageLinkedIn)
-				importer := m.RequireAccess(models.PermManageContacts, models.APIPermManageLinkedIn)
-				inbox := m.RequireAccess(models.PermAccessUnibox, models.APIPermReadLinkedIn)
-				reply := m.RequireAccess(models.PermAccessUnibox, models.APIPermManageLinkedIn)
-				linkedInRoutes.GET("/status", read, h.GetLinkedInStatus)
-				linkedInRoutes.POST("/link", manage, billing, h.StartLinkedInLink)
-				linkedInRoutes.POST("/link/:session/complete", manage, billing, h.CompleteLinkedInLink)
-				linkedInRoutes.DELETE("/link", manage, billing, h.UnlinkLinkedIn)
-				linkedInRoutes.GET("/connect-quote", read, h.GetLinkedInConnectQuote)
-				linkedInRoutes.POST("/connections", manage, billing, middleware.RequireFreshAuth(), h.CreateLinkedInConnection)
-				linkedInRoutes.GET("/connections/:session", read, h.GetLinkedInConnection)
-				linkedInRoutes.POST("/connections/:session/method", manage, h.LinkedInConnectionMethod)
-				linkedInRoutes.POST("/connections/:session/resend", manage, h.LinkedInConnectionResend)
-				linkedInRoutes.DELETE("/connections/:session", manage, h.CancelLinkedInConnection)
-				linkedInRoutes.GET("/accounts", read, h.ListLinkedInAccounts)
-				linkedInRoutes.GET("/accounts/:id", read, h.GetLinkedInAccount)
-				linkedInRoutes.PATCH("/accounts/:id", manage, h.PatchLinkedInAccount)
-				linkedInRoutes.POST("/accounts/:id/pause", manage, h.LinkedInAccountAction("pause"))
-				linkedInRoutes.POST("/accounts/:id/resume", manage, h.LinkedInAccountAction("resume"))
-				linkedInRoutes.POST("/accounts/:id/resync", manage, h.LinkedInAccountAction("resync"))
-				linkedInRoutes.DELETE("/accounts/:id", manage, billing, middleware.RequireFreshAuth(), h.RemoveLinkedInAccount)
-				linkedInRoutes.GET("/search/catalog", search, h.LinkedInSearchCatalog)
-				linkedInRoutes.POST("/search", search, h.LinkedInSearch)
-				linkedInRoutes.GET("/search/typeahead", search, h.LinkedInTypeahead)
-				linkedInRoutes.POST("/search/parse-url", search, h.LinkedInParseURL)
+				read := m.RequireAccess(models.PermManageEmails, models.APIPermReadSocial)
+				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageSocial)
+				billing := m.RequireAccess(models.PermManageBilling, models.APIPermManageSocial)
+				search := m.RequireAccess(models.PermViewContacts, models.APIPermReadSocial)
+				saved := m.RequireAccess(models.PermViewContacts, models.APIPermManageSocial)
+				importer := m.RequireAccess(models.PermManageContacts, models.APIPermManageSocial)
+				inbox := m.RequireAccess(models.PermAccessUnibox, models.APIPermReadSocial)
+				reply := m.RequireAccess(models.PermAccessUnibox, models.APIPermManageSocial)
+				voice := m.RequireAccess(models.PermManageCampaigns, models.APIPermManageSocial)
+				socialRoutes.GET("/status", read, h.GetSocialStatus)
+				socialRoutes.GET("/channels", read, h.GetSocialChannels)
+				// Recordings for voice-note steps; an upload is keyed at GraphKit, a delete is naturally idempotent.
+				socialRoutes.POST("/audio", voice, h.UploadSocialAudio)
+				socialRoutes.DELETE("/audio/:audio_id", voice, h.DeleteSocialAudio)
+				socialRoutes.POST("/link", manage, billing, h.StartSocialLink)
+				socialRoutes.POST("/link/:session/complete", manage, billing, h.CompleteSocialLink)
+				socialRoutes.DELETE("/link", manage, billing, h.UnlinkSocial)
+				socialRoutes.GET("/connect-quote", read, h.GetSocialConnectQuote)
+				socialRoutes.POST("/connections", manage, billing, middleware.RequireFreshAuth(), h.CreateSocialConnection)
+				socialRoutes.GET("/connections/:session", read, h.GetSocialConnection)
+				socialRoutes.POST("/connections/:session/method", manage, h.SocialConnectionMethod)
+				socialRoutes.POST("/connections/:session/resend", manage, h.SocialConnectionResend)
+				socialRoutes.DELETE("/connections/:session", manage, h.CancelSocialConnection)
+				socialRoutes.GET("/accounts", read, h.ListSocialAccounts)
+				socialRoutes.GET("/accounts/:id", read, h.GetSocialAccount)
+				socialRoutes.PATCH("/accounts/:id", manage, h.PatchSocialAccount)
+				socialRoutes.POST("/accounts/:id/pause", manage, h.SocialAccountAction("pause"))
+				socialRoutes.POST("/accounts/:id/resume", manage, h.SocialAccountAction("resume"))
+				socialRoutes.POST("/accounts/:id/resync", manage, h.SocialAccountAction("resync"))
+				socialRoutes.DELETE("/accounts/:id", manage, billing, middleware.RequireFreshAuth(), h.RemoveSocialAccount)
+				socialRoutes.GET("/search/catalog", search, h.SocialSearchCatalog)
+				socialRoutes.POST("/search", search, h.SocialSearch)
+				socialRoutes.GET("/search/typeahead", search, h.SocialTypeahead)
+				socialRoutes.POST("/search/parse-url", search, h.SocialParseURL)
 				// The search builder is charged to the AI balance at GraphKit's cost.
-				linkedInRoutes.POST("/search/ai", search, h.LinkedInSearchAI)
-				linkedInRoutes.POST("/search/import", importer, h.LinkedInSearchImport)
-				linkedInRoutes.GET("/imports/:id", search, h.GetLinkedInImport)
-				linkedInRoutes.GET("/contacts/:contact_id/activity", search, h.GetLinkedInContactActivity)
-				linkedInRoutes.GET("/saved-searches", search, h.ListLinkedInSavedSearches)
-				linkedInRoutes.POST("/saved-searches", saved, h.CreateLinkedInSavedSearch)
-				linkedInRoutes.PATCH("/saved-searches/:id", saved, h.PatchLinkedInSavedSearch)
-				linkedInRoutes.DELETE("/saved-searches/:id", saved, h.DeleteLinkedInSavedSearch)
-				linkedInRoutes.GET("/profiles", search, h.GetLinkedInProfile)
-				linkedInRoutes.GET("/conversations", inbox, h.ListLinkedInConversations)
-				linkedInRoutes.GET("/conversations/:id", inbox, h.GetLinkedInConversation)
-				linkedInRoutes.GET("/conversations/:id/messages", inbox, h.ListLinkedInMessages)
-				linkedInRoutes.POST("/conversations/:id/messages", reply, h.SendLinkedInMessage)
-				linkedInRoutes.POST("/conversations/:id/read", inbox, h.MarkLinkedInConversationRead)
+				socialRoutes.POST("/search/ai", search, h.SocialSearchAI)
+				socialRoutes.POST("/search/import", importer, h.SocialSearchImport)
+				socialRoutes.GET("/imports/:id", search, h.GetSocialImport)
+				socialRoutes.GET("/contacts/:contact_id/activity", search, h.GetSocialContactActivity)
+				socialRoutes.GET("/saved-searches", search, h.ListSocialSavedSearches)
+				socialRoutes.POST("/saved-searches", saved, h.CreateSocialSavedSearch)
+				socialRoutes.PATCH("/saved-searches/:id", saved, h.PatchSocialSavedSearch)
+				socialRoutes.DELETE("/saved-searches/:id", saved, h.DeleteSocialSavedSearch)
+				socialRoutes.GET("/profiles", search, h.GetSocialProfile)
+				socialRoutes.GET("/conversations", inbox, h.ListSocialConversations)
+				socialRoutes.GET("/conversations/:id", inbox, h.GetSocialConversation)
+				socialRoutes.GET("/conversations/:id/messages", inbox, h.ListSocialMessages)
+				socialRoutes.POST("/conversations/:id/messages", reply, h.SendSocialMessage)
+				socialRoutes.POST("/conversations/:id/read", inbox, h.MarkSocialConversationRead)
 			}
-			// A LinkedIn sign-in and a checkpoint code go to GraphKit once, so no hash of them is kept for replay.
-			linkedInSecrets := base.Group("/linkedin")
-			linkedInSecrets.Use(m.CombinedAuthMiddleware(), m.ResourceScopeGate(), h.PartnerReadOnlyGate(), m.APIKeyUsageMiddleware(),
+			// A social sign-in and a checkpoint code go to GraphKit once, so no hash of them is kept for replay.
+			socialSecrets := base.Group("/social")
+			socialSecrets.Use(m.CombinedAuthMiddleware(), m.ResourceScopeGate(), h.PartnerReadOnlyGate(), m.APIKeyUsageMiddleware(),
 				m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite))
 			{
-				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageLinkedIn)
-				linkedInSecrets.POST("/connections/:session/sign-in", manage, h.LinkedInConnectionSignIn)
-				linkedInSecrets.POST("/connections/:session/answer", manage, h.LinkedInConnectionAnswer)
+				manage := m.RequireAccess(models.PermManageEmails, models.APIPermManageSocial)
+				socialSecrets.POST("/connections/:session/sign-in", manage, h.SocialConnectionSignIn)
+				socialSecrets.POST("/connections/:session/answer", manage, h.SocialConnectionAnswer)
 			}
 
 			// Sending domains: tracking host per domain and the bare-domain redirect.
@@ -1005,9 +1010,9 @@ func Run(
 				// naturally safe.
 				campaigns.GET("/:id/segments", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignSegments)
 				campaigns.PUT("/:id/segments", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.SetCampaignSegments)
-				// The LinkedIn accounts that run the campaign's LinkedIn steps.
-				campaigns.GET("/:id/linkedin-accounts", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignLinkedInAccounts)
-				campaigns.PUT("/:id/linkedin-accounts", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermManageCampaigns, models.APIPermManageLinkedIn), h.PutCampaignLinkedInAccounts)
+				// The social accounts that run the campaign's social steps.
+				campaigns.GET("/:id/social-accounts", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignSocialAccounts)
+				campaigns.PUT("/:id/social-accounts", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermManageCampaigns, models.APIPermManageSocial), h.PutCampaignSocialAccounts)
 
 				// Campaign-scoped tracking-domain verification.
 				campaigns.POST("/:id/tracking-domain/verify", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.VerifyCampaignTrackingDomain)
@@ -2581,7 +2586,7 @@ func largeUploadRoute(r *http.Request) bool {
 	}
 	switch r.URL.Path {
 	case "/v1/contacts/imports", "/v1/contacts/import/preview", "/v1/contacts/import/commit",
-		"/v1/organization/current/import", "/v1/organization/current/import/preflight":
+		"/v1/organization/current/import", "/v1/organization/current/import/preflight", "/v1/social/audio":
 		return true
 	}
 	return false

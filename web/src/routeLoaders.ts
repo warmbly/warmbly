@@ -39,7 +39,7 @@ import { signinMigrationQuery } from "./lib/api/hooks/app/emails/useMailboxGrant
 import { featureStatusQuery } from "./lib/api/hooks/app/subscription/useFeatureStatus";
 import { balanceBurnQuery, balanceQuery } from "./lib/api/hooks/app/subscription/useBalance";
 import { orderQuery, storeDomainsQuery, storeOrdersQuery, storeStatusQuery } from "./lib/api/hooks/app/store/useStore";
-import { linkedInAccountsQuery, linkedInConversationsQuery, linkedInStatusQuery } from "./lib/api/hooks/app/linkedin/useLinkedIn";
+import { socialAccountsQuery, socialChannelsQuery, socialConversationsQuery, socialStatusQuery } from "./lib/api/hooks/app/social/useSocial";
 import { creditUsageQuery } from "./lib/api/hooks/app/subscription/useCreditUsage";
 import { creditSettingsQuery } from "./lib/api/hooks/app/subscription/useCreditSettings";
 import { advisorFindingsQuery, advisorSurfaceQuery } from "./lib/api/hooks/app/advisor/useAdvisor";
@@ -187,9 +187,10 @@ export const domainsLoader = pageLoader((qc) => [
     can("MANAGE_EMAILS") && qc.prefetchQuery(storeDomainsQuery),
 ]);
 
-export const linkedinLoader = pageLoader((qc) => [
-    can("MANAGE_EMAILS") && qc.prefetchQuery(linkedInStatusQuery),
-    can("MANAGE_EMAILS") && qc.prefetchQuery(linkedInAccountsQuery),
+export const socialAccountsLoader = pageLoader((qc) => [
+    can("MANAGE_EMAILS") && qc.prefetchQuery(socialStatusQuery),
+    can("MANAGE_EMAILS") && qc.prefetchQuery(socialAccountsQuery),
+    can("MANAGE_EMAILS") && qc.prefetchQuery(socialChannelsQuery),
 ]);
 
 export const buyLoader = pageLoader((qc) => [can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery)]);
@@ -381,7 +382,7 @@ export const clayLoader = pageLoader((qc, { params }) => [!!params.id && qc.pref
 export const leadsLoader = pageLoader((qc) => [
     can("VIEW_CONTACTS") && qc.prefetchQuery(leadFinderConfigQuery),
     can("VIEW_CONTACTS") && qc.prefetchQuery(leadSearchesQuery),
-    can("VIEW_CONTACTS") && qc.prefetchQuery(linkedInStatusQuery),
+    can("VIEW_CONTACTS") && qc.prefetchQuery(socialStatusQuery),
 ]);
 
 export const auditLoader = pageLoader((qc) => [canManageTeam() && qc.prefetchQuery(auditLogsQuery({ limit: 50 }))]);
@@ -427,12 +428,12 @@ function allMail(base: UniboxSearchParams): [UniboxSearchParams, string] {
 // Cold cache only: opening a thread is a new match, and a stale refetch here would reload every loaded page (#396).
 export const uniboxLoader = pageLoader((qc, { params, search }) => {
     if (!can("ACCESS_UNIBOX")) return [];
-    const linkedIn = params.scope === "linkedin";
-    const first = linkedIn ? null : uniboxFirstSearch(params.scope ?? "inbox", search.ref || undefined);
+    const social = params.scope === "social";
+    const first = social ? null : uniboxFirstSearch(params.scope ?? "inbox", search.ref || undefined);
     const list = first ? uniboxSearchQuery(...first) : null;
     return [
         qc.getQueryData(uniboxOverviewQuery.queryKey) === undefined && qc.prefetchQuery(uniboxOverviewQuery),
-        linkedIn && qc.getQueryData(linkedInConversationsQuery().queryKey) === undefined && qc.prefetchInfiniteQuery(linkedInConversationsQuery()),
+        social && qc.getQueryData(socialConversationsQuery().queryKey) === undefined && qc.prefetchInfiniteQuery(socialConversationsQuery()),
         !!list && qc.getQueryData(list.queryKey) === undefined && qc.prefetchInfiniteQuery(list),
     ];
 });

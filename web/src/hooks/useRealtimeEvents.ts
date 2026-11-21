@@ -141,41 +141,42 @@ export function useRealtimeEvents() {
       const includes = (...needles: string[]) =>
         needles.some((needle) => event.includes(needle))
 
-      // LinkedIn accounts, connect sessions, the GraphKit link and messages. Checked before the ACCOUNT/EMAIL branches
-      // below, whose names these would match. Search results sit outside ['linkedin'] and are never refreshed.
-      if (event.startsWith('LINKEDIN_')) {
-        if (event === 'LINKEDIN_CONNECTION_UPDATED') {
+      // Social accounts, connect sessions, the GraphKit link and messages on every channel; each event carries
+      // `channel`, which the cache keys do not split on. Checked before the ACCOUNT/EMAIL branches below, whose
+      // names these would match. Lead search results sit outside ['social'] and are never refreshed.
+      if (event.startsWith('SOCIAL_')) {
+        if (event === 'SOCIAL_CONNECTION_UPDATED') {
           const sessionId = getString('session_id') ?? getString('id')
-          invalidate(sessionId ? [['linkedin', 'connections', sessionId]] : [['linkedin', 'connections']])
-          if (getString('status') === 'succeeded') invalidate([['linkedin', 'accounts'], ['linkedin', 'status']])
+          invalidate(sessionId ? [['social', 'connections', sessionId]] : [['social', 'connections']])
+          if (getString('status') === 'succeeded') invalidate([['social', 'accounts'], ['social', 'status']])
           return
         }
-        if (event === 'LINKEDIN_LINK_UPDATED') {
-          invalidate([['linkedin']])
+        if (event === 'SOCIAL_LINK_UPDATED') {
+          invalidate([['social']])
           return
         }
-        if (event === 'LINKEDIN_MESSAGE') {
+        if (event === 'SOCIAL_MESSAGE') {
           const conversationId = getString('conversation_id')
-          invalidate([['linkedin', 'conversations', 'list'], ['linkedin', 'contacts'], ['unibox', 'overview']])
-          if (conversationId) invalidate([['linkedin', 'conversations', conversationId]])
+          invalidate([['social', 'conversations', 'list'], ['social', 'contacts'], ['unibox', 'overview']])
+          if (conversationId) invalidate([['social', 'conversations', conversationId]])
           return
         }
-        // A background import moved (progress, then its summary). A finished one refreshes contacts through useLinkedInImport.
-        if (event.startsWith('LINKEDIN_IMPORT')) {
+        // A background LinkedIn import moved (progress, then its summary). A finished one refreshes contacts through useLinkedInImport.
+        if (event === 'SOCIAL_IMPORT_UPDATED') {
           const importId = getString('import_id') ?? getString('id')
-          invalidate(importId ? [['linkedin', 'imports', importId]] : [['linkedin', 'imports']])
+          invalidate(importId ? [['social', 'imports', importId]] : [['social', 'imports']])
           return
         }
-        // A campaign's LinkedIn step was queued, done, skipped or failed, or an invitation was accepted.
-        if (event.startsWith('LINKEDIN_ACTION') || event.startsWith('LINKEDIN_INVITATION')) {
+        // A campaign's social step was queued, done, skipped or failed, or an invite was accepted.
+        if (event === 'SOCIAL_ACTION_UPDATED') {
           const campaignId = getString('campaign_id')
-          invalidate([['linkedin', 'contacts']])
+          invalidate([['social', 'contacts']])
           if (campaignId) campaignRefresh.add([['analytics', 'campaigns', campaignId]])
           return
         }
         const accountId = getString('account_id') ?? getString('id')
-        invalidate([['linkedin', 'accounts', 'list'], ['linkedin', 'status']])
-        if (accountId) invalidate([['linkedin', 'accounts', accountId]])
+        invalidate([['social', 'accounts', 'list'], ['social', 'status']])
+        if (accountId) invalidate([['social', 'accounts', accountId]])
         return
       }
 
@@ -645,10 +646,10 @@ export function useRealtimeEvents() {
           store_order: [['store', 'orders'], ['store', 'status']],
           store_domain: [['store', 'domains'], ['sending-domains']],
           store_mailbox: [['store', 'mailboxes'], ['emails']],
-          // LinkedIn accounts connected, changed or removed, the GraphKit link, and saved lead searches.
-          linkedin_account: [['linkedin', 'accounts'], ['linkedin', 'status']],
-          linkedin_link: [['linkedin']],
-          linkedin_saved_search: [['linkedin', 'saved-searches']],
+          // Social accounts connected, changed or removed, the GraphKit link, and saved LinkedIn lead searches.
+          social_account: [['social', 'accounts'], ['social', 'status']],
+          social_link: [['social']],
+          linkedin_saved_search: [['social', 'saved-searches']],
           api_key: [['api-keys']],
           webhook: [['webhooks'], ['integrations', 'connections']],
           template: [['templates']],

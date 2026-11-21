@@ -41,11 +41,13 @@ type CampaignContactProgress struct {
 	// this step (agreed, wants_pricing, not_now, ...; "" when tagging is off or
 	// the classifier was not sure). Read by the reply_intent branch condition.
 	ReplyIntent string
-	// LinkedIn signals for the contact across the workspace's LinkedIn accounts,
-	// read by the linkedin_* branch conditions.
-	LinkedInConnectedAt   *time.Time
-	LinkedInRepliedAt     *time.Time
-	LinkedInInvitePending bool
+	// Social signals for the contact in this campaign, read by the social_* branch conditions:
+	// LinkedIn connection and pending invite with the campaign's accounts, replies by channel
+	// since entering, and Open Profile (nil until the background lookup answers).
+	SocialConnectedAt   *time.Time
+	SocialInvitePending bool
+	SocialReplied       map[string]time.Time
+	SocialOpenProfile   *bool
 }
 
 // CampaignProgress represents overall campaign progress
@@ -223,10 +225,12 @@ type CampaignProgressRepository interface {
 	CompleteIncomingReply(ctx context.Context, emailAccountID, messageID, claimToken uuid.UUID) error
 	// RecordEmailReplied stamps a human reply while its source is still inbound.
 	RecordEmailReplied(ctx context.Context, campaignID, contactID, sequenceID, emailAccountID, messageID uuid.UUID) (bool, error)
-	// RecordLinkedInReplied stamps a human LinkedIn reply on the step it answers; false when the step was never reached.
-	RecordLinkedInReplied(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error)
+	// RecordSocialReplied stamps a human social reply on the step it answers; false when the step was never reached.
+	RecordSocialReplied(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error)
 	// RecordStepSkipped marks a step passed without sending, so routing moves on; reason names why.
 	RecordStepSkipped(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, reason string) error
+	// RecordStepStopped takes the contact out of the campaign at this step, dropped as a step out of attempts is.
+	RecordStepStopped(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, reason string) error
 	// DeferStep holds one step back for one contact until at; routing passes the contact over meanwhile.
 	DeferStep(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, at time.Time) error
 	RecordEmailBounced(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error
@@ -1012,8 +1016,8 @@ func (r *campaignProgressRepository) RecordEmailReplied(ctx context.Context, cam
 	return result.RowsAffected() == 1, nil
 }
 
-// RecordLinkedInReplied implements the interface comment on CampaignProgressRepository.
-func (r *campaignProgressRepository) RecordLinkedInReplied(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error) {
+// RecordSocialReplied implements the interface comment on CampaignProgressRepository.
+func (r *campaignProgressRepository) RecordSocialReplied(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error) {
 	tag, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE campaign_contact_progress SET replied_at = COALESCE(replied_at, NOW())
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3 AND sent_at IS NOT NULL
@@ -1034,6 +1038,20 @@ func (r *campaignProgressRepository) RecordStepSkipped(ctx context.Context, camp
 		              dispatched_at = COALESCE(campaign_contact_progress.dispatched_at, NOW()),
 		              failure_reason = EXCLUDED.failure_reason
 	`, campaignID, contactID, sequenceID, reason)
+	return err
+}
+
+// RecordStepStopped implements the interface comment on CampaignProgressRepository.
+func (r *campaignProgressRepository) RecordStepStopped(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, reason string) error {
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
+		INSERT INTO campaign_contact_progress (campaign_id, contact_id, sequence_id, failed_at, send_attempts, failure_reason)
+		VALUES ($1, $2, $3, NOW(), $4, $5)
+		ON CONFLICT (campaign_id, contact_id, sequence_id)
+		DO UPDATE SET failed_at = NOW(),
+		              send_attempts = GREATEST(campaign_contact_progress.send_attempts, EXCLUDED.send_attempts),
+		              failure_reason = EXCLUDED.failure_reason, retry_at = NULL
+		WHERE campaign_contact_progress.sent_at IS NULL AND campaign_contact_progress.dispatched_at IS NULL
+	`, campaignID, contactID, sequenceID, config.CampaignSendMaxAttempts, reason)
 	return err
 }
 
@@ -1779,7 +1797,7 @@ func (r *campaignProgressRepository) hydrateRoutedLeads(ctx context.Context, que
 		var in routeInput
 		var contactID uuid.UUID
 		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied, &in.hasBooked,
-			&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource, &in.liConnectedAt, &in.liRepliedAt, &in.liInvitePending, &in.deferredSteps, &in.deferredUntil); serr != nil {
+			&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource, &in.socialConnectedAt, &in.socialInvitePending, &in.socialReplyChannels, &in.socialReplyAts, &in.socialOpenProfile, &in.deferredSteps, &in.deferredUntil); serr != nil {
 			return nil, serr
 		}
 		out[contactID] = in
@@ -1884,7 +1902,7 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 		&in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs,
 		&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource,
 		&in.hasReplied, &in.hasBooked, &bounced, &failed, &suppressed, &undeliverable,
-		&in.liConnectedAt, &in.liRepliedAt, &in.liInvitePending, &in.deferredSteps, &in.deferredUntil,
+		&in.socialConnectedAt, &in.socialInvitePending, &in.socialReplyChannels, &in.socialReplyAts, &in.socialOpenProfile, &in.deferredSteps, &in.deferredUntil,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &ContactRoute{Excluded: "not_a_lead"}, nil
@@ -1931,9 +1949,12 @@ type routeInput struct {
 	// means it has no end and only a person lifts it.
 	pausedAt, pausedUntil    *time.Time
 	pauseReason, pauseSource string
-	// LinkedIn signals (routeSignalColumns): connected and replied since entering, an invite still pending.
-	liConnectedAt, liRepliedAt *time.Time
-	liInvitePending            bool
+	// Social signals (routeSignalColumns): LinkedIn connected and invite pending, replies by channel since entering, Open Profile.
+	socialConnectedAt   *time.Time
+	socialInvitePending bool
+	socialReplyChannels []string
+	socialReplyAts      []time.Time
+	socialOpenProfile   *bool
 	// deferredSteps[i] is not offered to this contact before deferredUntil[i] (DeferStep).
 	deferredSteps []uuid.UUID
 	deferredUntil []time.Time
@@ -1950,18 +1971,34 @@ func (in routeInput) stepDeferredUntil(step uuid.UUID) *time.Time {
 	return nil
 }
 
-// routeSignalColumns and routeSignalJoin are the LinkedIn facts and step deferrals every routing query selects, last, in this order.
-const routeSignalColumns = `li.connected_at, li.replied_at, COALESCE(li.invite_pending, false), COALESCE(dr.steps, '{}'), COALESCE(dr.retry_until, '{}')`
+// socialReplied is the contact's reply time by channel.
+func (in routeInput) socialReplied() map[string]time.Time {
+	out := make(map[string]time.Time, len(in.socialReplyChannels))
+	for i, ch := range in.socialReplyChannels {
+		if i < len(in.socialReplyAts) {
+			out[ch] = in.socialReplyAts[i]
+		}
+	}
+	return out
+}
+
+// routeSignalColumns and routeSignalJoin are the social facts and step deferrals every routing query selects, last, in this order.
+// Connection and pending invites count the campaign's rows and any row with one of its accounts; replies and Open Profile only its own.
+const routeSignalColumns = `so.connected_at, COALESCE(so.invite_pending, false), COALESCE(so.reply_channels, '{}'), COALESCE(so.reply_ats, '{}'), so.open_profile,
+		COALESCE(dr.steps, '{}'), COALESCE(dr.retry_until, '{}')`
 
 const routeSignalJoin = `
 		LEFT JOIN LATERAL (
 			SELECT min(s.connected_at) AS connected_at,
-			       max(s.replied_at) FILTER (WHERE s.replied_at >= COALESCE(cl.added_at, '-infinity'::timestamptz)) AS replied_at,
-			       bool_or(s.invite_pending AND s.connected_at IS NULL) AS invite_pending
-			FROM linkedin_contact_state s
+			       bool_or(s.invite_pending AND s.connected_at IS NULL) AS invite_pending,
+			       array_agg(s.channel) FILTER (WHERE s.campaign_id = $1 AND s.replied_at >= COALESCE(cl.added_at, '-infinity'::timestamptz)) AS reply_channels,
+			       array_agg(s.replied_at) FILTER (WHERE s.campaign_id = $1 AND s.replied_at >= COALESCE(cl.added_at, '-infinity'::timestamptz)) AS reply_ats,
+			       bool_or(s.open_profile) FILTER (WHERE s.campaign_id = $1 AND s.channel = 'linkedin' AND s.open_profile_checked_at IS NOT NULL) AS open_profile
+			FROM social_contact_state s
 			WHERE s.contact_id = cl.contact_id
 			  AND s.organization_id = (SELECT organization_id FROM campaigns WHERE id = $1)
-		) li ON true
+			  AND (s.campaign_id = $1 OR s.social_account_id IN (SELECT csa.social_account_id FROM campaign_social_accounts csa WHERE csa.campaign_id = $1))
+		) so ON true
 		LEFT JOIN LATERAL (
 			SELECT array_agg(d.sequence_id) AS steps, array_agg(d.retry_at) AS retry_until
 			FROM campaign_contact_progress d
@@ -2287,7 +2324,8 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 			CampaignID: campaignID, ContactID: contactID, SequenceID: *in.lastSeq,
 			SentAt: in.sentAt, OpenedAt: in.openedAt, ClickedAt: in.clickedAt, RepliedAt: in.repliedAt,
 			ReplyClass: in.replyClass, AILabel: in.aiLabel, ReplyIntent: in.replyIntent,
-			LinkedInConnectedAt: in.liConnectedAt, LinkedInRepliedAt: in.liRepliedAt, LinkedInInvitePending: in.liInvitePending,
+			SocialConnectedAt: in.socialConnectedAt, SocialInvitePending: in.socialInvitePending, SocialOpenProfile: in.socialOpenProfile,
+			SocialReplied: in.socialReplied(),
 		}
 		sa := time.Time{}
 		if in.sentAt != nil {
@@ -2518,7 +2556,7 @@ func (cr *campaignRouter) enteredAt(addedAt *time.Time) time.Time {
 func branchHasPositiveReplyCondition(b *models.Branch) bool {
 	for i := range b.Conditions {
 		switch b.Conditions[i].Field {
-		case "replied", "reply_positive", "reply_negative", "reply_neutral", "reply_automated", "linkedin_replied":
+		case "replied", "reply_positive", "reply_negative", "reply_neutral", "reply_automated", "social_replied":
 			return true
 		}
 	}
@@ -2593,7 +2631,7 @@ func (r *campaignProgressRepository) CountUndeliverableLeads(ctx context.Context
 		var in routeInput
 		var contactID uuid.UUID
 		if serr := rows.Scan(&contactID, &in.addedAt, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied, &in.hasBooked,
-			&in.liConnectedAt, &in.liRepliedAt, &in.liInvitePending, &in.deferredSteps, &in.deferredUntil); serr != nil {
+			&in.socialConnectedAt, &in.socialInvitePending, &in.socialReplyChannels, &in.socialReplyAts, &in.socialOpenProfile, &in.deferredSteps, &in.deferredUntil); serr != nil {
 			return 0, serr
 		}
 		res := router.route(campaignID, contactID, in)
@@ -2937,7 +2975,7 @@ func (r *campaignProgressRepository) LeadSupply(ctx context.Context, campaignID 
 		var in routeInput
 		var contactID uuid.UUID
 		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied, &in.hasBooked,
-			&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource, &in.liConnectedAt, &in.liRepliedAt, &in.liInvitePending, &in.deferredSteps, &in.deferredUntil); serr != nil {
+			&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource, &in.socialConnectedAt, &in.socialInvitePending, &in.socialReplyChannels, &in.socialReplyAts, &in.socialOpenProfile, &in.deferredSteps, &in.deferredUntil); serr != nil {
 			return nil, serr
 		}
 		res := router.route(campaignID, contactID, in)

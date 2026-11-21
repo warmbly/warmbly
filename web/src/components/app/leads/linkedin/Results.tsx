@@ -1,11 +1,11 @@
 // The three result views: a table row per person, a LinkedIn-like card, a company row and the "By company" header.
 import { BriefcaseIcon, CheckIcon, ChevronDownIcon, ExternalLinkIcon, UsersIcon } from "lucide-react";
 import type { MouseEvent } from "react";
-import { Avatar } from "@/components/app/linkedin/parts";
-import { safeLinkedInUrl } from "@/components/app/linkedin/LinkedInMark";
+import { Avatar } from "@/components/app/social/parts";
+import { profileUrl } from "@/lib/social/channels";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuTrigger } from "@/components/ui/popover-menu";
-import type { FinderHit } from "@/lib/api/models/app/linkedin/LinkedIn";
+import type { FinderHit } from "@/lib/api/models/app/social/Social";
 import { cn } from "@/lib/utils";
 import { Badge, OutreachBadge, ReachMeter, SignalIcons, signalsOf, Spotlight, Tip, TONE, WarmblyMarks } from "./bits";
 import { degreeLabel, tenure } from "./state";
@@ -104,7 +104,7 @@ export interface RowProps {
 }
 
 function ProfileLink({ url, name, className }: { url?: string; name: string; className?: string }) {
-    const href = safeLinkedInUrl(url);
+    const href = profileUrl("linkedin", url);
     if (!href) return null;
     return (
         <a href={href} target="_blank" rel="noreferrer noopener" aria-label={`Open ${name} on LinkedIn`} onClick={(e) => e.stopPropagation()} className={cn("shrink-0 text-slate-400 hover:text-slate-700", className)}>
@@ -241,7 +241,7 @@ export function ResultCard({ hit, selected, onToggle, disabled, added, active, o
 function CompanyRow({ hit, selected, onToggle, disabled, added, active, onFindLeads }: RowProps & { onFindLeads?: (companyId: string, name: string) => void }) {
     const c = hit.company!;
     const n = hit.warmbly?.company_contacts ?? 0;
-    const href = safeLinkedInUrl(c.linkedin_url);
+    const href = profileUrl("linkedin", c.linkedin_url);
     return (
         <div
             data-result={hit.key}

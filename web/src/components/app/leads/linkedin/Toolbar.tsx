@@ -1,12 +1,12 @@
 // The finder's search bar, as on LinkedIn: the account, the source (locked ones explain themselves), the keywords and Open in LinkedIn.
 import { ChevronDownIcon, ExternalLinkIcon, InfoIcon, LinkIcon, LockIcon, SearchIcon, SlidersHorizontalIcon, UsersIcon } from "lucide-react";
 import type { Dispatch, RefObject } from "react";
-import { Avatar } from "@/components/app/linkedin/parts";
+import { Avatar } from "@/components/app/social/parts";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuLabel, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import ScrollStrip from "@/components/ui/scroll-strip";
-import type { FinderCatalog, FinderSource } from "@/lib/api/models/app/linkedin/LinkedIn";
-import { safeLinkedInUrl } from "@/components/app/linkedin/LinkedInMark";
-import { licenceLabel } from "@/components/app/linkedin/parts";
+import type { FinderCatalog, FinderSource } from "@/lib/api/models/app/social/Social";
+import { profileUrl } from "@/lib/social/channels";
+import { licenceLabel } from "@/components/app/social/parts";
 import { cn } from "@/lib/utils";
 import { Tip } from "./bits";
 import { accountCan, AUTO_ACCOUNT, poolName, poolSummary, type FinderAccount, type FinderAction, type FinderState, type KeywordCheck } from "./state";
@@ -102,7 +102,7 @@ export function FinderToolbar({
     onOpenFilters: () => void;
     sourceAvailable: (s: FinderSource) => boolean;
 }) {
-    const href = safeLinkedInUrl(linkedInUrl);
+    const href = profileUrl("linkedin", linkedInUrl);
     return (
         <div className="shrink-0 grid gap-2 border-b border-slate-200 bg-white px-3 py-2 md:px-4">
             <div className="flex flex-wrap items-center gap-2">

@@ -235,14 +235,19 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 	campaignIDs := make([][]uuid.UUID, 0, len(contacts))
 	categoryIDs := make([][]uuid.UUID, 0, len(contacts))
 	segmentIDs := make([][]uuid.UUID, 0, len(contacts))
+	socials := make([]contactSocialPatch, 0, len(contacts))
 	for _, lead := range contacts {
 		// Normalize, not just trim: mail.ParseAddress accepts
 		// `Dana Reyes <dana@acme.com>` and the whole string used to be stored
 		// as the recipient address, which sends to nobody. The edit path
 		// normalizes the same way, so the two cannot disagree about what an
 		// address is.
+		social, xerr := parseContactSocial(lead.Social, lead.CustomFields)
+		if xerr != nil {
+			return nil, xerr
+		}
 		addr, ok := email.Normalize(lead.Email)
-		if !ok && !(config.ContactsWithoutEmail && strings.TrimSpace(lead.Email) == "" && strings.TrimSpace(lead.CustomFields[models.ContactLinkedInField]) != "") {
+		if !ok && !(config.ContactsWithoutEmail && strings.TrimSpace(lead.Email) == "" && len(social.set) > 0) {
 			return nil, errx.ErrEmail
 		}
 		lead.Email = addr
@@ -353,6 +358,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 		campaignIDs = append(campaignIDs, cids)
 		categoryIDs = append(categoryIDs, cats)
 		segmentIDs = append(segmentIDs, segs)
+		socials = append(socials, social)
 	}
 
 	tx, err := beginResultTx(ctx, r.DB)
@@ -461,7 +467,6 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 			ncon.CustomFields = map[string]string{}
 		}
 		ncon.IsNew = inserted
-		ncon.LinkedInURL = models.LinkedInOf(ncon.CustomFields)
 		ncontacts = append(ncontacts, ncon)
 		created = append(created, inserted)
 		if inserted {
@@ -472,6 +477,15 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 		db.CaptureError(err, "", nil, "batch close")
 		return nil, errx.InternalError()
 	}
+	for i := range ncontacts {
+		if socials[i].empty() {
+			continue
+		}
+		if err := writeContactSocial(ctx, tx, orgID, ncontacts[i].ID, socials[i], true); err != nil {
+			return nil, errx.InternalError()
+		}
+	}
+	attachContactSocialSlice(ctx, tx, &orgID, ncontacts)
 
 	// Lifecycle events for the activity timeline, written in this transaction.
 	actor := actorID(userID)
@@ -690,9 +704,9 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		return nil, errx.InternalError()
 	}
 
-	contact.LinkedInURL = models.LinkedInOf(contact.CustomFields)
 	contact.Campaigns = []models.MiniCampaign{}
 	contact.Categories = []models.MiniCategory{}
+	attachContactSocial(ctx, resultDB(ctx, r.DB), nil, []*models.Contact{&contact})
 	return &contact, nil
 }
 
@@ -1212,9 +1226,9 @@ func (r *contactRepository) scanLookupContact(ctx context.Context, query string,
 		db.CaptureError(err, query, args, "queryrow")
 		return nil, errx.InternalError()
 	}
-	contact.LinkedInURL = models.LinkedInOf(contact.CustomFields)
 	contact.Campaigns = []models.MiniCampaign{}
 	contact.Categories = []models.MiniCategory{}
+	attachContactSocial(ctx, resultDB(ctx, r.DB), nil, []*models.Contact{&contact})
 	return &contact, nil
 }
 
@@ -1326,13 +1340,14 @@ func (r *contactRepository) GetByIDsAndOrganization(ctx context.Context, organiz
 		}
 		c.Campaigns = []models.MiniCampaign{}
 		c.Categories = []models.MiniCategory{}
-		c.LinkedInURL = models.LinkedInOf(c.CustomFields)
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
 		db.CaptureError(err, "", nil, "GetByIDsAndOrganization rows")
 		return nil, errx.InternalError()
 	}
+	rows.Close()
+	attachContactSocialSlice(ctx, resultDB(ctx, r.DB), &organizationID, out)
 	return out, nil
 }
 
@@ -2019,8 +2034,6 @@ func (r *contactRepository) Search(
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
-		c.LinkedInURL = models.LinkedInOf(c.CustomFields)
-
 		// Per-campaign lead progress (single-campaign Leads view only). Derive
 		// the single display status from the counts + subscription flag.
 		if len(leadProgressJSON) > 0 {
@@ -2155,6 +2168,10 @@ func (r *contactRepository) Search(
 		hasMore = true
 		nextCursor = paging.EncodeSort(sortKey, sortValues[limit], contacts[limit].ID)
 		contacts = contacts[:limit]
+	}
+	rows.Close()
+	if oid, err := uuid.Parse(orgID); err == nil {
+		attachContactSocialSlice(ctx, resultDB(ctx, r.DB), &oid, contacts)
 	}
 
 	return &models.ContactsResult{
@@ -2523,6 +2540,14 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 }
 
 func (r *contactRepository) Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error) {
+	var patchFields map[string]string
+	if data.CustomFields != nil {
+		patchFields = *data.CustomFields
+	}
+	social, xerr := parseContactSocial(data.Social, patchFields)
+	if xerr != nil {
+		return nil, xerr
+	}
 	tx, err := beginResultTx(ctx, r.DB)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -2750,7 +2775,12 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 	} else {
 		updatedContact = c // No fields updated, use existing contact
 	}
-	updatedContact.LinkedInURL = models.LinkedInOf(updatedContact.CustomFields)
+	if !social.empty() {
+		if err := writeContactSocial(ctx, tx, orgID, updatedContact.ID, social, false); err != nil {
+			return nil, errx.InternalError()
+		}
+	}
+	attachContactSocial(ctx, tx, &orgID, []*models.Contact{&updatedContact})
 
 	// The evidence ledger is a record of what a mailbox did, so it follows the
 	// address rather than the row. Leaving it would let the scorer hand the new
@@ -3607,14 +3637,20 @@ func (r *contactRepository) ImportUpdate(ctx context.Context, orgID uuid.UUID, r
 	if len(rows) == 0 {
 		return found, nil
 	}
+	socials := make([]contactSocialPatch, len(rows))
 	batch := &pgx.Batch{}
-	for _, row := range rows {
+	for i, row := range rows {
 		c := row.Contact
 		fields := c.CustomFields
 		if fields == nil {
 			fields = map[string]string{}
 		}
-		fields, xerr := normalizeCustomFields(fields)
+		social, xerr := parseContactSocial(c.Social, fields)
+		if xerr != nil {
+			return nil, xerr
+		}
+		socials[i] = social
+		fields, xerr = normalizeCustomFields(fields)
 		if xerr != nil {
 			return nil, xerr
 		}
@@ -3676,6 +3712,14 @@ func (r *contactRepository) ImportUpdate(ctx context.Context, orgID uuid.UUID, r
 	if err := br.Close(); err != nil {
 		db.CaptureError(err, "", nil, "ImportUpdate close")
 		return nil, errx.InternalError()
+	}
+	for i, row := range rows {
+		if !found[i] || socials[i].empty() {
+			continue
+		}
+		if err := writeContactSocial(ctx, tx, orgID, row.ID, socials[i], true); err != nil {
+			return nil, errx.InternalError()
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		db.CaptureError(err, "", nil, "ImportUpdate commit")
@@ -3839,7 +3883,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 	if detail.CustomFields == nil {
 		detail.CustomFields = map[string]string{}
 	}
-	detail.LinkedInURL = models.LinkedInOf(detail.CustomFields)
+	attachContactSocial(ctx, resultDB(ctx, r.DB), orgID, []*models.Contact{&detail.Contact})
 	detail.Campaigns = []models.MiniCampaign{}
 	if len(campaignsJSON) > 0 {
 		var raw []struct {

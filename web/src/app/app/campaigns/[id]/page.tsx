@@ -13,8 +13,9 @@ import {
 } from "lucide-react";
 import { useCampaign } from "@/hooks/context/campaign";
 import useCampaignAnalytics from "@/lib/api/hooks/app/analytics/useCampaignAnalytics";
-import type { CampaignEngagementBreakdown, CampaignLinkedInStats, CampaignSummary, EngagementBucket } from "@/lib/api/models/app/analytics/CampaignAnalytics";
-import LinkedInMark from "@/components/app/linkedin/LinkedInMark";
+import type { CampaignEngagementBreakdown, CampaignSocialStats, CampaignSummary, EngagementBucket } from "@/lib/api/models/app/analytics/CampaignAnalytics";
+import ChannelMark from "@/components/app/social/ChannelMark";
+import { CHANNELS, channelLabel } from "@/lib/social/channels";
 import useCampaignDailyStats from "@/lib/api/hooks/app/analytics/useCampaignDailyStats";
 import { SectionBar, StatStrip } from "@/components/layout/Page";
 import { TrendStat } from "@/components/ui/TrendStat";
@@ -428,7 +429,7 @@ export default function CampaignOverview() {
                         )}
                     </div>
 
-                    {analytics.data?.linkedin && <LinkedInResults stats={analytics.data.linkedin} />}
+                    {analytics.data?.social && <SocialResults stats={analytics.data.social} />}
 
                     <EngagementAudience breakdown={analytics.data?.engagement ?? null} loading={loading} scoped={!allTime} />
 
@@ -495,21 +496,28 @@ export default function CampaignOverview() {
     );
 }
 
-function LinkedInResults({ stats }: { stats: CampaignLinkedInStats }) {
+function SocialResults({ stats }: { stats: CampaignSocialStats }) {
     // Taken from the counts, so the rate always agrees with the numbers beside it.
     const rate = stats.invites_sent > 0 ? (stats.invites_accepted / stats.invites_sent) * 100 : null;
     const cells: { label: string; value: ReactNode }[] = [
         { label: "Invites sent", value: <AnimatedNumber value={stats.invites_sent} /> },
         { label: "Accepted", value: <AnimatedNumber value={stats.invites_accepted} /> },
-        { label: "Acceptance", value: rate == null ? "—" : <AnimatedNumber value={rate} format={pctFmt} /> },
+        { label: "Acceptance", value: rate == null ? "-" : <AnimatedNumber value={rate} format={pctFmt} /> },
         { label: "Messages", value: <AnimatedNumber value={stats.messages_sent} /> },
         { label: "InMails", value: <AnimatedNumber value={stats.inmails_sent} /> },
         { label: "Replies", value: <AnimatedNumber value={stats.replies} /> },
     ];
+    if (stats.voice_notes_sent) cells.splice(5, 0, { label: "Voice notes", value: <AnimatedNumber value={stats.voice_notes_sent} /> });
+    const byChannel = stats.by_channel ?? {};
+    const channels = [...CHANNELS.filter((c) => byChannel[c]), ...Object.keys(byChannel).filter((c) => !(CHANNELS as readonly string[]).includes(c))];
     return (
         <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
-            <SectionBar label="LinkedIn">
-                <LinkedInMark className="ml-auto size-3.5" />
+            <SectionBar label="Social">
+                <span className="ml-auto inline-flex items-center gap-1">
+                    {channels.map((c) => (
+                        <ChannelMark key={c} channel={c} className="size-3.5" />
+                    ))}
+                </span>
             </SectionBar>
             <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-slate-200/60">
                 {cells.map((c) => (
@@ -519,6 +527,19 @@ function LinkedInResults({ stats }: { stats: CampaignLinkedInStats }) {
                     </div>
                 ))}
             </dl>
+            {channels.length > 1 && (
+                <ul className="divide-y divide-slate-100 border-t border-slate-200">
+                    {channels.map((c) => (
+                        <li key={c} className="flex items-center gap-2 px-5 py-2 text-[12px]">
+                            <ChannelMark channel={c} className="size-3.5" />
+                            <span className="text-slate-700">{channelLabel(c)}</span>
+                            <span className="ml-auto font-mono tabular-nums text-slate-500">
+                                {byChannel[c].actions_sent.toLocaleString()} sent · {byChannel[c].replies.toLocaleString()} {byChannel[c].replies === 1 ? "reply" : "replies"}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
         </div>
     );
 }

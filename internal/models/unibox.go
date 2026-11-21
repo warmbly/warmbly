@@ -519,8 +519,8 @@ type UniboxOverview struct {
 	// tasks per workspace. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.
 	ScheduledPendingMax int64 `json:"scheduled_pending_max"`
-	// LinkedInUnread counts LinkedIn conversations with unread messages; absent without the add-on.
-	LinkedInUnread   *int64                   `json:"linkedin_unread,omitempty"`
+	// SocialUnread counts social conversations with unread messages; absent without the add-on.
+	SocialUnread     *int64                   `json:"social_unread,omitempty"`
 	Folders          []UniboxFolderOverview   `json:"folders"`
 	Mailboxes        []UniboxMailboxOverview  `json:"mailboxes"`
 	Tags             []UniboxTagOverview      `json:"tags"`

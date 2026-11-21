@@ -5,42 +5,59 @@ import type React from "react";
 import {
     ArrowRightLeftIcon,
     BellOffIcon,
+    AwardIcon,
     CheckSquareIcon,
     EyeIcon,
     HandshakeIcon,
+    HeartIcon,
     LayersIcon,
     MailIcon,
+    MessageCircleIcon,
     MessageSquareIcon,
+    MessagesSquareIcon,
+    MicIcon,
     SendIcon,
     SparklesIcon,
     SplitIcon,
     TagIcon,
     TagsIcon,
-    ThumbsUpIcon,
     UserCheckIcon,
     UserMinusIcon,
     UserPlusIcon,
     ZapIcon,
     type LucideIcon,
 } from "lucide-react";
-import LinkedInMark from "@/components/app/linkedin/LinkedInMark";
+import ChannelMark from "@/components/app/social/ChannelMark";
 import type { SelectOption } from "@/components/ui/select-menu";
-import { LINKEDIN_NOTE_MAX, type SequenceAction, type SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SequenceAction, SequenceActionType, SocialStepConfig } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
 import { cn } from "@/lib/utils";
-import { renderPreview } from "./emailPreview";
+import { defaultSocialConfig, socialSummary } from "./socialStep";
 
 type ActionIcon = React.ComponentType<{ className?: string }>;
 
-// A LinkedIn step's icon: what it does, with the LinkedIn mark in the corner so the channel reads at a glance.
-function linkedInIcon(Base: LucideIcon): ActionIcon {
-    return function LinkedInStepIcon({ className }: { className?: string }) {
-        return (
-            <span className={cn("relative inline-flex", className)}>
-                <Base className="size-full" />
-                <LinkedInMark className="absolute -bottom-1 -right-1 !size-[9px] rounded-[2px] bg-white" />
-            </span>
-        );
-    };
+const SOCIAL_ACTION_ICON: Record<string, LucideIcon> = {
+    invite: UserPlusIcon,
+    message: MessageSquareIcon,
+    inmail: MailIcon,
+    voice_note: MicIcon,
+    profile_visit: EyeIcon,
+    follow: UserCheckIcon,
+    like_post: HeartIcon,
+    comment_post: MessageCircleIcon,
+    endorse: AwardIcon,
+    withdraw_invite: UserMinusIcon,
+};
+
+// A social step's icon: what it does, with its channel's mark in the corner so the channel reads at a glance.
+export function SocialStepIcon({ social, className }: { social?: SocialStepConfig | null; className?: string }) {
+    const Base = (social && SOCIAL_ACTION_ICON[social.action]) || MessagesSquareIcon;
+    return (
+        <span className={cn("relative inline-flex", className)}>
+            <Base className="size-full" />
+            {social?.channel && <ChannelMark channel={social.channel} className="absolute -bottom-1 -right-1 !size-[9px] rounded-[2px] bg-white" />}
+        </span>
+    );
 }
 
 // Personalization tokens a deal name can use, the same ones campaign copy offers.
@@ -61,31 +78,17 @@ export const ACTION_META: Record<string, { label: string; Icon: ActionIcon; tint
     fire_event: { label: "Fire event", Icon: SendIcon, tint: "text-sky-600" },
     switch: { label: "Switch", Icon: SplitIcon, tint: "text-purple-600" },
     ai_step: { label: "AI step", Icon: SparklesIcon, tint: "text-purple-600" },
-    linkedin_invite: { label: "Send invite", Icon: linkedInIcon(UserPlusIcon), tint: "text-sky-600" },
-    linkedin_message: { label: "Send message", Icon: linkedInIcon(MessageSquareIcon), tint: "text-sky-600" },
-    linkedin_inmail: { label: "Send InMail", Icon: linkedInIcon(MailIcon), tint: "text-sky-600" },
-    linkedin_visit: { label: "Visit profile", Icon: linkedInIcon(EyeIcon), tint: "text-sky-600" },
-    linkedin_follow: { label: "Follow", Icon: linkedInIcon(UserCheckIcon), tint: "text-sky-600" },
-    linkedin_like: { label: "Like latest post", Icon: linkedInIcon(ThumbsUpIcon), tint: "text-sky-600" },
-    linkedin_withdraw: { label: "Withdraw invite", Icon: linkedInIcon(UserMinusIcon), tint: "text-sky-600" },
+    social: { label: "Social step", Icon: MessagesSquareIcon, tint: "text-sky-600" },
 };
 
-// The LinkedIn steps the picker offers, in its LinkedIn group.
-export const LINKEDIN_ACTION_OPTIONS: { type: SequenceActionType; label: string; description: string; keywords: string }[] = [
-    { type: "linkedin_invite", label: "Send invite", description: "Ask to connect, with an optional note", keywords: "linkedin connect connection request invitation" },
-    { type: "linkedin_message", label: "Send message", description: "Message a 1st-degree connection", keywords: "linkedin dm chat" },
-    { type: "linkedin_inmail", label: "Send InMail", description: "Message someone you are not connected to", keywords: "linkedin inmail premium sales navigator" },
-    { type: "linkedin_visit", label: "Visit profile", description: "View their profile, which they may see", keywords: "linkedin view profile" },
-    { type: "linkedin_follow", label: "Follow", description: "Follow them without connecting", keywords: "linkedin follow" },
-    { type: "linkedin_like", label: "Like latest post", description: "Like the most recent post they shared", keywords: "linkedin like react post engage" },
-    { type: "linkedin_withdraw", label: "Withdraw invite", description: "Withdraw an invite they have not accepted", keywords: "linkedin cancel withdraw invitation" },
-];
-
-// An invite note's length once its variables and spintax are filled in for the sample contact, which is what LinkedIn counts.
-export const linkedInNoteLength = (note: string | undefined) => renderPreview(note ?? "").trim().length;
-
-const clip = (t: string, n = 64) => (t.length > n ? `${t.slice(0, n - 3)}…` : t);
-const oneLine = (t?: string) => (t ?? "").replace(/\s+/g, " ").trim();
+// The one picker item for every social channel and action.
+export const SOCIAL_OPTION = {
+    type: "social" as SequenceActionType,
+    label: "Social",
+    description: "LinkedIn, Instagram, WhatsApp, Telegram or Facebook: messages, invites, voice notes, follows, likes, comments…",
+    keywords:
+        "social linkedin instagram insta ig whatsapp wa telegram tg facebook fb messenger dm direct message chat invite connect connection request note inmail sales navigator recruiter voice note audio recording visit view profile follow like react reaction post comment endorse skills withdraw cancel",
+};
 
 // actionSummary is the one-line subtitle shown on an action node.
 export function actionSummary(a?: SequenceAction | null): string {
@@ -126,29 +129,8 @@ export function actionSummary(a?: SequenceAction | null): string {
             if (n === 0) return "Pick actions the agent may take…";
             return `Agent · ${n} action${n === 1 ? "" : "s"}`;
         }
-        case "linkedin_invite": {
-            const note = oneLine(a.note);
-            if (!note) return "Invite without a note";
-            return linkedInNoteLength(a.note) > LINKEDIN_NOTE_MAX ? `Note is over ${LINKEDIN_NOTE_MAX} characters` : clip(note);
-        }
-        case "linkedin_message": {
-            const body = oneLine(a.body);
-            return body ? clip(body) : "Write the message…";
-        }
-        case "linkedin_inmail": {
-            const subject = oneLine(a.subject);
-            const body = oneLine(a.body);
-            if (!body) return "Write the InMail…";
-            return clip(subject || body);
-        }
-        case "linkedin_visit":
-            return "View their LinkedIn profile";
-        case "linkedin_follow":
-            return "Follow them on LinkedIn";
-        case "linkedin_like":
-            return "Like their latest post";
-        case "linkedin_withdraw":
-            return "Withdraw a pending invite";
+        case "social":
+            return socialSummary(a.social);
         default:
             return "Action";
     }
@@ -176,11 +158,13 @@ export const BRANCH_PATH_OPTIONS: SelectOption[] = [
     { value: "reply_neutral", label: "if replied: neutral", group: "Reply intent" },
     { value: "reply_automated", label: "if auto-reply / out of office", group: "Reply intent" },
     { value: "reply_intent", label: "if reply intent is…", group: "Reply intent" },
-    { value: "linkedin_connected", label: "if accepted the LinkedIn invite", group: "LinkedIn" },
-    { value: "not_linkedin_connected", label: "if didn't accept the LinkedIn invite", group: "LinkedIn" },
-    { value: "linkedin_replied", label: "if replied on LinkedIn", group: "LinkedIn" },
-    { value: "not_linkedin_replied", label: "if didn't reply on LinkedIn", group: "LinkedIn" },
-    { value: "linkedin_invite_pending", label: "if the LinkedIn invite is still pending", group: "LinkedIn" },
+    { value: "social_replied", label: "if replied on social", group: "Social" },
+    { value: "not_social_replied", label: "if didn't reply on social", group: "Social" },
+    { value: "social_connected", label: "if accepted the LinkedIn invite", group: "Social" },
+    { value: "not_social_connected", label: "if didn't accept the LinkedIn invite", group: "Social" },
+    { value: "social_invite_pending", label: "if the LinkedIn invite is still pending", group: "Social" },
+    { value: "social_open_profile", label: "if they have an Open Profile", group: "Social" },
+    { value: "not_social_open_profile", label: "if they have no Open Profile", group: "Social" },
     { value: "random", label: "random split" },
 ];
 
@@ -206,7 +190,7 @@ export const SWITCH_OPTION = { type: "switch" as SequenceActionType, label: "Swi
 export const AI_STEP_OPTION = { type: "ai_step" as SequenceActionType, label: "AI step (agent)" };
 
 // defaultActionFor returns a fresh action config for a newly-picked type.
-export function defaultActionFor(type: SequenceActionType): SequenceAction {
+export function defaultActionFor(type: SequenceActionType, social?: { channel: SocialChannel; action: string }): SequenceAction {
     if (type === "create_task") {
         return { type, task_priority: "medium", task_due_offset_days: 1 };
     }
@@ -232,14 +216,8 @@ export function defaultActionFor(type: SequenceActionType): SequenceAction {
     if (type === "ai_step") {
         return { type, ai_instruction: "", ai_allowed_actions: [] };
     }
-    if (type === "linkedin_invite") {
-        return { type, note: "" };
-    }
-    if (type === "linkedin_message") {
-        return { type, body: "" };
-    }
-    if (type === "linkedin_inmail") {
-        return { type, subject: "", body: "" };
+    if (type === "social") {
+        return { type, social: defaultSocialConfig(social?.channel ?? "linkedin", social?.action ?? "message") };
     }
     return { type };
 }

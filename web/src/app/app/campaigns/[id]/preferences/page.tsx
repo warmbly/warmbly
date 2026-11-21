@@ -29,8 +29,12 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import useCampaignSenders from "@/lib/api/hooks/app/campaigns/useCampaignSenders";
 import useReplaceCampaignSenders from "@/lib/api/hooks/app/campaigns/useReplaceCampaignSenders";
-import { LinkedInAccountsSection } from "@/components/app/campaigns/preferences/CampaignLinkedInAccounts";
-import { useCampaignLinkedInAccounts, useLinkedInStatus, usePutCampaignLinkedInAccounts } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+import { SocialAccountsSection } from "@/components/app/campaigns/preferences/CampaignSocialAccounts";
+import { useCampaignSocialAccounts, useSocialStatus, usePutCampaignSocialAccounts } from "@/lib/api/hooks/app/social/useSocial";
+import { useQuery } from "@tanstack/react-query";
+import getSequences from "@/lib/api/client/app/campaigns/sequences/getSequences";
+import { isSocialAction } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
 
 const DAILY_MIN = 3;
 const DAILY_MAX = 5000;
@@ -46,9 +50,9 @@ const SECTIONS = [
         description: "Which mailboxes send this campaign — by tag, individually, or both — and the per-mailbox daily cap.",
     },
     {
-        id: "linkedin",
-        label: "LinkedIn accounts",
-        description: "Which LinkedIn accounts run this campaign's LinkedIn steps.",
+        id: "social",
+        label: "Social accounts",
+        description: "Which LinkedIn, Instagram, WhatsApp, Telegram and Facebook accounts run this campaign's social steps.",
     },
     {
         id: "deliverability",
@@ -189,17 +193,23 @@ export default function CampaignPreferences() {
     const [explicitAccounts, setExplicitAccounts] = React.useState<string[]>([]);
     const [savedAccounts, setSavedAccounts] = React.useState<string[]>([]);
 
-    // LinkedIn senders: their own endpoint, shown when the workspace has LinkedIn or the campaign already uses it.
-    const linkedInStatus = useLinkedInStatus();
-    const putLinkedIn = usePutCampaignLinkedInAccounts(campaign.id);
-    const { data: linkedInSaved } = useCampaignLinkedInAccounts(campaign.id, !!linkedInStatus.data?.available || !!campaign.linkedin_account_ids?.length);
-    const [linkedInIds, setLinkedInIds] = React.useState<string[]>([]);
+    // Social senders: their own endpoint, shown when the workspace has social accounts or the campaign already uses them.
+    const socialStatus = useSocialStatus();
+    const putSocial = usePutCampaignSocialAccounts(campaign.id);
+    const { data: socialSaved } = useCampaignSocialAccounts(campaign.id, !!socialStatus.data?.available || !!campaign.social_account_ids?.length);
+    const [socialIds, setSocialIds] = React.useState<string[]>([]);
     React.useEffect(() => {
-        if (linkedInSaved) setLinkedInIds(linkedInSaved);
-    }, [linkedInSaved]);
-    const showLinkedIn = !!linkedInStatus.data?.available || !!linkedInSaved?.length;
-    const linkedInDirty = !!linkedInSaved && !sameIdSet(linkedInIds, linkedInSaved);
-    const sections = React.useMemo(() => SECTIONS.filter((s) => s.id !== "linkedin" || showLinkedIn), [showLinkedIn]);
+        if (socialSaved) setSocialIds(socialSaved);
+    }, [socialSaved]);
+    const showSocial = !!socialStatus.data?.available || !!socialSaved?.length;
+    const socialDirty = !!socialSaved && !sameIdSet(socialIds, socialSaved);
+    // The channels the sequence's social steps use, so their sender groups come first.
+    const steps = useQuery({ queryKey: ["campaigns", campaign.id, "sequences"], queryFn: () => getSequences(campaign.id), enabled: showSocial });
+    const stepChannels = React.useMemo(
+        () => [...new Set((steps.data ?? []).flatMap((s) => (s.kind === "action" && isSocialAction(s.action?.type ?? "") && s.action?.social?.channel ? [s.action.social.channel] : [])))] as SocialChannel[],
+        [steps.data],
+    );
+    const sections = React.useMemo(() => SECTIONS.filter((s) => s.id !== "social" || showSocial), [showSocial]);
 
     const ids = React.useMemo(() => sections.map((s) => s.id), [sections]);
     const { activeId, scrollTo } = useScrollSpy(ids);
@@ -351,7 +361,7 @@ export default function CampaignPreferences() {
             // CampaignSender with weight 1 so volume splits evenly. An empty list
             // clears the explicit pool (falling back to tags / all mailboxes).
             const writeSenders = accountsDirty;
-            const writeLinkedIn = linkedInDirty ? linkedInIds : null;
+            const writeSocial = socialDirty ? socialIds : null;
             await toast.promise(
                 (async () => {
                     if (Object.keys(data).length > 0) {
@@ -363,7 +373,7 @@ export default function CampaignPreferences() {
                         );
                         setSavedAccounts(explicitAccounts);
                     }
-                    if (writeLinkedIn) await putLinkedIn.mutateAsync(writeLinkedIn);
+                    if (writeSocial) await putSocial.mutateAsync(writeSocial);
                 })(),
                 {
                     loading: "Saving…",
@@ -404,8 +414,8 @@ export default function CampaignPreferences() {
                         setExplicitAccounts={setExplicitAccounts}
                     />
                 );
-            case "linkedin":
-                return <LinkedInAccountsSection value={linkedInIds} onChange={setLinkedInIds} />;
+            case "social":
+                return <SocialAccountsSection value={socialIds} onChange={setSocialIds} stepChannels={stepChannels} />;
             case "deliverability":
                 return <DeliverabilitySection newCampaign={newData} setNewCampaign={setNewData} />;
             case "rotation":
@@ -435,7 +445,7 @@ export default function CampaignPreferences() {
         }
     };
 
-    const hasChanges = Object.keys(getChanges()).length > 0 || accountsDirty || linkedInDirty;
+    const hasChanges = Object.keys(getChanges()).length > 0 || accountsDirty || socialDirty;
     const blocked = validationError() !== null;
 
     return (
@@ -509,7 +519,7 @@ export default function CampaignPreferences() {
                                 onClick={() => {
                                     setNewData(campaign);
                                     setExplicitAccounts(savedAccounts);
-                                    if (linkedInSaved) setLinkedInIds(linkedInSaved);
+                                    if (socialSaved) setSocialIds(socialSaved);
                                 }}
                             >
                                 Reset

@@ -469,8 +469,8 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		if len(sequence.Action) > 0 {
 			_ = json.Unmarshal(sequence.Action, &cfg)
 		}
-		if models.IsLinkedInAction(cfg.Type) {
-			s.runLinkedInStep(ctx, campaign, contact, sequence, &cfg, taskID, accountID, nextTime)
+		if cfg.Type == models.ActionSocial {
+			s.runSocialStep(ctx, campaign, contact, sequence, &cfg, taskID, accountID, nextTime)
 			executionStatus = "completed"
 			return nil
 		}

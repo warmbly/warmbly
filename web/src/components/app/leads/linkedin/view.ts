@@ -1,5 +1,5 @@
 // How loaded results are shown, kept pure: Warmbly's own view filters, the three views, columns, grouping and smart selections.
-import type { FinderHit } from "@/lib/api/models/app/linkedin/LinkedIn";
+import type { FinderHit } from "@/lib/api/models/app/social/Social";
 import { isSelectable } from "./state";
 
 // ---------------------------------------------------------------- views and columns

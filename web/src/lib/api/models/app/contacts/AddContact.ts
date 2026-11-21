@@ -1,10 +1,12 @@
+import type { ContactSocialPatch } from "@/lib/api/models/app/social/Social";
+
 export default interface AddContact {
     first_name: string;
     last_name: string;
     email: string;
     company: string;
     phone: string;
-    linkedin_url?: string;
+    social?: ContactSocialPatch;
     campaigns: string[];
     categories?: string[];
 

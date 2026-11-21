@@ -45,8 +45,8 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `AGENCY_MIGRATE` | 31 | 2147483648 | agency | Migrate client accounts in from another outreach tool |
 | `READ_STORE` | 32 | 4294967296 | read | View purchased domains, mailboxes, orders and store prices |
 | `MANAGE_STORE` | 33 | 8589934592 | write | Buy, renew and cancel domains and mailboxes, and edit their DNS |
-| `READ_LINKEDIN` | 34 | 17179869184 | read | View LinkedIn accounts and conversations, and search LinkedIn for leads |
-| `MANAGE_LINKEDIN` | 35 | 34359738368 | write | Connect, configure and remove LinkedIn accounts, import leads and reply to conversations |
+| `READ_SOCIAL` | 34 | 17179869184 | read | View social accounts and conversations, and search LinkedIn for leads |
+| `MANAGE_SOCIAL` | 35 | 34359738368 | write | Connect, configure and remove social accounts, upload voice notes, import leads and reply to conversations |
 
 Bits 26 to 29 and bit 31 exist only on [agency API keys](/api/authentication/#agency-api-keys). A workspace key or OAuth app never holds them, and `POST /api-keys` refuses them as unknown bits.
 
@@ -62,7 +62,7 @@ Bits 26 to 29 and bit 31 exist only on [agency API keys](/api/authentication/#ag
 
 `READ_STORE` and `MANAGE_STORE` cover the [store](/guides/buy-mailboxes/), the `/store` routes where the workspace buys domains and mailboxes. `READ_STORE` reads the store status and domain search, orders, purchased and connected domains, their DNS checks, and purchased mailboxes. `MANAGE_STORE` covers asking for a quote, connecting a domain the workspace already owns, editing DNS records, renaming a mailbox and changing a forwarding URL. Anything that charges the workspace or changes what it is charged (placing an order, renewing a domain, turning auto-renew on or off, cancelling or resuming a mailbox, getting a transfer code, and saving the registrant) also needs the member behind the key to hold `manage_billing`, checked on every request rather than when the key was made, so a key stops paying the moment that member loses it. Buying spends the workspace balance. `MANAGE_STORE` can also fetch a purchased mailbox's sign-in (`POST /store/mailboxes/:id/sign-in`), which reveals its username and password, so treat a key holding it like one that can read mailbox credentials. See the [store routes](/api/endpoints/#domains-and-mailboxes) for each route's scope.
 
-`READ_LINKEDIN` and `MANAGE_LINKEDIN` cover [LinkedIn](/guides/linkedin/), the `/linkedin` routes. `READ_LINKEDIN` reads the status, accounts, connections and the connect price, searches LinkedIn (catalog, search, typeahead, address parsing, profiles, saved searches and the AI search builder, which spends the AI balance), and reads conversations. `MANAGE_LINKEDIN` covers signing in and answering checks on a connection, an account's settings, pausing, resuming and resyncing it, saving searches, adding results to contacts and replying in conversations. Each route also needs a member permission: `manage_emails` for accounts, `view_contacts` for search (`manage_contacts` to add results to contacts), and `access_unibox` for conversations. Connecting an account charges its first month, so connecting, removing an account and linking or unlinking a GraphKit workspace also need the member to hold `manage_billing`. See the [LinkedIn routes](/api/endpoints/#linkedin).
+`READ_SOCIAL` and `MANAGE_SOCIAL` cover [social accounts](/guides/social/) on every channel (LinkedIn, Instagram, WhatsApp, Telegram and Facebook), the `/social` routes. `READ_SOCIAL` reads the status, the channel catalog, accounts, connections and the connect price, searches LinkedIn (catalog, search, typeahead, address parsing, profiles, saved searches and the AI search builder, which spends the AI balance), and reads conversations. `MANAGE_SOCIAL` covers signing in and answering checks on a connection, an account's settings, pausing, resuming and resyncing it, uploading and deleting voice note recordings, saving searches, adding results to contacts and replying in conversations. Each route also needs a member permission: `manage_emails` for accounts, `view_contacts` for search (`manage_contacts` to add results to contacts), and `access_unibox` for conversations. Connecting an account charges its first month, so connecting, removing an account and linking or unlinking a GraphKit workspace also need the member to hold `manage_billing`. Picking a campaign's social senders needs `WRITE_CAMPAIGNS` as well. See the [social routes](/api/endpoints/#social).
 
 ## Categories
 
@@ -106,7 +106,7 @@ An API key or an OAuth grant acts for a member of the workspace, so it never hol
 | `READ_CONTACTS`, `READ_CRM` | `view_contacts` |
 | `READ_UNIBOX`, `WRITE_UNIBOX` | `access_unibox` |
 | `READ_ANALYTICS`, `READ_AUDIT_LOGS` | `view_analytics` |
-| `WRITE_EMAILS`, `CONNECT_EMAILS`, `READ_STORE`, `MANAGE_STORE`, `READ_LINKEDIN`, `MANAGE_LINKEDIN` | `manage_emails` |
+| `WRITE_EMAILS`, `CONNECT_EMAILS`, `READ_STORE`, `MANAGE_STORE`, `READ_SOCIAL`, `MANAGE_SOCIAL` | `manage_emails` |
 | `WRITE_CAMPAIGNS`, `WRITE_TEMPLATES`, `BULK_CAMPAIGNS` | `manage_campaigns` |
 | `WRITE_CONTACTS`, `WRITE_CRM`, `BULK_CONTACTS`, `IMPORT_TOOLS` | `manage_contacts` |
 | `SEND_CAMPAIGNS` | `send_campaigns` |
@@ -137,7 +137,7 @@ All read permissions combined:
 
 ```
 READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
-  | READ_TEMPLATES | READ_CRM | READ_AUDIT_LOGS | READ_STORE | READ_LINKEDIN
+  | READ_TEMPLATES | READ_CRM | READ_AUDIT_LOGS | READ_STORE | READ_SOCIAL
 = 1 | 2 | 4 | 8 | 16 | 32768 | 131072 | 524288 | 4294967296 | 17179869184
 = 21475524639
 ```
@@ -183,7 +183,7 @@ hasPermission(16387, 64);    // false: WRITE_CAMPAIGNS missing
 
 ### Values above 2^31
 
-JavaScript's bitwise operators (`&`, `|`, `~`, `<<`) work on 32-bit integers, so they give wrong answers for `AGENCY_MIGRATE` (bit 31), `READ_STORE` (bit 32), `MANAGE_STORE` (bit 33), `READ_LINKEDIN` (bit 34), `MANAGE_LINKEDIN` (bit 35) and any mask that contains them, such as the presets. Use `BigInt` for masks in JavaScript and TypeScript:
+JavaScript's bitwise operators (`&`, `|`, `~`, `<<`) work on 32-bit integers, so they give wrong answers for `AGENCY_MIGRATE` (bit 31), `READ_STORE` (bit 32), `MANAGE_STORE` (bit 33), `READ_SOCIAL` (bit 34), `MANAGE_SOCIAL` (bit 35) and any mask that contains them, such as the presets. Use `BigInt` for masks in JavaScript and TypeScript:
 
 ```javascript
 const READ_STORE = 1n << 32n;    // 4294967296n
@@ -298,9 +298,9 @@ export const Permissions = {
   // Store (workspace permissions); above 2^31, so use BigInt for bitwise math
   READ_STORE: 4294967296,
   MANAGE_STORE: 8589934592,
-  // LinkedIn (workspace permissions)
-  READ_LINKEDIN: 17179869184,
-  MANAGE_LINKEDIN: 34359738368,
+  // Social accounts (workspace permissions)
+  READ_SOCIAL: 17179869184,
+  MANAGE_SOCIAL: 34359738368,
 } as const;
 ```
 
@@ -348,9 +348,9 @@ class Permissions:
     # Store (workspace permissions)
     READ_STORE = 4294967296
     MANAGE_STORE = 8589934592
-    # LinkedIn (workspace permissions)
-    READ_LINKEDIN = 17179869184
-    MANAGE_LINKEDIN = 34359738368
+    # Social accounts (workspace permissions)
+    READ_SOCIAL = 17179869184
+    MANAGE_SOCIAL = 34359738368
 ```
 
 </Tab>
@@ -397,9 +397,9 @@ const (
     // Store (workspace permissions)
     APIPermReadStore                            // 4294967296
     APIPermManageStore                          // 8589934592
-    // LinkedIn (workspace permissions)
-    APIPermReadLinkedIn                         // 17179869184
-    APIPermManageLinkedIn                       // 34359738368
+    // Social accounts (workspace permissions)
+    APIPermReadSocial                           // 17179869184
+    APIPermManageSocial                         // 34359738368
 )
 ```
 

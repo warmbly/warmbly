@@ -12,9 +12,11 @@ import (
 	"time"
 )
 
-// The social sandbox: simulated LinkedIn accounts whose sign-in username decides the outcome
-// (2fa, approve, contract, wrong, restricted, salesnav, recruiter), deterministic search, and
-// invitations to public ids containing accept (and reply) that are accepted (and answered).
+// The social sandbox, every channel: a password or cookie sign-in's username decides the outcome (2fa, sms, otp, approve,
+// choose, phone, captcha, contract, wrong, restricted, salesnav, recruiter, voice); a QR sign-in is scanned on the third
+// poll (WhatsApp then loads, Telegram asks for the cloud password unless it was sent), a pairing code is entered after
+// five seconds (a number ending 000 is refused), and Facebook ends with encrypted_history. Invitations to ids containing
+// accept or reply are accepted; recipients containing reply, or a phone or numeric id ending 99, answer.
 
 // FakeAcknowledgementVersion is the terms version the sandbox asks connect sessions to accept.
 const FakeAcknowledgementVersion = "2026-11-15"
@@ -43,6 +45,7 @@ type fakeSocial struct {
 	accounts   map[string]*fakeSocialAccount
 	actions    map[string]*fakeAction
 	convs      map[string]*fakeConv
+	audio      map[string]*fakeAudio
 	messages   map[string][]*fakeMessage
 	// connected is account id + public id for people who accepted an invitation.
 	connected map[string]bool
@@ -64,17 +67,24 @@ type fakeLink struct {
 }
 
 type fakeConnect struct {
-	external   string
-	s          ConnectSession
-	signIns    int
-	answers    int
-	username   string
-	recruiter  bool
-	timezone   string
-	approveAt  *time.Time
-	lastResend time.Time
+	external  string
+	s         ConnectSession
+	signIns   int
+	answers   int
+	username  string
+	recruiter bool
+	channel   string
+	// polls counts reads of a QR or pairing code checkpoint; the sandbox completes it on the third.
+	polls int
+	// cloudPassword is the Telegram cloud password sent with a QR sign-in.
+	cloudPassword string
+	timezone      string
+	approveAt     *time.Time
+	lastResend    time.Time
 	// reconnect is the account a reconnect session signs in again.
 	reconnect string
+	// historyDone is set once a Facebook session has answered its encrypted_history checkpoint.
+	historyDone bool
 }
 
 type fakeSocialAccount struct {
@@ -91,6 +101,8 @@ type fakeAction struct {
 	runAt    time.Time
 	acceptAt *time.Time
 	replyAt  *time.Time
+	audioID  string
+	consent  string
 }
 
 type fakeConv struct {
@@ -107,7 +119,7 @@ type fakeMessage struct {
 func newFakeSocial() *fakeSocial {
 	return &fakeSocial{
 		workspaces: map[string]*fakeSocialWorkspace{}, links: map[string]*fakeLink{}, sessions: map[string]*fakeConnect{},
-		accounts: map[string]*fakeSocialAccount{}, actions: map[string]*fakeAction{}, convs: map[string]*fakeConv{},
+		accounts: map[string]*fakeSocialAccount{}, actions: map[string]*fakeAction{}, convs: map[string]*fakeConv{}, audio: map[string]*fakeAudio{},
 		messages: map[string][]*fakeMessage{}, connected: map[string]bool{}, failedSignIns: map[string]int{}, aiBuilds: map[string]int{},
 	}
 }
@@ -153,7 +165,7 @@ func (f *Fake) DecideLink(sessionID string, approve bool) (string, error) {
 		ws := f.workspaceLocked(l.external)
 		ws.mode, ws.name, ws.linkedAt = SocialModeLinked, name, &now
 		// The linked workspace brings the account its owner connected in GraphKit's app.
-		f.connectAccountLocked(l.external, "", "grace.hopper.salesnav", false, "Europe/London", now)
+		f.connectAccountLocked(l.external, ChannelLinkedIn, "", "grace.hopper.salesnav", false, "Europe/London", now)
 		f.emitLocked(EventSocialUpdated, l.external, f.workspaceViewLocked(l.external))
 	}
 	l.s.Status = status
@@ -197,7 +209,7 @@ func (f *Fake) managedLiveLocked(external string) bool {
 
 func (f *Fake) workspaceViewLocked(external string) SocialWorkspace {
 	ws := f.workspaceLocked(external)
-	out := SocialWorkspace{Mode: ws.mode, LinkedAt: ws.linkedAt, AcknowledgementVersion: FakeAcknowledgementVersion, Channels: []string{ChannelLinkedIn}}
+	out := SocialWorkspace{Mode: ws.mode, LinkedAt: ws.linkedAt, AcknowledgementVersion: FakeAcknowledgementVersion, Channels: fakeSocialCatalog()}
 	if ws.mode == SocialModeLinked {
 		out.Workspace = &WorkspaceName{Name: ws.name}
 	}
@@ -342,8 +354,8 @@ func (f *Fake) CreateConnection(_ context.Context, externalID string, in Connect
 		if err := f.socialAccountLocked(externalID); err != nil {
 			return nil, err
 		}
-		if in.Channel != ChannelLinkedIn {
-			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "channel must be linkedin", map[string]any{"fields": []string{"channel"}})
+		if _, ok := fakeChannel(in.Channel); !ok {
+			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "unknown channel", map[string]any{"fields": []string{"channel"}})
 		}
 		tz := in.Timezone
 		if tz == "" {
@@ -383,8 +395,8 @@ func (f *Fake) CreateConnection(_ context.Context, externalID string, in Connect
 			f.emitLocked(EventSocialUpdated, externalID, f.workspaceViewLocked(externalID))
 		}
 		now := f.now().UTC()
-		s := &fakeConnect{external: externalID, timezone: tz, reconnect: reconnect,
-			s: ConnectSession{ID: f.id("scs"), Kind: kind, Channel: ChannelLinkedIn, Status: ConnectSignIn, ExpiresAt: now.Add(fakeConnectTTL), CreatedAt: now}}
+		s := &fakeConnect{external: externalID, timezone: tz, reconnect: reconnect, channel: in.Channel,
+			s: ConnectSession{ID: f.id("scs"), Kind: kind, Channel: in.Channel, Status: ConnectSignIn, ExpiresAt: now.Add(fakeConnectTTL), CreatedAt: now}}
 		f.social.sessions[s.s.ID] = s
 		f.emitLocked(EventSocialConnectionUpdated, externalID, s.s)
 		return cloneJSON(s.s), nil
@@ -397,6 +409,24 @@ func (f *Fake) GetConnection(_ context.Context, externalID, id string) (*Connect
 	s, err := f.sessionLocked(externalID, id)
 	if err != nil {
 		return nil, err
+	}
+	if cp := s.s.Checkpoint; s.s.Status == ConnectCheckpoint && cp != nil && cp.Type == CheckpointQRCode {
+		now := f.now().UTC()
+		s.polls++
+		switch {
+		case s.polls < 3:
+			f.codeCheckpointLocked(s, now)
+		case s.channel == ChannelWhatsApp:
+			// WhatsApp prepares the linked device's data before the account connects.
+			at := now.Add(2 * time.Second)
+			s.approveAt = &at
+			f.checkpointLocked(s, CheckpointLoading, "", nil)
+		case s.channel == ChannelTelegram && (s.cloudPassword == "" || strings.Contains(s.cloudPassword, "wrong")):
+			f.checkpointLocked(s, CheckpointTwoFactor, "cloud_password", nil)
+			s.s.CanResend = false
+		default:
+			f.succeedLocked(s, now)
+		}
 	}
 	return cloneJSON(s.s), nil
 }
@@ -419,41 +449,111 @@ func (f *Fake) SignIn(_ context.Context, externalID, id string, in SignInInput, 
 		e.RetryAfter = time.Hour
 		return nil, e
 	}
+	ch, _ := fakeChannel(s.channel)
+	refuse := func(msg string, fields ...string) error {
+		return fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, msg, map[string]any{"fields": fields})
+	}
+	if !slices.Contains(ch.AuthMethods, in.Method) {
+		return nil, refuse(ch.Label+" signs in with "+strings.Join(ch.AuthMethods, " or "), "method")
+	}
+	// Fields the method does not use are refused, so a credential never travels where it is not needed.
+	var unused []string
+	if in.Method != SignInPassword && (in.Username != "" || in.Password != "") {
+		unused = append(unused, "username", "password")
+	}
+	if in.Method != SignInCookie && len(in.Cookies) > 0 {
+		unused = append(unused, "cookies")
+	}
+	if in.Method != SignInPairingCode && in.PhoneNumber != "" {
+		unused = append(unused, "phone_number")
+	}
+	if (in.Method != SignInQR || s.channel != ChannelTelegram) && in.TwoFactorPassword != "" {
+		unused = append(unused, "two_factor_password")
+	}
+	if in.Recruiter && s.channel != ChannelLinkedIn {
+		unused = append(unused, "recruiter")
+	}
+	if len(unused) > 0 {
+		return nil, refuse("fields not used by this method", unused...)
+	}
 	var user string
 	switch in.Method {
-	case "password":
+	case SignInPassword:
 		if strings.TrimSpace(in.Username) == "" || in.Password == "" {
-			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "username and password are required", map[string]any{"fields": []string{"username", "password"}})
+			return nil, refuse("username and password are required", "username", "password")
 		}
 		user = strings.ToLower(in.Username)
 		if len(in.Password) < 8 {
 			user = "wrong"
 		}
-	case "cookie":
-		if in.Cookies == nil || strings.TrimSpace(in.Cookies.LiAt) == "" {
-			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "cookies.li_at is required", map[string]any{"fields": []string{"cookies.li_at"}})
+	case SignInCookie:
+		for _, name := range ch.CookieNames.Required {
+			if strings.TrimSpace(in.Cookies[name]) == "" {
+				return nil, refuse("cookies."+name+" is required", "cookies."+name)
+			}
 		}
-		user = strings.ToLower(in.Cookies.LiAt)
-	default:
-		return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "method must be password or cookie", map[string]any{"fields": []string{"method"}})
+		for name := range in.Cookies {
+			if !slices.Contains(ch.CookieNames.Required, name) && !slices.Contains(ch.CookieNames.Optional, name) {
+				return nil, refuse("cookies."+name+" is not a "+ch.Label+" cookie", "cookies."+name)
+			}
+		}
+		if s.channel == ChannelLinkedIn && strings.TrimSpace(in.UserAgent) == "" {
+			return nil, refuse("LinkedIn cookies need the user_agent of the browser they came from", "user_agent")
+		}
+		user = strings.ToLower(in.Cookies[ch.CookieNames.Required[0]])
+	case SignInQR:
+		s.signIns++
+		s.username, s.cloudPassword, s.polls = "qr-"+s.s.ID, in.TwoFactorPassword, 0
+		f.codeCheckpointLocked(s, now)
+		return cloneJSON(s.s), nil
+	case SignInPairingCode:
+		phone := fakePhoneJunk.ReplaceAllString(in.PhoneNumber, "")
+		if !fakeE164.MatchString(phone) {
+			return nil, refuse("phone_number must be in E.164", "phone_number")
+		}
+		s.signIns++
+		if strings.HasSuffix(phone, "000") {
+			f.social.failedSignIns[day]++
+			if s.signIns >= fakeMaxSignIns {
+				f.failSessionLocked(s, CodeSignInFailed, ch.Label+" refused the sign-in too many times")
+			}
+			return nil, fakeErr(http.StatusUnprocessableEntity, CodeSignInFailed, ch.Label+" refused the phone number")
+		}
+		// The code is entered about five seconds after it is shown.
+		at := now.Add(fakeApproveAfter)
+		s.username, s.polls, s.approveAt = "pair-"+phone, 0, &at
+		f.codeCheckpointLocked(s, now)
+		return cloneJSON(s.s), nil
 	}
 	s.signIns++
 	if strings.Contains(user, "wrong") {
 		f.social.failedSignIns[day]++
 		if s.signIns >= fakeMaxSignIns {
-			f.failSessionLocked(s, CodeSignInFailed, "LinkedIn refused the sign-in too many times")
+			f.failSessionLocked(s, CodeSignInFailed, ch.Label+" refused the sign-in too many times")
 		}
-		return nil, fakeErr(http.StatusUnprocessableEntity, CodeSignInFailed, "LinkedIn refused the email or password")
+		return nil, fakeErr(http.StatusUnprocessableEntity, CodeSignInFailed, ch.Label+" refused the email or password")
 	}
 	s.username, s.recruiter = user, in.Recruiter || strings.Contains(user, "recruiter")
 	switch {
 	case strings.Contains(user, "2fa"):
+		f.checkpointLocked(s, CheckpointTwoFactor, "app", nil)
+	case strings.Contains(user, "sms"):
 		f.checkpointLocked(s, CheckpointTwoFactor, "sms", nil)
+	case strings.Contains(user, "otp"):
+		f.checkpointLocked(s, CheckpointOTP, "email", nil)
 	case strings.Contains(user, "approve"):
 		at := now.Add(fakeApproveAfter)
 		s.approveAt = &at
 		f.checkpointLocked(s, CheckpointAppApproval, "", nil)
-	case strings.Contains(user, "contract"):
+	case strings.Contains(user, "choose"):
+		f.checkpointLocked(s, CheckpointChooseMethod, "", []CheckpointChoice{{ID: "email", Label: "Email"}, {ID: "sms", Label: "Text message"}})
+	case strings.Contains(user, "phone"):
+		f.checkpointLocked(s, CheckpointPhoneNumber, "", nil)
+	case strings.Contains(user, "captcha"):
+		f.checkpointLocked(s, CheckpointCaptcha, "", nil)
+		key, data := "demo", "sandbox-captcha"
+		s.s.Checkpoint.CaptchaKey, s.s.Checkpoint.CaptchaData = &key, &data
+	case strings.Contains(user, "contract") && s.channel == ChannelLinkedIn:
 		f.checkpointLocked(s, CheckpointChooseContract, "", []CheckpointChoice{
 			{ID: "contract_sales_navigator", Label: "Sales Navigator Core", Description: "Acme sales team"},
 			{ID: "contract_recruiter", Label: "Recruiter Lite", Description: "Acme talent team"},
@@ -478,6 +578,26 @@ func (f *Fake) checkpointLocked(s *fakeConnect, typ, delivery string, choices []
 	f.emitLocked(EventSocialConnectionUpdated, s.external, s.s)
 }
 
+// codeCheckpointLocked shows a fresh QR payload or pairing code; the sandbox treats the third read as scanned or entered.
+func (f *Fake) codeCheckpointLocked(s *fakeConnect, now time.Time) {
+	exp := now.Add(time.Minute)
+	cp := &Checkpoint{Choices: []CheckpointChoice{}, ExpiresAt: &exp}
+	if phone, ok := strings.CutPrefix(s.username, "pair-"); ok {
+		// The code is derived from the number's last four digits.
+		var b strings.Builder
+		for _, d := range phone[len(phone)-4:] {
+			b.WriteByte(byte('A' + (d-'0')*2))
+		}
+		code := "PAIR-" + b.String()
+		cp.Type, cp.PairingCode = CheckpointPairingCode, &code
+	} else {
+		qr := fakeQRPayload(s.s.ID, s.polls, now)
+		cp.Type, cp.QRCode = CheckpointQRCode, &qr
+	}
+	s.s.Status, s.s.Checkpoint, s.s.CanResend = ConnectCheckpoint, cp, false
+	f.emitLocked(EventSocialConnectionUpdated, s.external, s.s)
+}
+
 func (f *Fake) failSessionLocked(s *fakeConnect, code, msg string) {
 	s.s.Status, s.s.Checkpoint, s.s.CanResend = ConnectFailed, nil, false
 	s.s.Error = &SocialError{Code: code, Message: msg}
@@ -485,7 +605,14 @@ func (f *Fake) failSessionLocked(s *fakeConnect, code, msg string) {
 }
 
 func (f *Fake) succeedLocked(s *fakeConnect, now time.Time) {
-	a := f.connectAccountLocked(s.external, s.reconnect, s.username, s.recruiter, s.timezone, now)
+	if s.channel == ChannelFacebook && !s.historyDone {
+		choices := []CheckpointChoice{{ID: "PIN", Label: "PIN", AttemptsRemaining: fakeInt(3)},
+			{ID: "RECOVERY_CODE", Label: "Recovery code", AttemptsRemaining: fakeInt(3)}, {ID: "SKIP", Label: "Skip"}}
+		f.checkpointLocked(s, CheckpointEncrypted, "", choices)
+		s.s.Checkpoint.AttemptsRemaining = fakeInt(3)
+		return
+	}
+	a := f.connectAccountLocked(s.external, s.channel, s.reconnect, s.username, s.recruiter, s.timezone, now)
 	s.s.Status, s.s.Checkpoint, s.s.CanResend, s.s.Account = ConnectSucceeded, nil, false, cloneJSON(a.a)
 	f.emitLocked(EventSocialConnectionUpdated, s.external, s.s)
 }
@@ -506,6 +633,19 @@ func (f *Fake) AnswerCheckpoint(_ context.Context, externalID, id string, in Che
 		return cloneJSON(s.s), nil
 	}
 	cp, now := s.s.Checkpoint, f.now().UTC()
+	if cp.Type == CheckpointTwoFactor && cp.Delivery != nil && *cp.Delivery == "cloud_password" {
+		if strings.TrimSpace(in.TwoFactorPassword) == "" {
+			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "two_factor_password is required", map[string]any{"fields": []string{"two_factor_password"}})
+		}
+		if strings.Contains(in.TwoFactorPassword, "wrong") {
+			msg := "invalid_password"
+			cp.LastError = &msg
+			f.emitLocked(EventSocialConnectionUpdated, s.external, s.s)
+			return cloneJSON(s.s), nil
+		}
+		f.succeedLocked(s, now)
+		return cloneJSON(s.s), nil
+	}
 	switch cp.Type {
 	case CheckpointTwoFactor, CheckpointOTP, CheckpointOTPOrApp:
 		if strings.TrimSpace(in.Code) == "" {
@@ -534,12 +674,73 @@ func (f *Fake) AnswerCheckpoint(_ context.Context, externalID, id string, in Che
 			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "choice must be one of the checkpoint's choices", map[string]any{"fields": []string{"choice"}})
 		}
 		f.succeedLocked(s, now)
-	case CheckpointAppApproval:
-		return nil, fakeErr(http.StatusConflict, CodeStateConflict, "this checkpoint completes on its own once approved in the LinkedIn app")
+	case CheckpointPhoneNumber:
+		if digits := strings.TrimLeft(fakePhoneJunk.ReplaceAllString(in.Code, ""), "+"); len(digits) < 7 || strings.Trim(digits, "0123456789") != "" {
+			msg := "invalid_phone_number"
+			cp.LastError = &msg
+			f.emitLocked(EventSocialConnectionUpdated, s.external, s.s)
+			break
+		}
+		f.checkpointLocked(s, CheckpointTwoFactor, "sms", nil)
+	case CheckpointCaptcha:
+		if strings.TrimSpace(in.Code) != "demo-captcha-passed" {
+			msg := "invalid_captcha"
+			cp.LastError = &msg
+			f.emitLocked(EventSocialConnectionUpdated, s.external, s.s)
+			break
+		}
+		f.succeedLocked(s, now)
+	case CheckpointEncrypted:
+		if err := f.answerHistoryLocked(s, in, now); err != nil {
+			return nil, err
+		}
+	case CheckpointAppApproval, CheckpointQRCode, CheckpointPairingCode, CheckpointLoading:
+		return nil, fakeErr(http.StatusConflict, CodeStateConflict, "this checkpoint completes on its own")
 	default:
 		return nil, fakeErr(http.StatusConflict, CodeStateConflict, "this checkpoint takes no answer")
 	}
 	return cloneJSON(s.s), nil
+}
+
+// fakeRecoveryCode is the Messenger recovery code the sandbox accepts.
+const fakeRecoveryCode = "demo-recovery-code-0000000000000000000000"
+
+// answerHistoryLocked answers Facebook's encrypted_history checkpoint: PIN 1234, the recovery code, or SKIP.
+func (f *Fake) answerHistoryLocked(s *fakeConnect, in CheckpointAnswer, now time.Time) error {
+	cp := s.s.Checkpoint
+	want := map[string]string{"PIN": "1234", "RECOVERY_CODE": fakeRecoveryCode}
+	if in.Choice == "SKIP" {
+		s.historyDone = true
+		f.succeedLocked(s, now)
+		return nil
+	}
+	secret, ok := want[in.Choice]
+	switch {
+	case !ok:
+		return fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "choice must be PIN, RECOVERY_CODE or SKIP", map[string]any{"fields": []string{"choice"}})
+	case strings.TrimSpace(in.Secret) == "":
+		return fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "secret is required", map[string]any{"fields": []string{"secret"}})
+	case strings.TrimSpace(in.Secret) == secret:
+		s.historyDone = true
+		f.succeedLocked(s, now)
+		return nil
+	}
+	msg := "invalid_secret"
+	cp.LastError = &msg
+	for i := range cp.Choices {
+		if c := &cp.Choices[i]; c.ID == in.Choice && c.AttemptsRemaining != nil {
+			*c.AttemptsRemaining--
+			if *c.AttemptsRemaining <= 0 {
+				f.failSessionLocked(s, CodeSignInFailed, "the encrypted history could not be unlocked")
+				return nil
+			}
+		}
+	}
+	if cp.AttemptsRemaining != nil {
+		*cp.AttemptsRemaining--
+	}
+	f.emitLocked(EventSocialConnectionUpdated, s.external, s.s)
+	return nil
 }
 
 func (f *Fake) ChooseMethod(_ context.Context, externalID, id, challenge, key string) (*ConnectSession, error) {
@@ -609,10 +810,12 @@ func fakeHash(s string) uint64 {
 
 func fakeInt(v int) *int { return &v }
 
-func (f *Fake) connectAccountLocked(external, reconnect, user string, recruiter bool, tz string, now time.Time) *fakeSocialAccount {
+func (f *Fake) connectAccountLocked(external, channel, reconnect, user string, recruiter bool, tz string, now time.Time) *fakeSocialAccount {
 	if a := f.social.accounts[reconnect]; a != nil {
 		a.a.Status, a.a.StatusReason, a.a.UpdatedAt = SocialActive, nil, now
-		a.a.Licences = fakeLicences(user, recruiter)
+		if channel == ChannelLinkedIn {
+			a.a.Licences = fakeLicences(user, recruiter)
+		}
 		f.emitLocked(EventSocialAccountUpdated, external, a.a)
 		return a
 	}
@@ -622,10 +825,21 @@ func (f *Fake) connectAccountLocked(external, reconnect, user string, recruiter 
 		first, last = "Grace", "Hopper"
 	}
 	public := strings.ToLower(first + "-" + last + "-" + strconv.FormatUint(h%9000+1000, 10))
-	licences := fakeLicences(user, recruiter)
-	searchLimit, searchCeil := 1000, 1000
-	if slices.Contains(licences, LicenceSalesNavigator) {
-		searchLimit, searchCeil = 1000, 2500
+	headline := "Head of Growth at " + last + " Labs"
+	switch channel {
+	case ChannelInstagram:
+		public = strings.ToLower(first + "." + last + strconv.FormatUint(h%90+10, 10))
+	case ChannelFacebook:
+		public = strings.ToLower(first + "." + last + "." + strconv.FormatUint(h%9000+1000, 10))
+	case ChannelWhatsApp, ChannelTelegram:
+		public = "+4477009" + strconv.FormatUint(h%90000+10000, 10)
+		if phone, ok := strings.CutPrefix(user, "pair-"); ok {
+			public = phone
+		}
+		headline = ""
+	}
+	if channel != ChannelLinkedIn {
+		recruiter = false
 	}
 	mode := f.workspaceLocked(external).mode
 	billing := SocialBilling{Mode: SocialModeManaged, MonthlyMicros: new(int64)}
@@ -635,25 +849,31 @@ func (f *Fake) connectAccountLocked(external, reconnect, user string, recruiter 
 	} else {
 		billing = SocialBilling{Mode: SocialModeLinked}
 	}
+	daily, weekly, ceilings, weeklyCeilings := fakeDefaultLimits(channel)
 	a := &fakeSocialAccount{external: external, a: SocialAccount{
-		ID: f.id("sac"), Channel: ChannelLinkedIn, Status: SocialActive,
-		DisplayName: first + " " + last, Headline: "Head of Growth at " + last + " Labs",
-		ProfileURL: "https://www.linkedin.com/in/" + public, PublicID: public,
-		Licences:      licences,
-		InmailCredits: &InmailCredits{Classic: fakeInt(0)},
-		Limits:        SocialLimits{Invite: fakeInt(15), Message: fakeInt(50), Inmail: fakeInt(20), ProfileVisit: fakeInt(40), Search: fakeInt(searchLimit)},
-		WeeklyLimits:  WeeklyLimits{Invite: fakeInt(80)},
-		LimitCeilings: LimitCeilings{Invite: 25, Message: 100, Inmail: 40, ProfileVisit: 80, Search: searchCeil, WeeklyInvite: 100},
-		WorkingHours:  &WorkingHours{Days: []int{1, 2, 3, 4, 5}, Start: "09:00", End: "18:00"}, Timezone: tz,
-		Warmup:         &SocialWarmup{Enabled: true, Percent: fakeInt(20), EndsOn: ptr(now.AddDate(0, 0, 21).Format("2006-01-02"))},
-		PendingInvites: fakeInt(0), AcceptanceRate: nil, WithdrawInvitesAfterDays: fakeInt(21),
+		ID: f.id("sac"), Channel: channel, Status: SocialActive,
+		DisplayName: first + " " + last, Headline: headline,
+		ProfileURL: fakeProfileURL(channel, public), PublicID: public,
+		Licences: []string{}, Limits: daily, WeeklyLimits: weekly, LimitCeilings: ceilings, WeeklyLimitCeilings: weeklyCeilings,
+		Capabilities: fakeCapabilities(channel),
+		// A username naming "voice" brings an account that already has a voice for written voice notes.
+		Voice:        SocialVoiceState{Available: strings.Contains(user, "voice") && slices.Contains(fakeCapabilityActions(channel), ActionVoiceNote)},
+		WorkingHours: &WorkingHours{Days: []int{1, 2, 3, 4, 5}, Start: "09:00", End: "18:00"}, Timezone: tz,
+		Warmup:  &SocialWarmup{Enabled: true, Percent: fakeInt(20), EndsOn: ptr(now.AddDate(0, 0, 21).Format("2006-01-02"))},
 		Billing: billing, ConnectedAt: &now, UpdatedAt: now,
 	}}
-	if slices.Contains(licences, LicenceSalesNavigator) {
-		a.a.InmailCredits.SalesNavigator = fakeInt(50)
-	}
-	if slices.Contains(licences, LicenceRecruiter) {
-		a.a.InmailCredits.Recruiter = fakeInt(100)
+	if channel == ChannelLinkedIn {
+		licences := fakeLicences(user, recruiter)
+		a.a.Licences, a.a.InmailCredits = licences, &InmailCredits{Classic: fakeInt(0)}
+		a.a.PendingInvites, a.a.WithdrawInvitesAfterDays = fakeInt(0), fakeInt(21)
+		if slices.Contains(licences, LicenceSalesNavigator) {
+			a.a.InmailCredits.SalesNavigator = fakeInt(50)
+		} else {
+			a.a.LimitCeilings["search"] = 1000
+		}
+		if slices.Contains(licences, LicenceRecruiter) {
+			a.a.InmailCredits.Recruiter = fakeInt(100)
+		}
 	}
 	a.a.Usage = fakeUsage(a)
 	if strings.Contains(user, "restricted") {
@@ -661,9 +881,14 @@ func (f *Fake) connectAccountLocked(external, reconnect, user string, recruiter 
 		a.restrictAt = &at
 	}
 	f.social.accounts[a.a.ID] = a
-	f.seedConversationLocked(a, now)
 	f.emitLocked(EventSocialAccountUpdated, external, a.a)
+	f.seedConversationLocked(a, now)
 	return a
+}
+
+func fakeCapabilityActions(channel string) []string {
+	c, _ := fakeChannel(channel)
+	return c.Actions
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -680,23 +905,22 @@ func fakeLicences(user string, recruiter bool) []string {
 }
 
 func fakeUsage(a *fakeSocialAccount) []SocialUsage {
-	lim := func(p *int) int {
-		if p == nil {
-			return 0
-		}
-		return *p
-	}
 	used := 0
 	if a.searchDay == time.Now().UTC().Format(time.DateOnly) {
 		used = a.searchUsed
 	}
-	return []SocialUsage{
-		{Action: ActionInvite, DailyLimit: lim(a.a.Limits.Invite), WeeklyLimit: a.a.WeeklyLimits.Invite},
-		{Action: ActionMessage, DailyLimit: lim(a.a.Limits.Message)},
-		{Action: ActionInmail, DailyLimit: lim(a.a.Limits.Inmail)},
-		{Action: ActionProfileVisit, DailyLimit: lim(a.a.Limits.ProfileVisit)},
-		{Action: "search", Today: used, DailyLimit: lim(a.a.Limits.Search)},
+	out := []SocialUsage{}
+	for _, act := range fakeCapabilityActions(a.a.Channel) {
+		u := SocialUsage{Action: act, DailyLimit: a.a.Limits[act]}
+		if w, ok := a.a.WeeklyLimits[act]; ok {
+			u.WeeklyLimit = fakeInt(w)
+		}
+		out = append(out, u)
 	}
+	if a.a.Channel == ChannelLinkedIn {
+		out = append(out, SocialUsage{Action: "search", Today: used, DailyLimit: a.a.Limits["search"]})
+	}
+	return out
 }
 
 func (f *Fake) accountLocked(externalID, id string) (*fakeSocialAccount, error) {
@@ -793,17 +1017,19 @@ func (f *Fake) UpdateSocialAccount(_ context.Context, externalID, id string, pat
 				bad = append(bad, field)
 			}
 		}
-		c := a.a.LimitCeilings
-		if l := patch.Limits; l != nil {
-			over("limits.invite", l.Invite, c.Invite)
-			over("limits.message", l.Message, c.Message)
-			over("limits.inmail", l.Inmail, c.Inmail)
-			over("limits.profile_visit", l.ProfileVisit, c.ProfileVisit)
-			over("limits.search", l.Search, c.Search)
+		// An action the account does not meter or a negative value is refused; above its ceiling is set to the ceiling.
+		limitMap := func(prefix string, in, ceilings SocialLimits) {
+			for act, v := range in {
+				c, ok := ceilings[act]
+				if !ok || v < 0 {
+					bad = append(bad, prefix+"."+act)
+					continue
+				}
+				in[act] = min(v, c)
+			}
 		}
-		if w := patch.WeeklyLimits; w != nil {
-			over("weekly_limits.invite", w.Invite, c.WeeklyInvite)
-		}
+		limitMap("limits", patch.Limits, a.a.LimitCeilings)
+		limitMap("weekly_limits", patch.WeeklyLimits, a.a.WeeklyLimitCeilings)
 		if wh := patch.WorkingHours; wh != nil {
 			if !fakeClock.MatchString(wh.Start) || !fakeClock.MatchString(wh.End) || wh.Start >= wh.End {
 				bad = append(bad, "working_hours")
@@ -824,24 +1050,19 @@ func (f *Fake) UpdateSocialAccount(_ context.Context, externalID, id string, pat
 			over("warmup.weeks", w.Weeks, 12)
 			over("warmup.start_percent", w.StartPercent, 100)
 		}
+		if patch.WithdrawInvitesAfterDays != nil && a.a.Channel != ChannelLinkedIn {
+			bad = append(bad, "withdraw_invites_after_days")
+		}
 		over("withdraw_invites_after_days", patch.WithdrawInvitesAfterDays, 90)
 		if len(bad) > 0 {
+			sort.Strings(bad)
 			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "some settings are outside what the account allows", map[string]any{"fields": bad})
 		}
-		set := func(dst **int, v *int) {
-			if v != nil {
-				*dst = fakeInt(*v)
-			}
+		for act, v := range patch.Limits {
+			a.a.Limits[act] = v
 		}
-		if l := patch.Limits; l != nil {
-			set(&a.a.Limits.Invite, l.Invite)
-			set(&a.a.Limits.Message, l.Message)
-			set(&a.a.Limits.Inmail, l.Inmail)
-			set(&a.a.Limits.ProfileVisit, l.ProfileVisit)
-			set(&a.a.Limits.Search, l.Search)
-		}
-		if w := patch.WeeklyLimits; w != nil {
-			set(&a.a.WeeklyLimits.Invite, w.Invite)
+		for act, v := range patch.WeeklyLimits {
+			a.a.WeeklyLimits[act] = v
 		}
 		if patch.WorkingHours != nil {
 			a.a.WorkingHours = cloneJSON(*patch.WorkingHours)
@@ -864,7 +1085,9 @@ func (f *Fake) UpdateSocialAccount(_ context.Context, externalID, id string, pat
 				a.a.Warmup = &SocialWarmup{Enabled: true, Percent: fakeInt(start), EndsOn: ptr(now.AddDate(0, 0, 7*weeks).Format("2006-01-02"))}
 			}
 		}
-		set(&a.a.WithdrawInvitesAfterDays, patch.WithdrawInvitesAfterDays)
+		if patch.WithdrawInvitesAfterDays != nil {
+			a.a.WithdrawInvitesAfterDays = fakeInt(*patch.WithdrawInvitesAfterDays)
+		}
 		a.a.UpdatedAt = now
 		a.a.Usage = fakeUsage(a)
 		f.emitLocked(EventSocialAccountUpdated, externalID, a.a)

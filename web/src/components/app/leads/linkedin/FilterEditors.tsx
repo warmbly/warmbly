@@ -2,9 +2,9 @@
 import { BanIcon, CheckIcon, Loader2Icon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type Dispatch, type KeyboardEvent } from "react";
 import { NumberInput } from "@/components/ui/field";
-import { useFinderTypeahead } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
-import type { FinderFilter, FinderSource, FinderValue } from "@/lib/api/models/app/linkedin/LinkedIn";
-import { linkedInErrorMessage } from "@/lib/linkedin/errors";
+import { useFinderTypeahead } from "@/lib/api/hooks/app/social/useSocial";
+import type { FinderFilter, FinderSource, FinderValue } from "@/lib/api/models/app/social/Social";
+import { socialErrorMessage } from "@/lib/social/errors";
 import { cn } from "@/lib/utils";
 import { apiAccount, valueKey, type FinderAction } from "./state";
 
@@ -177,7 +177,7 @@ export function Typeahead({ filter: f, source, values, dispatch, accountId }: { 
                         );
                     })}
                     {res.isFetching && items.length === 0 && <li className="px-2 py-1.5 text-[12px] text-slate-500">Searching LinkedIn…</li>}
-                    {res.isError && <li className="px-2 py-1.5 text-[12px] text-red-600">{linkedInErrorMessage(res.error)}</li>}
+                    {res.isError && <li className="px-2 py-1.5 text-[12px] text-red-600">{socialErrorMessage(res.error)}</li>}
                     {!res.isFetching && !res.isError && items.length === 0 && debounced.length > 0 && <li className="px-2 py-1.5 text-[12px] text-slate-500">No matches on LinkedIn.</li>}
                 </ul>
             )}

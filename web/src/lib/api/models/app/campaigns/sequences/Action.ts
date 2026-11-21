@@ -1,3 +1,5 @@
+import type { SocialActionType, SocialChannel } from "@/lib/api/models/app/social/Social";
+
 // Typed config for an action sequence node. Mirrors the Go models.ActionConfig.
 // Stored in the sequence's `action` jsonb column. Spacing/delays are NOT actions:
 // per-step "wait before sending" (wait_after) covers that, so there is no
@@ -16,31 +18,59 @@ export type SequenceActionType =
     | "fire_event"
     | "switch"
     | "ai_step"
-    // LinkedIn steps, run through one of the campaign's LinkedIn accounts.
-    | "linkedin_invite"
-    | "linkedin_message"
-    | "linkedin_inmail"
-    | "linkedin_visit"
-    | "linkedin_follow"
-    | "linkedin_like"
-    | "linkedin_withdraw";
+    // A social step (LinkedIn, Instagram, WhatsApp, Telegram or Facebook), run from one of the campaign's social
+    // accounts on its channel. Its config is `social`.
+    | "social";
 
-export const LINKEDIN_ACTION_TYPES: SequenceActionType[] = [
-    "linkedin_invite",
-    "linkedin_message",
-    "linkedin_inmail",
-    "linkedin_visit",
-    "linkedin_follow",
-    "linkedin_like",
-    "linkedin_withdraw",
-];
-
-export function isLinkedInAction(type: string | undefined | null): boolean {
-    return !!type && type.startsWith("linkedin_");
+export function isSocialAction(type: string | undefined | null): boolean {
+    return type === "social";
 }
 
-// LinkedIn caps an invitation note at 300 characters, counted after the variables are filled in.
-export const LINKEDIN_NOTE_MAX = 300;
+/** Bounds the backend holds a social step to beyond the channel catalog (models/social_step.go). */
+export const SOCIAL_MAX_VARIANTS = 4;
+export const SOCIAL_MAX_COMMENTS = 10;
+export const SOCIAL_MAX_POST_AGE_DAYS = 365;
+export const SOCIAL_INMAIL_SUBJECT_MAX = 200;
+export const SOCIAL_VOICE_SCRIPT_MAX = 2000;
+export const SOCIAL_BASE_VARIANT = "a";
+
+export interface SocialVoice {
+    mode: "recording" | "written";
+    audio_id?: string;
+    duration_seconds?: number;
+    script?: string;
+    fallback_script?: string;
+}
+
+/** An A/B alternative of an invite, message or InMail. Parts it leaves empty fall back to the base copy. */
+export interface SocialVariant {
+    id: string;
+    weight: number;
+    note?: string;
+    subject?: string;
+    body?: string;
+}
+
+export interface SocialStepConfig {
+    channel: SocialChannel;
+    action: SocialActionType | string;
+    note?: string;
+    fallback_note?: string;
+    body?: string;
+    fallback_body?: string;
+    subject?: string;
+    fallback_subject?: string;
+    reaction?: string;
+    post_age_days?: number;
+    comments?: string[];
+    voice?: SocialVoice;
+    max_skills?: number;
+    variants?: SocialVariant[];
+    /** A variant id that takes every contact; "" splits by weight. */
+    winner?: string;
+    /** What happens to a contact with no handle (or no consent basis on a consent channel): passed over, or out of the campaign. */
+    if_missing?: "skip" | "stop";
+}
 
 // One templated input passed to a launched automation (value supports the same
 // {{.FirstName}}/{{.Company}} contact templating campaign copy uses).
@@ -126,12 +156,8 @@ export interface SequenceAction {
     ai_remove_tags?: AITagRef[];
     ai_labels?: AITagRef[];
     ai_allow_create_tags?: boolean;
-    // linkedin_invite: optional note, at most 300 characters once rendered.
-    note?: string;
-    // linkedin_message and linkedin_inmail: the message, personalized like an email body.
-    body?: string;
-    // linkedin_inmail: the InMail subject.
-    subject?: string;
+    // social — the channel, the action and its copy.
+    social?: SocialStepConfig;
 }
 
 export interface AITagRef {

@@ -133,12 +133,14 @@ func readQuery(raw json.RawMessage) (Query, *fakeSource, error) {
 // searchAccountLocked picks the account a search runs on: the one named, or one holding the licence with budget left.
 func (f *Fake) searchAccountLocked(externalID string, accountID *string, licence *string, units int) (*fakeSocialAccount, error) {
 	day := f.now().UTC().Format("2006-01-02")
-	holds := func(a *fakeSocialAccount) bool { return licence == nil || slices.Contains(a.a.Licences, *licence) }
+	holds := func(a *fakeSocialAccount) bool {
+		return a.a.Channel == ChannelLinkedIn && (licence == nil || slices.Contains(a.a.Licences, *licence))
+	}
 	left := func(a *fakeSocialAccount) int {
 		if a.searchDay != day {
 			a.searchDay, a.searchUsed = day, 0
 		}
-		return *a.a.Limits.Search - a.searchUsed
+		return a.a.Limits["search"] - a.searchUsed
 	}
 	if accountID != nil && *accountID != "" {
 		a, err := f.liveAccountLocked(externalID, *accountID)
@@ -321,7 +323,7 @@ func (f *Fake) SearchPeople(_ context.Context, externalID string, in SearchInput
 		page.EndReason = &r
 	}
 	tomorrow := f.now().UTC().Truncate(24*time.Hour).AddDate(0, 0, 1)
-	page.Usage = SearchUsage{Used: a.searchUsed, Limit: *a.a.Limits.Search, Remaining: *a.a.Limits.Search - a.searchUsed, ResetsAt: &tomorrow}
+	page.Usage = SearchUsage{Used: a.searchUsed, Limit: a.a.Limits["search"], Remaining: a.a.Limits["search"] - a.searchUsed, ResetsAt: &tomorrow}
 	u := fakeSearchURL(q)
 	page.LinkedInURL = &u
 	return page, nil
@@ -479,9 +481,17 @@ func (f *Fake) GetProfile(_ context.Context, externalID, identifier, accountID s
 	if err := f.socialAccountLocked(externalID); err != nil {
 		return nil, err
 	}
-	public := fakePublicID(identifier)
+	channel := ChannelLinkedIn
+	if acct := f.social.accounts[accountID]; acct != nil && acct.external == externalID {
+		channel = acct.a.Channel
+	}
+	public := fakeRecipient(channel, identifier)
 	if public == "" {
-		return nil, fakeErr(http.StatusUnprocessableEntity, CodeRecipientInvalid, "the identifier names no LinkedIn profile")
+		return nil, fakeErr(http.StatusUnprocessableEntity, CodeRecipientInvalid, "the recipient names nobody on "+channel)
+	}
+	if channel != ChannelLinkedIn {
+		p := fakePersonOn(channel, public)
+		return &Profile{Person: p, Experience: []Experience{}}, nil
 	}
 	var id *string
 	if accountID != "" {
@@ -544,8 +554,6 @@ func (f *Fake) invitePendingLocked(accountID, public string) bool {
 	return false
 }
 
-var fakeActionTypes = []string{ActionInvite, ActionMessage, ActionInmail, ActionProfileVisit, ActionFollow, ActionLikePost, ActionWithdrawInvite}
-
 func (f *Fake) CreateAction(_ context.Context, externalID string, in ActionInput, key string) (*Action, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -554,20 +562,14 @@ func (f *Fake) CreateAction(_ context.Context, externalID string, in ActionInput
 		if err != nil {
 			return nil, err
 		}
-		if !slices.Contains(fakeActionTypes, in.Type) {
-			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "unknown action type", map[string]any{"fields": []string{"type"}})
-		}
 		if len(in.Reference) > 128 {
 			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "reference is at most 128 characters", map[string]any{"fields": []string{"reference"}})
 		}
-		if (in.Type == ActionMessage || in.Type == ActionInmail) && (in.Body == nil || strings.TrimSpace(*in.Body) == "") {
-			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "body is required", map[string]any{"fields": []string{"body"}})
+		if err := f.checkActionLocked(acct, in); err != nil {
+			return nil, err
 		}
-		public := fakePublicID(in.Recipient)
-		if public == "" {
-			return nil, fakeErr(http.StatusUnprocessableEntity, CodeRecipientInvalid, "the recipient names no LinkedIn profile")
-		}
-		p := fakePersonFor(public)
+		public := fakeRecipient(acct.a.Channel, in.Recipient)
+		p := fakePersonOn(acct.a.Channel, public)
 		now := f.now().UTC()
 		run := now.Add(fakeActionAfter)
 		if in.NotBefore != nil && in.NotBefore.After(run) {
@@ -577,15 +579,24 @@ func (f *Fake) CreateAction(_ context.Context, externalID string, in ActionInput
 		if in.ExpiresAt != nil {
 			exp = *in.ExpiresAt
 		}
-		a := &fakeAction{external: externalID, runAt: run, a: Action{ID: f.id("sact"), AccountID: acct.a.ID, Type: in.Type, Status: ActionQueued,
+		a := &fakeAction{external: externalID, runAt: run, a: Action{ID: f.id("sact"), AccountID: acct.a.ID, Channel: acct.a.Channel, Type: in.Type, Status: ActionQueued,
 			Recipient:    ActionRecipient{Input: in.Recipient, ProviderID: p.ProviderID, PublicID: public, FullName: p.FullName, ProfileURL: p.ProfileURL},
 			ScheduledFor: &run, NotBefore: in.NotBefore, ExpiresAt: &exp, CreatedAt: now, UpdatedAt: now}}
 		if in.Reference != "" {
 			a.a.Reference = &in.Reference
 		}
+		if in.Voice != nil {
+			a.audioID = in.Voice.AudioID
+		}
+		if in.Consent != nil {
+			a.consent = in.Consent.Basis
+		}
 		// The body travels with the action until it runs.
-		if in.Body != nil {
+		switch {
+		case in.Body != nil:
 			f.social.messages["pending:"+a.a.ID] = []*fakeMessage{{m: SocialMessage{Body: *in.Body}}}
+		case in.Voice != nil:
+			f.social.messages["pending:"+a.a.ID] = []*fakeMessage{{m: SocialMessage{Body: "[voice note]"}}}
 		}
 		f.social.actions[a.a.ID] = a
 		f.emitLocked(EventSocialActionUpdated, externalID, a.a)
@@ -657,13 +668,13 @@ func (f *Fake) conversationLocked(acct *fakeSocialAccount, p Person, kind string
 			return c
 		}
 	}
-	c := &fakeConv{external: acct.external, c: Conversation{ID: f.id("scv"), AccountID: acct.a.ID, Channel: ChannelLinkedIn, Participant: participantOf(p), Kind: kind}}
+	c := &fakeConv{external: acct.external, c: Conversation{ID: f.id("scv"), AccountID: acct.a.ID, Channel: acct.a.Channel, Participant: participantOf(p), Kind: kind}}
 	f.social.convs[c.c.ID] = c
 	return c
 }
 
 func (f *Fake) addMessageLocked(c *fakeConv, dir, body, kind string, actionID *string, now time.Time, sendAt *time.Time) *fakeMessage {
-	m := &fakeMessage{m: SocialMessage{ID: f.id("smsg"), ConversationID: c.c.ID, Direction: dir, Body: body, Status: "sent", Kind: kind,
+	m := &fakeMessage{m: SocialMessage{ID: f.id("smsg"), ConversationID: c.c.ID, Channel: c.c.Channel, Direction: dir, Body: body, Status: "sent", Kind: kind,
 		Attachments: []Attachment{}, ActionID: actionID}, sendAt: sendAt}
 	if sendAt != nil {
 		m.m.Status = "pending"
@@ -681,10 +692,20 @@ func (f *Fake) addMessageLocked(c *fakeConv, dir, body, kind string, actionID *s
 
 // seedConversationLocked gives a newly connected account the synced history a real one has.
 func (f *Fake) seedConversationLocked(acct *fakeSocialAccount, now time.Time) {
-	p := fakePersonFor("sam-rivera-" + strconv.FormatUint(fakeHash(acct.a.ID)%900+100, 10))
+	seed := "sam-rivera-" + strconv.FormatUint(fakeHash(acct.a.ID)%900+100, 10)
+	switch acct.a.Channel {
+	case ChannelWhatsApp, ChannelTelegram:
+		seed = "+4477009" + strconv.FormatUint(fakeHash(acct.a.ID)%90000+10000, 10)
+	case ChannelInstagram, ChannelFacebook:
+		seed = "sam.rivera" + strconv.FormatUint(fakeHash(acct.a.ID)%900+100, 10)
+	}
+	p := fakePersonOn(acct.a.Channel, seed)
 	c := f.conversationLocked(acct, p, ActionMessage)
-	f.addMessageLocked(c, DirectionOutbound, "Great meeting you at the conference last week. Would love to compare notes on outbound sometime.", ActionMessage, nil, now.Add(-49*time.Hour), nil)
-	f.addMessageLocked(c, DirectionInbound, "Likewise! I'm free Thursday afternoon if that works for a quick call.", ActionMessage, nil, now.Add(-47*time.Hour), nil)
+	// Delivered like any other message, after the account, so the workspace stores the history too.
+	out := f.addMessageLocked(c, DirectionOutbound, "Great meeting you at the conference last week. Would love to compare notes on outbound sometime.", ActionMessage, nil, now.Add(-49*time.Hour), nil)
+	f.emitLocked(EventSocialMessageSent, c.external, MessageEvent{Channel: c.c.Channel, Conversation: c.c, Message: out.m})
+	in := f.addMessageLocked(c, DirectionInbound, "Likewise! I'm free Thursday afternoon if that works for a quick call.", ActionMessage, nil, now.Add(-47*time.Hour), nil)
+	f.emitLocked(EventSocialMessageReceived, c.external, MessageEvent{Channel: c.c.Channel, Conversation: c.c, Message: in.m})
 }
 
 func (f *Fake) convLocked(externalID, id string) (*fakeConv, error) {
@@ -709,7 +730,7 @@ func (f *Fake) ListConversations(_ context.Context, externalID string, fl Conver
 	}
 	var all []Conversation
 	for _, c := range f.social.convs {
-		if c.external != externalID || f.social.accounts[c.c.AccountID] == nil || (fl.AccountID != "" && c.c.AccountID != fl.AccountID) {
+		if c.external != externalID || f.social.accounts[c.c.AccountID] == nil || (fl.AccountID != "" && c.c.AccountID != fl.AccountID) || (fl.Channel != "" && c.c.Channel != fl.Channel) {
 			continue
 		}
 		if fl.UpdatedAfter != nil && (c.c.LastMessageAt == nil || !c.c.LastMessageAt.After(*fl.UpdatedAfter)) {
@@ -752,13 +773,30 @@ func (f *Fake) ListMessages(_ context.Context, externalID, conversationID, curso
 	return fakePage(all, cursor, limit)
 }
 
-func (f *Fake) SendMessage(_ context.Context, externalID, conversationID, body, key string) (*SocialMessage, error) {
+func (f *Fake) SendMessage(_ context.Context, externalID, conversationID string, in MessageInput, key string) (*SocialMessage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return replay(f, key, "social:reply:"+conversationID, body, func() (*SocialMessage, error) {
+	return replay(f, key, "social:reply:"+conversationID, in, func() (*SocialMessage, error) {
 		c, err := f.convLocked(externalID, conversationID)
 		if err != nil {
 			return nil, err
+		}
+		body := ""
+		switch {
+		case in.Body != nil && in.Voice != nil:
+			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "send a body or a voice note, not both", map[string]any{"fields": []string{"voice"}})
+		case in.Voice != nil:
+			// Instagram sends voice notes only as actions; Facebook has none.
+			if !slices.Contains(fakeCapabilityActions(c.c.Channel), ActionVoiceNote) || c.c.Channel == ChannelInstagram {
+				return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, c.c.Channel+" takes no voice replies", map[string]any{"fields": []string{"voice"}})
+			}
+			ch, _ := fakeChannel(c.c.Channel)
+			if err := f.checkVoiceLocked(f.social.accounts[c.c.AccountID], ch, in.Voice); err != nil {
+				return nil, err
+			}
+			body = "[voice note]"
+		case in.Body != nil:
+			body = *in.Body
 		}
 		if strings.TrimSpace(body) == "" {
 			return nil, fakeErrDetails(http.StatusBadRequest, CodeInvalidRequest, "body is required", map[string]any{"fields": []string{"body"}})
@@ -809,8 +847,8 @@ func (f *Fake) advanceOutreachLocked(now time.Time) []Event {
 			}
 			m.sendAt, m.m.Status, m.m.SentAt = nil, "sent", &now
 			c.c.LastMessageAt, c.c.LastMessage = &now, &m.m
-			out = append(out, f.emitLocked(EventSocialMessageSent, c.external, MessageEvent{Conversation: c.c, Message: m.m}))
-			if strings.Contains(c.c.Participant.PublicID, "reply") && c.replyAt == nil {
+			out = append(out, f.emitLocked(EventSocialMessageSent, c.external, MessageEvent{Channel: c.c.Channel, Conversation: c.c, Message: m.m}))
+			if fakeReplies(c.c.Participant.PublicID) && c.replyAt == nil {
 				at := now.Add(fakeReplyAfter)
 				c.replyAt = &at
 			}
@@ -818,7 +856,7 @@ func (f *Fake) advanceOutreachLocked(now time.Time) []Event {
 		if c.replyAt != nil && !now.Before(*c.replyAt) {
 			c.replyAt = nil
 			m := f.addMessageLocked(c, DirectionInbound, "Thanks for reaching out! Happy to chat, what does your week look like?", c.c.Kind, nil, now, nil)
-			out = append(out, f.emitLocked(EventSocialMessageReceived, c.external, MessageEvent{Conversation: c.c, Message: m.m}))
+			out = append(out, f.emitLocked(EventSocialMessageReceived, c.external, MessageEvent{Channel: c.c.Channel, Conversation: c.c, Message: m.m}))
 		}
 	}
 	return out
@@ -837,8 +875,9 @@ func (f *Fake) advanceActionLocked(a *fakeAction, now time.Time) []Event {
 		p := fakePersonFor(a.a.Recipient.PublicID)
 		p.NetworkDistance = "1st"
 		id := a.a.ID
-		out = append(out, f.emitLocked(EventSocialInvitationAccepted, a.external, InvitationAccepted{AccountID: acct.a.ID, Person: p, ConnectedAt: now, ActionID: &id}))
-		if strings.Contains(a.a.Recipient.PublicID, "reply") {
+		out = append(out, f.emitLocked(EventSocialInvitationAccepted, a.external, InvitationAccepted{AccountID: acct.a.ID, Channel: acct.a.Channel,
+			Person: p, ConnectedAt: now, ActionID: &id}))
+		if fakeReplies(a.a.Recipient.PublicID) {
 			c := f.conversationLocked(acct, p, ActionMessage)
 			at := now.Add(fakeReplyAfter)
 			c.replyAt = &at
@@ -856,43 +895,99 @@ func (f *Fake) advanceActionLocked(a *fakeAction, now time.Time) []Event {
 	}
 	a.a.AttemptedAt, a.a.CompletedAt, a.a.UpdatedAt, a.a.Status = &now, &now, now, ActionSucceeded
 	public := a.a.Recipient.PublicID
-	connected := f.social.connected[acct.a.ID+"|"+public]
+	// Only LinkedIn has connections; everywhere else a message reaches anyone.
+	connected := acct.a.Channel != ChannelLinkedIn || f.social.connected[acct.a.ID+"|"+public]
 	skip := func(reason string) { a.a.Status, a.a.SkipReason, a.a.CompletedAt = ActionSkipped, &reason, nil }
 	var body string
 	if pending := f.social.messages["pending:"+a.a.ID]; len(pending) > 0 {
 		body = pending[0].m.Body
 		delete(f.social.messages, "pending:"+a.a.ID)
 	}
+	if strings.Contains(public, "gone") {
+		skip("recipient_unavailable")
+		return append(out, f.emitLocked(EventSocialActionUpdated, a.external, a.a))
+	}
+	// The two consent bases GraphKit can see are checked when the action runs.
+	if (a.consent == "existing_conversation" && !f.hasConversationLocked(acct.a.ID, public)) || (a.consent == "friend" && !strings.Contains(public, "friend")) {
+		skip("consent_missing")
+		return append(out, f.emitLocked(EventSocialActionUpdated, a.external, a.a))
+	}
 	switch a.a.Type {
 	case ActionInvite:
-		if connected {
+		if f.social.connected[acct.a.ID+"|"+public] {
 			skip("already_connected")
 			break
 		}
 		inv := f.id("sinv")
 		a.a.Result.InvitationID = &inv
-		if strings.Contains(public, "accept") || strings.Contains(public, "reply") {
+		if strings.Contains(public, "accept") || fakeReplies(public) {
 			at := now.Add(fakeAcceptAfter)
 			a.acceptAt = &at
 		}
 		if acct.a.PendingInvites != nil {
 			*acct.a.PendingInvites++
 		}
-	case ActionMessage, ActionInmail:
-		if a.a.Type == ActionMessage && !connected {
+	case ActionMessage, ActionInmail, ActionVoiceNote:
+		if a.a.Type != ActionInmail && !connected {
 			skip("not_connected")
 			break
 		}
-		p := fakePersonFor(public)
+		p := fakePersonOn(acct.a.Channel, public)
 		c := f.conversationLocked(acct, p, a.a.Type)
 		id := a.a.ID
 		m := f.addMessageLocked(c, DirectionOutbound, body, a.a.Type, &id, now, nil)
 		a.a.Result.ConversationID, a.a.Result.MessageID = &c.c.ID, &m.m.ID
-		out = append(out, f.emitLocked(EventSocialMessageSent, a.external, MessageEvent{Conversation: c.c, Message: m.m}))
-		if strings.Contains(public, "reply") {
+		out = append(out, f.emitLocked(EventSocialMessageSent, a.external, MessageEvent{Channel: c.c.Channel, Conversation: c.c, Message: m.m}))
+		if fakeReplies(public) {
 			at := now.Add(fakeReplyAfter)
 			c.replyAt = &at
 		}
+	case ActionLikePost, ActionCommentPost:
+		if strings.Contains(public, "nopost") {
+			skip("no_recent_post")
+			break
+		}
+		if a.a.Type == ActionCommentPost && f.commentedLocked(a) {
+			skip("already_commented")
+			break
+		}
+		post := f.id("post")
+		a.a.Result.PostID = &post
+		if a.a.Type == ActionCommentPost {
+			cid := f.id("cmt")
+			a.a.Result.CommentID = &cid
+		}
+	case ActionEndorse:
+		switch {
+		case !f.social.connected[acct.a.ID+"|"+public]:
+			skip("not_connected")
+		case strings.Contains(public, "noskills"):
+			skip("no_skills")
+		}
+	case ActionWithdrawInvite:
+		if !f.invitePendingLocked(acct.a.ID, public) {
+			skip("no_pending_invite")
+		}
 	}
 	return append(out, f.emitLocked(EventSocialActionUpdated, a.external, a.a))
+}
+
+// hasConversationLocked reports a conversation between the account and the person.
+func (f *Fake) hasConversationLocked(accountID, public string) bool {
+	for _, c := range f.social.convs {
+		if c.c.AccountID == accountID && c.c.Participant.PublicID == public && len(f.social.messages[c.c.ID]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// commentedLocked reports an earlier comment from the account on the person's latest post.
+func (f *Fake) commentedLocked(a *fakeAction) bool {
+	for _, o := range f.social.actions {
+		if o != a && o.a.AccountID == a.a.AccountID && o.a.Type == ActionCommentPost && o.a.Status == ActionSucceeded && o.a.Recipient.PublicID == a.a.Recipient.PublicID {
+			return true
+		}
+	}
+	return false
 }

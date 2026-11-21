@@ -113,7 +113,7 @@ func (s *Service) billMailboxes(ctx context.Context) error {
 		billed[orgID] = true
 		errs = append(errs, s.billOrg(ctx, orgID, false))
 	}
-	// LinkedIn seats ride on the same run, also in a workspace with no mailboxes.
+	// Social seats ride on the same run, also in a workspace with no mailboxes.
 	if sc := s.socialAddon(); sc != nil {
 		seated, err := sc.OrgsWithSeats(ctx, 10_000)
 		errs = append(errs, err)
@@ -260,7 +260,7 @@ func (s *Service) nextBundle(ctx context.Context, acct *models.StoreAccount) *Ne
 	if len(rows) == 0 && seats.Count == 0 {
 		return nil
 	}
-	out := &NextBundle{ChargeOn: acct.NextBillAnchor.Add(-lead), Mailboxes: len(rows), LinkedInSeats: seats.Count, AmountMicros: seats.Micros}
+	out := &NextBundle{ChargeOn: acct.NextBillAnchor.Add(-lead), Mailboxes: len(rows), SocialSeats: seats.Count, AmountMicros: seats.Micros}
 	if out.ChargeOn.Before(s.now()) {
 		out.ChargeOn = s.now()
 	}

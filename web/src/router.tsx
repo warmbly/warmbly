@@ -62,7 +62,6 @@ export const dashboardPages = {
     suppressions: () => import("./app/app/contacts/suppressions/page"),
     forms: () => import("./app/app/forms/page"),
     leads: () => import("./app/app/leads/page"),
-    linkedin: () => import("./app/app/linkedin/page"),
     form: () => import("./app/app/forms/[id]/page"),
     campaigns: () => import("./app/app/campaigns/page"),
     campaignLayout: () => import("./app/app/campaigns/[id]/layout"),
@@ -105,6 +104,7 @@ export const dashboardPages = {
     billing: () => import("./app/app/settings/billing/page"),
     limits: () => import("./app/app/settings/limits/page"),
     sending: () => import("./app/app/settings/sending/page"),
+    socialAccounts: () => import("./app/app/settings/social/page"),
     tracking: () => import("./app/app/settings/tracking/page"),
     branding: () => import("./app/app/settings/branding/page"),
     inboxTagging: () => import("./app/app/settings/inbox-tagging/page"),
@@ -426,7 +426,6 @@ const automationsRoute = dash(appRoute, "automations", dashboardPages.automation
 const automationRoute = dash(appRoute, "automations/$id", dashboardPages.automation, "Automation", loaders.automationLoader);
 const auditRoute = dash(appRoute, "audit", dashboardPages.audit, "Audit log", loaders.auditLoader);
 const leadsRoute = dash(appRoute, "leads", dashboardPages.leads, "Lead finder", loaders.leadsLoader);
-const linkedinRoute = dash(appRoute, "linkedin", dashboardPages.linkedin, "LinkedIn", loaders.linkedinLoader);
 // Link buttons sent before the link page moved out of the dashboard.
 const appSlackLinkRoute = forward(appRoute, "slack/link", "/slack/link", true);
 // The breadcrumb above the link page points here.
@@ -450,6 +449,7 @@ const settingsChildren = [
     dash(settingsRoute, "billing/{-$tab}", dashboardPages.billing, "Billing", loaders.billingLoader),
     dash(settingsRoute, "limits", dashboardPages.limits, "Plan & limits"),
     dash(settingsRoute, "sending", dashboardPages.sending, "Sending"),
+    dash(settingsRoute, "social", dashboardPages.socialAccounts, "Social accounts", loaders.socialAccountsLoader),
     dash(settingsRoute, "tracking", dashboardPages.tracking, "Website tracking"),
     dash(settingsRoute, "branding", dashboardPages.branding, "Branding", loaders.brandingLoader),
     dash(settingsRoute, "inbox-tagging", dashboardPages.inboxTagging, "Automatic inbox tagging"),
@@ -558,7 +558,6 @@ const routeTree = rootRoute.addChildren([
         automationRoute,
         auditRoute,
         leadsRoute,
-        linkedinRoute,
         appSlackLinkRoute,
         slackRoute,
         settingsRoute.addChildren(settingsChildren),

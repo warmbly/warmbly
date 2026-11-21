@@ -21,7 +21,7 @@ import {
 import toast from "react-hot-toast/headless";
 import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
 import type { SequenceBranch, BranchCondition, BranchField } from "@/lib/api/models/app/campaigns/sequences/Branching";
-import { REPLY_INTENTS, isLinkedInBranchField, isReplyBranchField, isInstantCapableField } from "@/lib/api/models/app/campaigns/sequences/Branching";
+import { REPLY_INTENTS, isSocialBranchField, isSocialStateField, isReplyBranchField, isInstantCapableField } from "@/lib/api/models/app/campaigns/sequences/Branching";
 import updateSequence from "@/lib/api/client/app/campaigns/sequences/updateSequence";
 import { useUserProfile } from "@/hooks/context/user";
 import useClickOutside from "@/hooks/useClickOutside";
@@ -46,16 +46,18 @@ import {
     AI_STEP_OPTION,
     BRANCH_PATH_OPTIONS,
     DEAL_NAME_VARIABLES,
-    LINKEDIN_ACTION_OPTIONS,
+    SOCIAL_OPTION,
     STOP_ON_REPLY_HELP,
     SWITCH_OPTION,
+    SocialStepIcon,
     defaultActionFor,
-    linkedInNoteLength,
 } from "./campaignActions";
-import { useLinkedInStatus } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
-import { LINKEDIN_NOTE_MAX, isLinkedInAction } from "@/lib/api/models/app/campaigns/sequences/Action";
-import { VariableMenu } from "./RichTextEditor";
-import { VARIABLES } from "@/lib/templateVars";
+import { useSocialChannels, useSocialStatus } from "@/lib/api/hooks/app/social/useSocial";
+import { isSocialAction } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
+import ChannelMark from "@/components/app/social/ChannelMark";
+import { channelLabel, isChannel, orderedCatalog } from "@/lib/social/channels";
+import SocialStepEditor from "./SocialStepEditor";
 import { caseKey } from "./campaignGraph";
 import { fmtUsdAbout } from "@/lib/money";
 import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
@@ -182,8 +184,11 @@ export function PathEditor({
     // the event lands by default; this lets the user opt out so the path routes
     // at the next step boundary instead.
     const [instant, setInstant] = React.useState<boolean>(branch.instant !== false);
-    // A LinkedIn signal is checked inside a day window, or at any time before the check.
-    const [ever, setEver] = React.useState<boolean>(c0?.operator === "ever" && isLinkedInBranchField(c0.field));
+    // A social signal is checked inside a day window, or at any time before the check.
+    const [ever, setEver] = React.useState<boolean>(c0?.operator === "ever" && isSocialBranchField(c0.field));
+    // social_replied may name one channel; "" is any channel.
+    const [channel, setChannel] = React.useState<string>(c0?.channel ?? "");
+    const catalog = useSocialChannels(isSocialBranchField(c0?.field ?? ""));
 
     const isAlways = field === "always";
     const isRandom = field === "random";
@@ -193,9 +198,10 @@ export function PathEditor({
     const caseName = isCasePath ? (c0?.label ?? "").trim() : "";
     const isReply = isReplyBranchField(field as BranchField);
     const isIntent = field === "reply_intent";
-    // invite_pending is the state now, so it has no window; the other LinkedIn signals offer one.
-    const isLinkedInState = field === "linkedin_invite_pending";
-    const isLinkedIn = isLinkedInBranchField(field) && !isLinkedInState;
+    // Invite pending and Open Profile are states now, so they have no window; the other social signals offer one.
+    const isSocialState = isSocialStateField(field);
+    const isSocial = isSocialBranchField(field) && !isSocialState;
+    const isSocialReply = field === "social_replied" || field === "not_social_replied";
     const isInstantCapable = !isCasePath && isInstantCapableField(field as BranchField);
     const instantVerb = field === "opened" ? "open" : field === "clicked" ? "click" : "reply";
     const isNegative = field.startsWith("not_");
@@ -210,11 +216,12 @@ export function PathEditor({
         // Reply-class conditions are checked once, ever (no day window / value).
         if (isReply) return [{ field: field as BranchField, operator: "ever" }];
         if (isIntent) return [{ field: "reply_intent", operator: "is", label: intent }];
-        if (isLinkedInState || (isLinkedIn && ever)) return [{ field: field as BranchField, operator: "ever" }];
-        return [{ field: field as BranchField, operator: "within_days", value }];
+        const ch = isSocialReply && isChannel(channel) ? { channel: channel as SocialChannel } : {};
+        if (isSocialState || (isSocial && ever)) return [{ field: field as BranchField, operator: "ever", ...ch }];
+        return [{ field: field as BranchField, operator: "within_days", value, ...ch }];
     };
     // Compared field by field: a server row can carry keys an edit never writes.
-    const sig = (cs: BranchCondition[], inst: boolean) => JSON.stringify([cs.map((c) => [c.field, c.operator, c.value ?? null, c.label ?? null]), inst]);
+    const sig = (cs: BranchCondition[], inst: boolean) => JSON.stringify([cs.map((c) => [c.field, c.operator, c.value ?? null, c.label ?? null, c.channel ?? null]), inst]);
     useReportDirty(sig(buildConditions(), isInstantCapable ? instant : branch.instant !== false) !== sig(branch.conditions ?? [], branch.instant !== false));
     const save = (target_step_id: string | null) => {
         onSave({
@@ -304,7 +311,22 @@ export function PathEditor({
                         step itself; routing happens at the step boundary at no extra cost.
                     </p>
                 )}
-                {isLinkedIn && (
+                {isSocialReply && (
+                    <div>
+                        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">On</p>
+                        <SelectMenu
+                            className="w-full"
+                            value={channel}
+                            onChange={setChannel}
+                            options={[
+                                { value: "", label: "Any channel" },
+                                ...orderedCatalog(catalog.data).map((c) => ({ value: c.channel, label: c.label, icon: <ChannelMark channel={c.channel} className="size-3.5" /> })),
+                                ...(channel && !catalog.data?.some((c) => c.channel === channel) ? [{ value: channel, label: channelLabel(channel) }] : []),
+                            ]}
+                        />
+                    </div>
+                )}
+                {isSocial && (
                     <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
                         {([false, true] as const).map((e) => (
                             <button
@@ -318,7 +340,7 @@ export function PathEditor({
                         ))}
                     </div>
                 )}
-                {!isAlways && !isRandom && !isReply && !isIntent && !isCasePath && !isLinkedInState && !(isLinkedIn && ever) && (
+                {!isAlways && !isRandom && !isReply && !isIntent && !isCasePath && !isSocialState && !(isSocial && ever) && (
                     <div className="flex flex-wrap items-center gap-1.5">
                         <span>within</span>
                         <NumberInput value={value} onChange={(v) => setValue(Math.max(1, Math.min(60, Math.round(v) || 1)))} min={1} max={60} className="w-16" align="center" />
@@ -384,12 +406,21 @@ export function PathEditor({
                         )}
                     </div>
                 )}
-                {isLinkedInState && (
-                    <p className="text-[10.5px] text-slate-400">Takes this path when the contact reaches this point and the invite this campaign sent is still waiting for an answer.</p>
+                {isSocialState && (
+                    <p className="text-[10.5px] text-slate-400">
+                        {field === "social_invite_pending"
+                            ? "Takes this path when the contact reaches this point and the LinkedIn invite this campaign sent is still waiting for an answer."
+                            : field === "social_open_profile"
+                              ? "Takes this path when the contact has a LinkedIn Open Profile, so an InMail reaches them without using a credit. Checked when the contact reaches this point."
+                              : "Takes this path when the contact has no LinkedIn Open Profile. Checked when the contact reaches this point."}
+                    </p>
+                )}
+                {isSocialReply && (
+                    <p className="text-[10.5px] text-slate-400">A reply on any channel stops the contact&apos;s other social steps and emails, as an email reply does.</p>
                 )}
                 {isNegative && (
                     <p className="text-[10.5px] text-slate-400">
-                        {isLinkedIn && ever
+                        {isSocial && ever
                             ? "Takes this path if it still hasn’t happened when the contact reaches this point."
                             : `We keep checking until ${value} day${value === 1 ? "" : "s"} pass, then take this path if it still hasn’t happened.`}
                     </p>
@@ -440,7 +471,7 @@ export function NodeTypeSwitcher({
     const [busy, setBusy] = React.useState(false);
     const current: "email" | SequenceActionType =
         sequence.kind === "email" ? "email" : sequence.action?.type ?? "add_tag";
-    const linkedIn = !!useLinkedInStatus().data?.available;
+    const social = !!useSocialStatus().data?.available;
 
     const items: { value: "email" | SequenceActionType; label: string; Icon: React.ComponentType<{ className?: string }>; tint: string }[] = [
         { value: "email", label: "Send email", Icon: MailIcon, tint: "text-sky-600" },
@@ -452,8 +483,8 @@ export function NodeTypeSwitcher({
             Icon: ACTION_META[o.type].Icon,
             tint: ACTION_META[o.type].tint,
         })),
-        ...(linkedIn || isLinkedInAction(current)
-            ? LINKEDIN_ACTION_OPTIONS.map((o) => ({ value: o.type, label: o.label, Icon: ACTION_META[o.type].Icon, tint: ACTION_META[o.type].tint }))
+        ...(social || isSocialAction(current)
+            ? [{ value: SOCIAL_OPTION.type, label: SOCIAL_OPTION.label, Icon: current === "social" ? ({ className }: { className?: string }) => <SocialStepIcon social={sequence.action?.social} className={className} /> : ACTION_META.social.Icon, tint: ACTION_META.social.tint }]
             : []),
     ];
 
@@ -579,7 +610,7 @@ export function ActionEditor({
             <ActionConfigFields action={action} setAction={setAction} />
             {action.type === "switch" && <SwitchStepFields action={action} setAction={setAction} />}
             {action.type === "ai_step" && <AIStepFields action={action} setAction={setAction} />}
-            {isLinkedInAction(action.type) && <LinkedInStepFields action={action} setAction={setAction} />}
+            {isSocialAction(action.type) && <SocialStepEditor campaignId={campaignId} action={action} setAction={setAction} />}
 
             <div className="flex items-center justify-end pt-1">
                 <button
@@ -591,82 +622,6 @@ export function ActionEditor({
                     {saving ? "Saving…" : "Save action"}
                 </button>
             </div>
-        </div>
-    );
-}
-
-const LINKEDIN_STEP_HELP: Partial<Record<SequenceActionType, string>> = {
-    linkedin_invite: "Sends a connection request. LinkedIn caps a note at 300 characters, counted after variables are filled in; leave it empty to send no note.",
-    linkedin_message: "Messages a contact who is already a connection. Anyone else skips this step.",
-    linkedin_inmail: "Sends an InMail, which reaches people outside the account's network. It needs a Premium or Sales Navigator account and uses its InMail credits.",
-    linkedin_visit: "Opens the contact's profile, so they see the account in who viewed their profile.",
-    linkedin_follow: "Follows the contact, so the account sees their posts and they get a notification.",
-    linkedin_like: "Likes the contact's most recent post. A contact with no posts skips this step.",
-    linkedin_withdraw: "Withdraws a connection request this campaign sent that is still waiting. Anyone else skips this step.",
-};
-
-// A plain textarea with the email editor's variable menu; tokens go in at the cursor.
-function LinkedInTextArea({ value, onChange, placeholder, rows }: { value: string; onChange: (v: string) => void; placeholder: string; rows: number }) {
-    const ref = React.useRef<HTMLTextAreaElement>(null);
-    const insert = (token: string) => {
-        const el = ref.current;
-        const at = el ? el.selectionStart : value.length;
-        const end = el ? el.selectionEnd : value.length;
-        onChange(value.slice(0, at) + token + value.slice(end));
-        requestAnimationFrame(() => {
-            el?.focus();
-            el?.setSelectionRange(at + token.length, at + token.length);
-        });
-    };
-    return (
-        <div className="rounded-md border border-slate-200 bg-white focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100">
-            <textarea
-                ref={ref}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder}
-                rows={rows}
-                className="block w-full resize-y rounded-t-md bg-transparent px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 focus:outline-none"
-            />
-            <div className="flex items-center border-t border-slate-100 px-1.5 py-1">
-                <VariableMenu onPick={insert} variables={VARIABLES} />
-            </div>
-        </div>
-    );
-}
-
-function LinkedInStepFields({ action, setAction }: { action: SequenceAction; setAction: React.Dispatch<React.SetStateAction<SequenceAction>> }) {
-    const noteLength = linkedInNoteLength(action.note);
-    const over = noteLength > LINKEDIN_NOTE_MAX;
-    return (
-        <div className="space-y-4">
-            {action.type === "linkedin_inmail" && (
-                <div>
-                    <Label>Subject</Label>
-                    <TextInput value={action.subject ?? ""} onChange={(v) => setAction((a) => ({ ...a, subject: v }))} placeholder="Quick question, {{.FirstName}}" className="w-full" />
-                </div>
-            )}
-            {action.type === "linkedin_invite" && (
-                <div>
-                    <div className="flex items-baseline justify-between">
-                        <Label>Note (optional)</Label>
-                        <span className={`text-[11px] tabular-nums ${over ? "font-medium text-rose-600" : noteLength > LINKEDIN_NOTE_MAX - 30 ? "text-amber-600" : "text-slate-400"}`}>
-                            {noteLength}/{LINKEDIN_NOTE_MAX}
-                        </span>
-                    </div>
-                    <LinkedInTextArea value={action.note ?? ""} onChange={(v) => setAction((a) => ({ ...a, note: v }))} placeholder="Hi {{.FirstName}}, …" rows={4} />
-                    {over && <p className="mt-1.5 text-[11px] text-rose-600">LinkedIn refuses a note over {LINKEDIN_NOTE_MAX} characters. Shorten it before the campaign sends.</p>}
-                </div>
-            )}
-            {(action.type === "linkedin_message" || action.type === "linkedin_inmail") && (
-                <div>
-                    <Label>Message</Label>
-                    <LinkedInTextArea value={action.body ?? ""} onChange={(v) => setAction((a) => ({ ...a, body: v }))} placeholder="Hi {{.FirstName}}, …" rows={6} />
-                </div>
-            )}
-            <p className="rounded-md border border-sky-200 bg-sky-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-sky-800">
-                {LINKEDIN_STEP_HELP[action.type]} It runs from one of the LinkedIn accounts in the campaign’s settings; a contact with no LinkedIn profile URL skips it.
-            </p>
         </div>
     );
 }

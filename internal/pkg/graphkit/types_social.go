@@ -5,8 +5,49 @@ import (
 	"time"
 )
 
-// ChannelLinkedIn is the only social channel today.
-const ChannelLinkedIn = "linkedin"
+// Social channels.
+const (
+	ChannelLinkedIn  = "linkedin"
+	ChannelInstagram = "instagram"
+	ChannelWhatsApp  = "whatsapp"
+	ChannelTelegram  = "telegram"
+	ChannelFacebook  = "facebook"
+)
+
+// Sign-in methods.
+const (
+	SignInPassword    = "password"
+	SignInCookie      = "cookie"
+	SignInQR          = "qr"
+	SignInPairingCode = "pairing_code"
+)
+
+// SocialCookieNames are the session cookies a channel signs in with.
+type SocialCookieNames struct {
+	Required []string `json:"required"`
+	Optional []string `json:"optional"`
+}
+
+// SocialChannel is one channel of the catalog: how it signs in, what it does and its limits.
+type SocialChannel struct {
+	Channel             string             `json:"channel"`
+	Label               string             `json:"label"`
+	AuthMethods         []string           `json:"auth_methods"`
+	CookieNames         *SocialCookieNames `json:"cookie_names"`
+	Actions             []string           `json:"actions"`
+	Signals             []string           `json:"signals"`
+	ConsentRequired     bool               `json:"consent_required"`
+	ConsentBases        []string           `json:"consent_bases"`
+	MessageMaxChars     int                `json:"message_max_chars"`
+	CommentMaxChars     int                `json:"comment_max_chars"`
+	VoiceNoteMaxSeconds int                `json:"voice_note_max_seconds"`
+	VoiceScriptMaxChars int                `json:"voice_script_max_chars"`
+	InviteNoteMaxChars  int                `json:"invite_note_max_chars"`
+	InmailSubjectMax    int                `json:"inmail_subject_max_chars"`
+	InmailBodyMax       int                `json:"inmail_body_max_chars"`
+	Reactions           []string           `json:"reactions"`
+	MaxPostAgeDays      int                `json:"max_post_age_days"`
+}
 
 // Social workspace modes.
 const (
@@ -47,6 +88,10 @@ const (
 	CheckpointChooseContract = "choose_contract"
 	CheckpointChooseMethod   = "choose_method"
 	CheckpointUnsupported    = "unsupported"
+	CheckpointQRCode         = "qr_code"
+	CheckpointPairingCode    = "pairing_code"
+	CheckpointLoading        = "loading"
+	CheckpointEncrypted      = "encrypted_history"
 )
 
 // Social account statuses.
@@ -69,8 +114,8 @@ const (
 
 // SocialPrices is the social object of GET /pricing.
 type SocialPrices struct {
-	SeatMonthlyMicros int64    `json:"seat_monthly_micros"`
-	Channels          []string `json:"channels"`
+	SeatMonthlyMicros int64           `json:"seat_monthly_micros"`
+	Channels          []SocialChannel `json:"channels"`
 }
 
 // WorkspaceName names a linked GraphKit workspace.
@@ -80,13 +125,13 @@ type WorkspaceName struct {
 
 // SocialWorkspace is an account's social workspace.
 type SocialWorkspace struct {
-	Mode                   string         `json:"mode"`
-	Workspace              *WorkspaceName `json:"workspace"`
-	LinkedAt               *time.Time     `json:"linked_at"`
-	Accounts               int            `json:"accounts"`
-	SeatMonthlyMicros      int64          `json:"seat_monthly_micros"`
-	AcknowledgementVersion string         `json:"acknowledgement_version"`
-	Channels               []string       `json:"channels"`
+	Mode                   string          `json:"mode"`
+	Workspace              *WorkspaceName  `json:"workspace"`
+	LinkedAt               *time.Time      `json:"linked_at"`
+	Accounts               int             `json:"accounts"`
+	SeatMonthlyMicros      int64           `json:"seat_monthly_micros"`
+	AcknowledgementVersion string          `json:"acknowledgement_version"`
+	Channels               []SocialChannel `json:"channels"`
 }
 
 // LinkSession is a consent page that links a customer's own GraphKit workspace.
@@ -116,22 +161,18 @@ type ConnectInput struct {
 	Acknowledgement *Acknowledgement `json:"acknowledgement,omitempty"`
 }
 
-// SignInCookies are a session's cookies, passed once and never stored.
-type SignInCookies struct {
-	LiAt string `json:"li_at"`
-	LiA  string `json:"li_a,omitempty"`
-}
-
 // SignInInput is one sign-in attempt; credentials are passed once and never stored.
 type SignInInput struct {
-	Method    string         `json:"method"`
-	Username  string         `json:"username,omitempty"`
-	Password  string         `json:"password,omitempty"`
-	Cookies   *SignInCookies `json:"cookies,omitempty"`
-	UserAgent string         `json:"user_agent,omitempty"`
-	IP        string         `json:"ip,omitempty"`
-	Recruiter bool           `json:"recruiter,omitempty"`
-	Country   string         `json:"country,omitempty"`
+	Method            string            `json:"method"`
+	Username          string            `json:"username,omitempty"`
+	Password          string            `json:"password,omitempty"`
+	Cookies           map[string]string `json:"cookies,omitempty"`
+	PhoneNumber       string            `json:"phone_number,omitempty"`
+	TwoFactorPassword string            `json:"two_factor_password,omitempty"`
+	UserAgent         string            `json:"user_agent,omitempty"`
+	IP                string            `json:"ip,omitempty"`
+	Recruiter         bool              `json:"recruiter,omitempty"`
+	Country           string            `json:"country,omitempty"`
 }
 
 // CheckpointAnswer answers a checkpoint with a code, one choice or several.
@@ -139,13 +180,18 @@ type CheckpointAnswer struct {
 	Code    string   `json:"code,omitempty"`
 	Choice  string   `json:"choice,omitempty"`
 	Choices []string `json:"choices,omitempty"`
+	// TwoFactorPassword answers Telegram's cloud password checkpoint.
+	TwoFactorPassword string `json:"two_factor_password,omitempty"`
+	// Secret is the PIN or recovery code an encrypted_history choice takes.
+	Secret string `json:"secret,omitempty"`
 }
 
 // CheckpointChoice is one option a checkpoint offers; a bare string reads as its id.
 type CheckpointChoice struct {
-	ID          string `json:"id"`
-	Label       string `json:"label,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID                string `json:"id"`
+	Label             string `json:"label,omitempty"`
+	Description       string `json:"description,omitempty"`
+	AttemptsRemaining *int   `json:"attempts_remaining,omitempty"`
 }
 
 // UnmarshalJSON accepts an option as an object or as a bare id.
@@ -168,6 +214,10 @@ type Checkpoint struct {
 	LastError         *string            `json:"last_error"`
 	CaptchaKey        *string            `json:"captcha_key,omitempty"`
 	CaptchaData       *string            `json:"captcha_data,omitempty"`
+	// QRCode is the payload to render as a QR code, PairingCode the code to enter on the phone; both rotate until ExpiresAt.
+	QRCode      *string    `json:"qr_code,omitempty"`
+	PairingCode *string    `json:"pairing_code,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 }
 
 // SocialError is the error a failed session, action or message carries.
@@ -200,28 +250,18 @@ func (s *ConnectSession) Ended() bool {
 	return false
 }
 
-// SocialLimits are an account's daily limits per action.
-type SocialLimits struct {
-	Invite       *int `json:"invite,omitempty"`
-	Message      *int `json:"message,omitempty"`
-	Inmail       *int `json:"inmail,omitempty"`
-	ProfileVisit *int `json:"profile_visit,omitempty"`
-	Search       *int `json:"search,omitempty"`
+// SocialLimits are an account's limits keyed by action type, only the channel's actions.
+type SocialLimits map[string]int
+
+// SocialCapability says whether the account can run an action, and why not.
+type SocialCapability struct {
+	Supported bool    `json:"supported"`
+	Reason    *string `json:"reason"`
 }
 
-// WeeklyLimits are an account's weekly limits.
-type WeeklyLimits struct {
-	Invite *int `json:"invite,omitempty"`
-}
-
-// LimitCeilings are the highest limits GraphKit accepts for an account.
-type LimitCeilings struct {
-	Invite       int `json:"invite"`
-	Message      int `json:"message"`
-	Inmail       int `json:"inmail"`
-	ProfileVisit int `json:"profile_visit"`
-	Search       int `json:"search"`
-	WeeklyInvite int `json:"weekly_invite"`
+// SocialVoiceState says whether the account has a voice for written voice notes.
+type SocialVoiceState struct {
+	Available bool `json:"available"`
 }
 
 // WorkingHours are when an account's actions run, in its timezone; days are ISO weekdays.
@@ -270,36 +310,39 @@ type SocialBilling struct {
 
 // SocialAccount is one connected social account.
 type SocialAccount struct {
-	ID                       string         `json:"id"`
-	Channel                  string         `json:"channel"`
-	Status                   string         `json:"status"`
-	StatusReason             *string        `json:"status_reason"`
-	DisplayName              string         `json:"display_name"`
-	Headline                 string         `json:"headline"`
-	AvatarURL                string         `json:"avatar_url"`
-	ProfileURL               string         `json:"profile_url"`
-	PublicID                 string         `json:"public_id"`
-	Licences                 []string       `json:"licences"`
-	InmailCredits            *InmailCredits `json:"inmail_credits"`
-	Limits                   SocialLimits   `json:"limits"`
-	WeeklyLimits             WeeklyLimits   `json:"weekly_limits"`
-	LimitCeilings            LimitCeilings  `json:"limit_ceilings"`
-	WorkingHours             *WorkingHours  `json:"working_hours"`
-	Timezone                 string         `json:"timezone"`
-	Warmup                   *SocialWarmup  `json:"warmup"`
-	Usage                    []SocialUsage  `json:"usage"`
-	PendingInvites           *int           `json:"pending_invites"`
-	AcceptanceRate           *float64       `json:"acceptance_rate"`
-	WithdrawInvitesAfterDays *int           `json:"withdraw_invites_after_days,omitempty"`
-	Billing                  SocialBilling  `json:"billing"`
-	ConnectedAt              *time.Time     `json:"connected_at"`
-	UpdatedAt                time.Time      `json:"updated_at"`
+	ID                       string                      `json:"id"`
+	Channel                  string                      `json:"channel"`
+	Status                   string                      `json:"status"`
+	StatusReason             *string                     `json:"status_reason"`
+	DisplayName              string                      `json:"display_name"`
+	Headline                 string                      `json:"headline"`
+	AvatarURL                string                      `json:"avatar_url"`
+	ProfileURL               string                      `json:"profile_url"`
+	PublicID                 string                      `json:"public_id"`
+	Licences                 []string                    `json:"licences"`
+	InmailCredits            *InmailCredits              `json:"inmail_credits"`
+	Limits                   SocialLimits                `json:"limits"`
+	WeeklyLimits             SocialLimits                `json:"weekly_limits"`
+	LimitCeilings            SocialLimits                `json:"limit_ceilings"`
+	WeeklyLimitCeilings      SocialLimits                `json:"weekly_limit_ceilings"`
+	Capabilities             map[string]SocialCapability `json:"capabilities"`
+	Voice                    SocialVoiceState            `json:"voice"`
+	WorkingHours             *WorkingHours               `json:"working_hours"`
+	Timezone                 string                      `json:"timezone"`
+	Warmup                   *SocialWarmup               `json:"warmup"`
+	Usage                    []SocialUsage               `json:"usage"`
+	PendingInvites           *int                        `json:"pending_invites"`
+	AcceptanceRate           *float64                    `json:"acceptance_rate"`
+	WithdrawInvitesAfterDays *int                        `json:"withdraw_invites_after_days,omitempty"`
+	Billing                  SocialBilling               `json:"billing"`
+	ConnectedAt              *time.Time                  `json:"connected_at"`
+	UpdatedAt                time.Time                   `json:"updated_at"`
 }
 
 // SocialAccountPatch changes an account's settings; nil fields are left as they are.
 type SocialAccountPatch struct {
-	Limits                   *SocialLimits      `json:"limits,omitempty"`
-	WeeklyLimits             *WeeklyLimits      `json:"weekly_limits,omitempty"`
+	Limits                   SocialLimits       `json:"limits,omitempty"`
+	WeeklyLimits             SocialLimits       `json:"weekly_limits,omitempty"`
 	WorkingHours             *WorkingHours      `json:"working_hours,omitempty"`
 	Timezone                 *string            `json:"timezone,omitempty"`
 	Warmup                   *SocialWarmupInput `json:"warmup,omitempty"`
@@ -496,9 +539,12 @@ const (
 	ActionInvite         = "invite"
 	ActionMessage        = "message"
 	ActionInmail         = "inmail"
+	ActionVoiceNote      = "voice_note"
 	ActionProfileVisit   = "profile_visit"
 	ActionFollow         = "follow"
 	ActionLikePost       = "like_post"
+	ActionCommentPost    = "comment_post"
+	ActionEndorse        = "endorse"
 	ActionWithdrawInvite = "withdraw_invite"
 
 	ActionQueued    = "queued"
@@ -510,18 +556,36 @@ const (
 	ActionExpired   = "expired"
 )
 
-// ActionInput queues one outreach action.
+// VoiceInput is a voice note: an uploaded recording or a script read in the account's voice.
+type VoiceInput struct {
+	Mode    string `json:"mode"`
+	AudioID string `json:"audio_id,omitempty"`
+	Script  string `json:"script,omitempty"`
+}
+
+// ConsentInput is the basis outreach on a consent channel rests on.
+type ConsentInput struct {
+	Basis string `json:"basis"`
+}
+
+// ActionInput queues one outreach action; only the fields its type takes are sent.
 type ActionInput struct {
-	AccountID string     `json:"account_id"`
-	Type      string     `json:"type"`
-	Recipient string     `json:"recipient"`
-	Note      *string    `json:"note"`
-	Body      *string    `json:"body"`
-	Subject   *string    `json:"subject"`
-	Post      *string    `json:"post"`
-	NotBefore *time.Time `json:"not_before"`
-	ExpiresAt *time.Time `json:"expires_at"`
-	Reference string     `json:"reference,omitempty"`
+	AccountID      string        `json:"account_id"`
+	Type           string        `json:"type"`
+	Recipient      string        `json:"recipient"`
+	Note           *string       `json:"note,omitempty"`
+	Body           *string       `json:"body,omitempty"`
+	Subject        *string       `json:"subject,omitempty"`
+	Voice          *VoiceInput   `json:"voice,omitempty"`
+	Post           *string       `json:"post,omitempty"`
+	Reaction       *string       `json:"reaction,omitempty"`
+	Comment        *string       `json:"comment,omitempty"`
+	MaxPostAgeDays *int          `json:"max_post_age_days,omitempty"`
+	MaxSkills      *int          `json:"max_skills,omitempty"`
+	Consent        *ConsentInput `json:"consent,omitempty"`
+	NotBefore      *time.Time    `json:"not_before,omitempty"`
+	ExpiresAt      *time.Time    `json:"expires_at,omitempty"`
+	Reference      string        `json:"reference,omitempty"`
 }
 
 // ActionRecipient is who an action was for, as resolved.
@@ -538,12 +602,15 @@ type ActionResult struct {
 	InvitationID   *string `json:"invitation_id"`
 	ConversationID *string `json:"conversation_id"`
 	MessageID      *string `json:"message_id"`
+	CommentID      *string `json:"comment_id"`
+	PostID         *string `json:"post_id"`
 }
 
 // Action is one queued outreach action.
 type Action struct {
 	ID           string          `json:"id"`
 	AccountID    string          `json:"account_id"`
+	Channel      string          `json:"channel"`
 	Type         string          `json:"type"`
 	Status       string          `json:"status"`
 	Recipient    ActionRecipient `json:"recipient"`
@@ -587,6 +654,7 @@ const (
 type SocialMessage struct {
 	ID             string       `json:"id"`
 	ConversationID string       `json:"conversation_id"`
+	Channel        string       `json:"channel"`
 	Direction      string       `json:"direction"`
 	Body           string       `json:"body"`
 	SentAt         *time.Time   `json:"sent_at"`
@@ -611,6 +679,7 @@ type Conversation struct {
 
 // MessageEvent is the data of social.message.received and social.message.sent.
 type MessageEvent struct {
+	Channel      string        `json:"channel"`
 	Conversation Conversation  `json:"conversation"`
 	Message      SocialMessage `json:"message"`
 }
@@ -618,6 +687,7 @@ type MessageEvent struct {
 // InvitationAccepted is the data of social.invitation.accepted.
 type InvitationAccepted struct {
 	AccountID   string    `json:"account_id"`
+	Channel     string    `json:"channel"`
 	Person      Person    `json:"person"`
 	ConnectedAt time.Time `json:"connected_at"`
 	ActionID    *string   `json:"action_id"`
@@ -626,6 +696,7 @@ type InvitationAccepted struct {
 // ConversationFilter narrows a conversation list.
 type ConversationFilter struct {
 	AccountID    string
+	Channel      string
 	UpdatedAfter *time.Time
 	Cursor       string
 	Limit        int
@@ -639,3 +710,25 @@ type ActionFilter struct {
 	Cursor    string
 	Limit     int
 }
+
+// Audio is an uploaded recording for voice notes.
+type Audio struct {
+	ID              string    `json:"id"`
+	DurationSeconds int       `json:"duration_seconds"`
+	ContentType     string    `json:"content_type"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// AudioMaxBytes is the largest recording GraphKit takes.
+const AudioMaxBytes = 16 << 20
+
+// AudioInput is a recording to upload; GraphKit does not measure audio, so the length comes from the uploader.
+type AudioInput struct {
+	Filename        string
+	ContentType     string
+	Data            []byte
+	DurationSeconds int
+}
+
+// AudioMaxSeconds is the longest recording GraphKit takes, the longest voice note of any channel.
+const AudioMaxSeconds = 300

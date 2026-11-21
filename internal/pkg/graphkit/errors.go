@@ -59,6 +59,8 @@ const (
 	CodeRecipientInvalid       = "recipient_invalid"
 	CodeAccountUnavailable     = "account_unavailable"
 	CodeAIUnavailable          = "ai_unavailable"
+	CodeCapabilityUnavailable  = "capability_unavailable"
+	CodeConsentRequired        = "consent_required"
 	// CodeTransport is client-side: no answer at all (a timeout, a refused connection).
 	CodeTransport = "transport"
 )

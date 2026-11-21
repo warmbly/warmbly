@@ -2,11 +2,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { BriefcaseIcon, Building2Icon, CheckIcon, ExternalLinkIcon, Loader2Icon, MapPinIcon, SearchIcon, UserPlusIcon, UserRoundIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Avatar } from "@/components/app/linkedin/parts";
-import { safeLinkedInUrl } from "@/components/app/linkedin/LinkedInMark";
-import { useLinkedInProfile } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
-import type { FinderHit } from "@/lib/api/models/app/linkedin/LinkedIn";
-import { linkedInErrorMessage } from "@/lib/linkedin/errors";
+import { Avatar } from "@/components/app/social/parts";
+import { profileUrl } from "@/lib/social/channels";
+import { useLinkedInProfile } from "@/lib/api/hooks/app/social/useSocial";
+import type { FinderHit } from "@/lib/api/models/app/social/Social";
+import { socialErrorMessage } from "@/lib/social/errors";
 import { cn } from "@/lib/utils";
 import { Badge, OutreachBadge, ReachMeter, ReachReasons, signalsOf, Spotlight, TONE } from "./bits";
 import { apiAccount, degreeLabel, isSelectable, tenure } from "./state";
@@ -93,7 +93,7 @@ function Body({
     const signals = signalsOf(hit);
     const contactId = contactOf(hit);
     const campaigns = campaignsOf(hit);
-    const href = safeLinkedInUrl(p.profile_url);
+    const href = profileUrl("linkedin", p.profile_url);
     // A full profile read is a profile visit on the account, so it only loads when asked.
     const [wantProfile, setWantProfile] = useState(false);
     const profile = useLinkedInProfile(wantProfile ? p.public_id || p.provider_id || null : null, apiAccount(accountId));
@@ -178,7 +178,7 @@ function Body({
                             <Loader2Icon className="size-3 animate-spin" /> Reading the profile…
                         </p>
                     ) : profile.isError ? (
-                        <p className="mt-3 text-[11.5px] text-red-600">{linkedInErrorMessage(profile.error)}</p>
+                        <p className="mt-3 text-[11.5px] text-red-600">{socialErrorMessage(profile.error)}</p>
                     ) : profile.data ? (
                         <div className="mt-3 grid gap-2">
                             {profile.data.summary && <p className="whitespace-pre-line text-[12px] leading-relaxed text-slate-700">{profile.data.summary}</p>}

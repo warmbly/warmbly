@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertTriangleIcon, CheckCircle2Icon, GaugeIcon, InfoIcon, RotateCwIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { linkedInErrorMessage } from "@/lib/linkedin/errors";
+import { socialErrorMessage } from "@/lib/social/errors";
 import { cn } from "@/lib/utils";
 import { ResultSkeletons } from "./Results";
 import type { ListTail } from "./state";
@@ -116,7 +116,7 @@ export function ListEnd({
                 </div>
             )}
             {tail.kind === "error" && (
-                <TailNote icon={<AlertTriangleIcon className="text-red-500" />} tone="danger" title="The next results did not load" body={`${linkedInErrorMessage(tail.error)} The results above stay.`}>
+                <TailNote icon={<AlertTriangleIcon className="text-red-500" />} tone="danger" title="The next results did not load" body={`${socialErrorMessage(tail.error)} The results above stay.`}>
                     <button type="button" onClick={onLoadMore} className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5">
                         <RotateCwIcon className="size-3.5" /> Retry
                     </button>
@@ -128,7 +128,7 @@ export function ListEnd({
                     title="Today's search budget is used"
                     body={`${accountName || "This account"} has fetched ${fmt(tail.usage.used)} of its ${fmt(tail.usage.limit)} search results today. More load tomorrow, or raise the account's daily search limit and continue.`}
                 >
-                    <Link to="/app/linkedin" className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center">
+                    <Link to="/app/settings/social" className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center">
                         Account limits
                     </Link>
                     <button type="button" onClick={onLoadMore} className="h-7 px-2.5 rounded-md text-[12px] text-slate-600 hover:text-slate-900 hover:bg-slate-100">

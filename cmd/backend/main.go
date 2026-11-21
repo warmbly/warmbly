@@ -95,7 +95,6 @@ import (
 	"github.com/warmbly/warmbly/internal/app/keystatus"
 	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
-	"github.com/warmbly/warmbly/internal/app/linkedin"
 	"github.com/warmbly/warmbly/internal/app/mailboxavatar"
 	"github.com/warmbly/warmbly/internal/app/mailboxconnect"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
@@ -134,6 +133,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/settings"
 	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
+	"github.com/warmbly/warmbly/internal/app/social"
 	"github.com/warmbly/warmbly/internal/app/socialauth"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/store"
@@ -437,7 +437,7 @@ func main() {
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
 	var leadFinderServiceForHandler *leadfinder.Service
-	var linkedInServiceForHandler *linkedin.Service
+	var socialServiceForHandler *social.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2213,19 +2213,19 @@ func main() {
 			storeService.WireSignIns(connectLinkService, repository.NewStoreSignInLinkRepository(primaryDB.Pool))
 			connectLinkService.WirePartnerLinks(storeService.SignInLinks())
 		}
-		// LinkedIn rides the store's GraphKit connection; its seats are billed in the store's run.
-		linkedInServiceForHandler = linkedin.New(linkedin.Deps{
-			Store: storeService, Repo: repository.NewLinkedInRepository(primaryDB), Credits: creditService,
+		// Social accounts ride the store's GraphKit connection; its seats are billed in the store's run.
+		socialServiceForHandler = social.New(social.Deps{
+			Store: storeService, Repo: repository.NewSocialRepository(primaryDB), Credits: creditService,
 			Subscriptions: subscriptionRepository, Publisher: streamingPublisher, Contacts: contactService, Cipher: cipherService,
 			Replies: advancedService, Campaigns: campaignService, CampaignLogs: campaignLogRepository,
 		})
-		storeService.WireSocial(linkedInServiceForHandler)
-		// LinkedIn steps in campaigns: queued by the task handler, scheduled without a mailbox when a campaign has none.
-		if aware, ok := tasksService.(tasks.LinkedInAware); ok {
-			aware.WireLinkedIn(linkedInServiceForHandler)
+		storeService.WireSocial(socialServiceForHandler)
+		// Social steps in campaigns: queued by the task handler, scheduled without a mailbox when a campaign has none.
+		if aware, ok := tasksService.(tasks.SocialAware); ok {
+			aware.WireSocial(socialServiceForHandler)
 		}
-		if aware, ok := schedulerService.(scheduler.LinkedInAware); ok {
-			aware.WireLinkedIn(repository.NewLinkedInRepository(primaryDB))
+		if aware, ok := schedulerService.(scheduler.SocialAware); ok {
+			aware.WireSocial(repository.NewSocialRepository(primaryDB))
 		}
 		delegationService.WirePurchasedTokens(storeService)
 		delegationService.WireConsentWaker(storeService.WakeMicrosoftConsent)
@@ -2708,9 +2708,9 @@ func main() {
 				},
 			})
 			go jobrun.Loop(ctx, "lead_enrichment_runs", time.Minute, true, leadFinderServiceForHandler.RunPendingEnrichment)
-			if linkedInServiceForHandler != nil {
+			if socialServiceForHandler != nil {
 				// A LinkedIn import with find_emails looks addresses up through the lead finder.
-				linkedInServiceForHandler.WireFinder(leadFinderServiceForHandler)
+				socialServiceForHandler.WireFinder(leadFinderServiceForHandler)
 			}
 		}
 
@@ -3057,7 +3057,7 @@ func main() {
 		CreditService:    creditService,
 		BalanceService:   balanceService,
 		StoreService:     storeService,
-		LinkedInService:  linkedInServiceForHandler,
+		SocialService:    socialServiceForHandler,
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		TypeSafe:         typeSafeAsker(typeSafeClient),

@@ -41,9 +41,9 @@ import { cn } from "@/lib/utils";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 import { useUniboxRailSync } from "@/hooks/useUniboxRailSync";
 import useInboxBrowseState from "./useInboxBrowseState";
-import { LinkedInConversationList } from "@/components/app/unibox/linkedin/LinkedInConversationList";
-import { LinkedInThreadView } from "@/components/app/unibox/linkedin/LinkedInThreadView";
-import { useLinkedInUnibox } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+import { SocialConversationList } from "@/components/app/unibox/social/SocialConversationList";
+import { SocialThreadView } from "@/components/app/unibox/social/SocialThreadView";
+import { useSocialUnibox } from "@/lib/api/hooks/app/social/useSocial";
 
 function startOfToday(): Date {
   const d = new Date();
@@ -67,8 +67,8 @@ export default function UniboxPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
-  const linkedIn = useLinkedInUnibox(overview.data?.linkedin_unread);
-  const linkedInRail = linkedIn.visible ? { unread: linkedIn.unread } : undefined;
+  const social = useSocialUnibox(overview.data?.social_unread);
+  const socialRail = social.visible ? { unread: social.unread } : undefined;
 
   // ── Pane widths ────────────────────────────────────────────────
   // The list column is drag-resizable against the thread pane and the width is
@@ -218,8 +218,8 @@ export default function UniboxPage() {
         return { kind: "snoozed" };
       case "scheduled":
         return { kind: "scheduled" };
-      case "linkedin":
-        return { kind: "linkedin" };
+      case "social":
+        return { kind: "social" };
       case "inbox":
       case "sent":
       case "drafts":
@@ -389,8 +389,8 @@ export default function UniboxPage() {
         return "Snoozed";
       case "scheduled":
         return "Scheduled";
-      case "linkedin":
-        return "LinkedIn";
+      case "social":
+        return "Social";
       case "folder":
         return scope.folder.charAt(0).toUpperCase() + scope.folder.slice(1);
       case "mailbox": {
@@ -437,7 +437,7 @@ export default function UniboxPage() {
           setOpen={setScopeSheetOpen}
           scope={scope}
           onChange={setScope}
-          linkedin={linkedInRail}
+          social={socialRail}
         />
 
         <div ref={rowRef} className="flex-1 min-h-0 flex">
@@ -447,7 +447,7 @@ export default function UniboxPage() {
             style={{ "--unibox-rail-w": `${renderedRailWidth}px` } as React.CSSProperties}
             className="hidden lg:flex w-[var(--unibox-rail-w)] shrink-0 h-full [&>nav]:border-r-0"
           >
-            <ScopeRail scope={scope} onChange={setScope} linkedin={linkedInRail} />
+            <ScopeRail scope={scope} onChange={setScope} social={socialRail} />
           </aside>
 
           <div
@@ -477,8 +477,8 @@ export default function UniboxPage() {
                   urlThread ? "hidden md:flex" : "flex",
                 )}
               >
-                {scope.kind === "linkedin" ? (
-                  <LinkedInConversationList
+                {scope.kind === "social" ? (
+                  <SocialConversationList
                     selectedId={urlThread}
                     onOpen={(id) => goTo({ threadId: id })}
                     onOpenScopeSheet={() => setScopeSheetOpen(true)}
@@ -541,8 +541,8 @@ export default function UniboxPage() {
                           change, the reader is what has to start clean, so a
                           half-typed reply never follows you to the next
                           conversation. */}
-                      {scope.kind === "linkedin" ? (
-                        <LinkedInThreadView key={urlThread} conversationId={urlThread} onClose={closeThread} />
+                      {scope.kind === "social" ? (
+                        <SocialThreadView key={urlThread} conversationId={urlThread} onClose={closeThread} />
                       ) : (
                         <ThreadView key={urlThread} threadId={urlThread} onClose={closeThread} />
                       )}

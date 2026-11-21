@@ -1,9 +1,9 @@
 // AI help: a description becomes a search, or refines the one on screen; the answer is a reviewable diff, nothing runs until applied.
 import { BanIcon, CheckIcon, CornerDownLeftIcon, InfoIcon, Loader2Icon, SparklesIcon, XIcon } from "lucide-react";
 import { useRef, useState, type Dispatch, type RefObject } from "react";
-import { useFinderAi as useAiMutation } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
-import type { AiChange, AiResult, FinderQuery } from "@/lib/api/models/app/linkedin/LinkedIn";
-import { linkedInErrorCode, linkedInErrorMessage } from "@/lib/linkedin/errors";
+import { useFinderAi as useAiMutation } from "@/lib/api/hooks/app/social/useSocial";
+import type { AiChange, AiResult, FinderQuery } from "@/lib/api/models/app/social/Social";
+import { socialErrorCode, socialErrorMessage } from "@/lib/social/errors";
 import { cn } from "@/lib/utils";
 import { aiChangeApplied, apiAccount, isEmpty, toQuery, type FinderAction, type FinderState } from "./state";
 
@@ -53,7 +53,7 @@ export function useFinderAi({ state, accountId }: { state: FinderState; accountI
                         setRefined(!!current);
                     },
                     onError: (e) => {
-                        if (linkedInErrorCode(e) === "ai_unavailable") setUnavailable(true);
+                        if (socialErrorCode(e) === "ai_unavailable") setUnavailable(true);
                     },
                 },
             );
@@ -126,7 +126,7 @@ export function AiBox({ ai, hasSearch, large, inputRef }: { ai: FinderAi; hasSea
             </form>
             {ai.error != null && (
                 <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-[12px] text-red-700" role="alert">
-                    <span className="flex-1">{linkedInErrorMessage(ai.error)}</span>
+                    <span className="flex-1">{socialErrorMessage(ai.error)}</span>
                     <button type="button" onClick={() => ai.run()} className="font-medium hover:underline">
                         Try again
                     </button>

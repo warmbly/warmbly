@@ -34,8 +34,9 @@ import { entryDelayLabel } from "@/components/app/campaigns/schedule/entryDelay"
 import type { StartCampaignResult } from "@/lib/api/client/app/campaigns/startCampaign";
 import { useAccessRestricted } from "@/hooks/usePermission";
 import { Link } from "@tanstack/react-router";
-import { isLinkedInAction } from "@/lib/api/models/app/campaigns/sequences/Action";
-import { useCampaignLinkedInAccounts } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+import { isSocialAction } from "@/lib/api/models/app/campaigns/sequences/Action";
+import { useCampaignSocialAccounts, useSocialAccounts, useSocialChannels } from "@/lib/api/hooks/app/social/useSocial";
+import { channelLabel } from "@/lib/social/channels";
 
 type Phase = "idle" | "launching" | "done";
 
@@ -123,12 +124,20 @@ export default function LaunchCampaignDialog({
     });
     const stepCount = steps.data?.length;
 
-    // LinkedIn steps run from the campaign's LinkedIn accounts; with none, launching would only skip them.
-    const hasLinkedInSteps = (steps.data ?? []).some((s) => s.kind === "action" && isLinkedInAction(s.action?.type ?? ""));
-    const linkedInSenders = useCampaignLinkedInAccounts(campaign?.id ?? "", hasLinkedInSteps && !!campaign && c?.linkedin_account_ids === undefined);
-    const linkedInIds = c?.linkedin_account_ids ?? linkedInSenders.data;
-    const linkedInBlocked = hasLinkedInSteps && linkedInIds !== undefined && linkedInIds.length === 0;
-    const missingLinkedInUrl = hasLinkedInSteps ? (c?.linkedin_missing_url_count ?? 0) : 0;
+    // Each social step runs from the campaign's senders on its channel; a channel with none would only skip its steps.
+    const stepChannels = [...new Set((steps.data ?? []).flatMap((s) => (s.kind === "action" && isSocialAction(s.action?.type ?? "") && s.action?.social?.channel ? [s.action.social.channel] : [])))];
+    const hasSocialSteps = stepChannels.length > 0;
+    const socialSenders = useCampaignSocialAccounts(campaign?.id ?? "", hasSocialSteps && !!campaign && c?.social_account_ids === undefined);
+    const socialAccounts = useSocialAccounts(hasSocialSteps);
+    const catalog = useSocialChannels(hasSocialSteps);
+    const socialIds = c?.social_account_ids ?? socialSenders.data;
+    const missingChannels =
+        hasSocialSteps && socialIds !== undefined && socialAccounts.data
+            ? stepChannels.filter((ch) => !socialAccounts.data!.data.some((a) => a.channel === ch && socialIds.includes(a.id)))
+            : [];
+    const socialBlocked = missingChannels.length > 0;
+    const missingChannelNames = missingChannels.map((ch) => channelLabel(ch, catalog.data));
+    const missingSocialHandle = hasSocialSteps ? (c?.social_missing_handle_count ?? 0) : 0;
 
     // The platform's own pre-send checks, run fresh each time the dialog opens.
     // Advisory: a failure is shown, never used to disable Launch, because the
@@ -305,20 +314,27 @@ export default function LaunchCampaignDialog({
                                         </div>
                                     )}
 
-                                    {linkedInBlocked && (
+                                    {socialBlocked && (
                                         <div className="px-5 pt-3">
                                             <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2">
                                                 <AlertTriangleIcon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-500" />
                                                 <div className="min-w-0 text-[12px] leading-snug text-rose-700">
-                                                    <p>This campaign has LinkedIn steps but no LinkedIn account to run them.</p>
+                                                    <p>
+                                                        This campaign has {listNames(missingChannelNames)} steps but no {listNames(missingChannelNames, "or")} account to run them.
+                                                    </p>
                                                     <p className="mt-0.5 text-[11.5px] text-rose-600/90">
                                                         Pick one in the{" "}
-                                                        <Link to="/app/campaigns/$id/preferences" params={{ id: c.id }} hash="linkedin" onClick={onClose} className="font-medium underline underline-offset-2">
+                                                        <Link to="/app/campaigns/$id/preferences" params={{ id: c.id }} hash="social" onClick={onClose} className="font-medium underline underline-offset-2">
                                                             campaign settings
                                                         </Link>
                                                         , or{" "}
-                                                        <Link to="/app/linkedin" onClick={onClose} className="font-medium underline underline-offset-2">
-                                                            connect a LinkedIn account
+                                                        <Link
+                                                            to="/app/settings/social"
+                                                            search={{ connect: missingChannels.length === 1 ? missingChannels[0] : "any" }}
+                                                            onClick={onClose}
+                                                            className="font-medium underline underline-offset-2"
+                                                        >
+                                                            connect {missingChannels.length === 1 ? `a ${missingChannelNames[0]} account` : "an account"}
                                                         </Link>{" "}
                                                         first.
                                                     </p>
@@ -326,12 +342,12 @@ export default function LaunchCampaignDialog({
                                             </div>
                                         </div>
                                     )}
-                                    {missingLinkedInUrl > 0 && (
+                                    {missingSocialHandle > 0 && (
                                         <div className="px-5 pt-3">
                                             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
                                                 <AlertTriangleIcon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
                                                 <p className="text-[12px] leading-snug text-amber-900">
-                                                    {missingLinkedInUrl === 1 ? "1 contact has" : `${missingLinkedInUrl.toLocaleString()} contacts have`} no LinkedIn profile URL and will skip the LinkedIn steps.
+                                                    {missingSocialHandle === 1 ? "1 contact has" : `${missingSocialHandle.toLocaleString()} contacts have`} no handle on a channel this campaign uses and will skip those steps.
                                                 </p>
                                             </div>
                                         </div>
@@ -435,8 +451,8 @@ export default function LaunchCampaignDialog({
                                         <button
                                             type="button"
                                             onClick={() => launch()}
-                                            disabled={phase === "launching" || linkedInBlocked}
-                                            title={linkedInBlocked ? "Add a LinkedIn account to the campaign first" : undefined}
+                                            disabled={phase === "launching" || socialBlocked}
+                                            title={socialBlocked ? `Add a ${listNames(missingChannelNames, "or")} account to the campaign first` : undefined}
                                             className="h-8 px-3.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-medium inline-flex items-center gap-2 transition-colors disabled:opacity-80"
                                         >
                                             {phase === "launching" ? (
@@ -460,4 +476,10 @@ export default function LaunchCampaignDialog({
             )}
         </AnimatePresence>
     );
+}
+
+// "LinkedIn, WhatsApp and Telegram"
+function listNames(names: string[], joiner = "and"): string {
+    if (names.length <= 1) return names[0] ?? "";
+    return `${names.slice(0, -1).join(", ")} ${joiner} ${names[names.length - 1]}`;
 }

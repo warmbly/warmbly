@@ -805,7 +805,7 @@ func (h *Handler) GetUniboxOverview(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
-	c.JSON(http.StatusOK, h.withLinkedInUnread(c, *orgID, resp))
+	c.JSON(http.StatusOK, h.withSocialUnread(c, *orgID, resp))
 }
 
 type UniboxSnoozeRequest struct {

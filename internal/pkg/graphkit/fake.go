@@ -437,7 +437,7 @@ func (f *Fake) Pricing(context.Context) (*Pricing, error) {
 		Limits:    Limits{MailboxesPerDomainMax: 5, MailboxesPerDomainRecommended: 3},
 		Sending: &SendingPrices{AddonMonthlyMicros: 30_000_000, BoughtMonthlyMicros: 2_000_000, OutsideMonthlyMicros: 3_000_000,
 			Modes: []string{"sending_warmup", "warmup_only"}, SendsPerMailboxPerDay: 50},
-		Social: &SocialPrices{Channels: []string{ChannelLinkedIn}}}
+		Social: &SocialPrices{Channels: fakeSocialCatalog()}}
 	for _, tld := range fakeDefaultTLDs {
 		v := fakeTLDPrices[tld]
 		p.Domains = append(p.Domains, TLDPrice{TLD: tld, RegisterMicros: v, RenewMicros: v, TransferMicros: v, PrivacyIncluded: true,

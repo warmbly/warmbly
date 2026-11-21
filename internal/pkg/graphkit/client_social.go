@@ -1,10 +1,15 @@
 package graphkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -51,8 +56,18 @@ type SocialAPI interface {
 	ListConversations(ctx context.Context, externalID string, f ConversationFilter) (*Page[Conversation], error)
 	GetConversation(ctx context.Context, externalID, id string) (*Conversation, error)
 	ListMessages(ctx context.Context, externalID, conversationID, cursor string, limit int) (*Page[SocialMessage], error)
-	SendMessage(ctx context.Context, externalID, conversationID, body, key string) (*SocialMessage, error)
+	SendMessage(ctx context.Context, externalID, conversationID string, in MessageInput, key string) (*SocialMessage, error)
 	MarkConversationRead(ctx context.Context, externalID, conversationID, key string) (*Conversation, error)
+
+	// UploadAudio stores a recording for voice notes in the workspace's audio storage.
+	UploadAudio(ctx context.Context, externalID string, in AudioInput, key string) (*Audio, error)
+	DeleteAudio(ctx context.Context, externalID, id, key string) error
+}
+
+// MessageInput is a reply: a body, or a voice note where the channel takes one.
+type MessageInput struct {
+	Body  *string     `json:"body,omitempty"`
+	Voice *VoiceInput `json:"voice,omitempty"`
 }
 
 func socialPath(externalID string, parts ...string) string {
@@ -124,7 +139,6 @@ func (c *Client) ListSocialAccounts(ctx context.Context, externalID, status, cur
 	if status != "" {
 		q.Set("status", status)
 	}
-	q.Set("channel", ChannelLinkedIn)
 	var out Page[SocialAccount]
 	return ret(&out, c.get(ctx, socialPath(externalID, "accounts"), q, &out))
 }
@@ -218,7 +232,7 @@ func (c *Client) BuildQuery(ctx context.Context, externalID string, in AIInput, 
 
 func (c *Client) GetProfile(ctx context.Context, externalID, identifier, accountID string) (*Profile, error) {
 	v := url.Values{}
-	v.Set("identifier", identifier)
+	v.Set("recipient", identifier)
 	if accountID != "" {
 		v.Set("account_id", accountID)
 	}
@@ -257,6 +271,9 @@ func (c *Client) ListConversations(ctx context.Context, externalID string, f Con
 	if f.AccountID != "" {
 		q.Set("account_id", f.AccountID)
 	}
+	if f.Channel != "" {
+		q.Set("channel", f.Channel)
+	}
 	if f.UpdatedAfter != nil {
 		q.Set("updated_after", f.UpdatedAfter.UTC().Format(time.RFC3339))
 	}
@@ -274,13 +291,40 @@ func (c *Client) ListMessages(ctx context.Context, externalID, conversationID, c
 	return ret(&out, c.get(ctx, socialPath(externalID, "conversations", conversationID, "messages"), pageQuery(cursor, limit), &out))
 }
 
-func (c *Client) SendMessage(ctx context.Context, externalID, conversationID, body, key string) (*SocialMessage, error) {
+func (c *Client) SendMessage(ctx context.Context, externalID, conversationID string, in MessageInput, key string) (*SocialMessage, error) {
 	var out SocialMessage
-	in := map[string]string{"body": body}
 	return ret(&out, c.send(ctx, http.MethodPost, socialPath(externalID, "conversations", conversationID, "messages"), in, key, &out))
 }
 
 func (c *Client) MarkConversationRead(ctx context.Context, externalID, conversationID, key string) (*Conversation, error) {
 	var out Conversation
 	return ret(&out, c.send(ctx, http.MethodPost, socialPath(externalID, "conversations", conversationID, "read"), nil, key, &out))
+}
+
+func (c *Client) UploadAudio(ctx context.Context, externalID string, in AudioInput, key string) (*Audio, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	if err := w.WriteField("duration_seconds", strconv.Itoa(in.DurationSeconds)); err != nil {
+		return nil, &Error{Code: CodeInvalidRequest, cause: err}
+	}
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, in.Filename))
+	h.Set("Content-Type", in.ContentType)
+	part, err := w.CreatePart(h)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidRequest, cause: err}
+	}
+	if _, err := part.Write(in.Data); err != nil {
+		return nil, &Error{Code: CodeInvalidRequest, cause: err}
+	}
+	if err := w.Close(); err != nil {
+		return nil, &Error{Code: CodeInvalidRequest, cause: err}
+	}
+	var out Audio
+	r := request{method: http.MethodPost, path: socialPath(externalID, "audio"), body: buf.Bytes(), contentType: w.FormDataContentType(), key: key}
+	return ret(&out, c.do(ctx, r, &out))
+}
+
+func (c *Client) DeleteAudio(ctx context.Context, externalID, id, key string) error {
+	return c.send(ctx, http.MethodDelete, socialPath(externalID, "audio", id), nil, key, nil)
 }

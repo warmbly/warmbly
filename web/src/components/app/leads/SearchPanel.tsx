@@ -18,7 +18,7 @@ import type { GeocodeResult, LatLng, LeadArea, LeadCategory, LeadFinderConfig, L
 import { cn } from "@/lib/utils";
 import LocationSearch from "./LocationSearch";
 import SourceLogo from "./SourceLogo";
-import LinkedInMark from "@/components/app/linkedin/LinkedInMark";
+import ChannelMark from "@/components/app/social/ChannelMark";
 import { describeArea } from "./geo";
 import type { MapTool } from "./LeadMap";
 import { fmtUsdCost } from "@/lib/money";
@@ -186,7 +186,7 @@ export default function SearchPanel({
                             <>
                                 <PopoverMenuSeparator />
                                 <PopoverMenuLabel>People</PopoverMenuLabel>
-                                <PopoverMenuItem icon={<LinkedInMark className="size-3.5" />} onSelect={onLinkedIn} description="Search LinkedIn, Sales Navigator or Recruiter with a connected account">
+                                <PopoverMenuItem icon={<ChannelMark channel="linkedin" className="size-3.5" />} onSelect={onLinkedIn} description="Search LinkedIn, Sales Navigator or Recruiter with a connected account">
                                     LinkedIn
                                 </PopoverMenuItem>
                             </>

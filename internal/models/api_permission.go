@@ -74,9 +74,9 @@ const (
 	APIPermReadStore
 	APIPermManageStore
 
-	// LinkedIn: connected accounts, lead search and conversations. Manage connects seats, which spends the workspace balance.
-	APIPermReadLinkedIn
-	APIPermManageLinkedIn
+	// Social: connected accounts on every channel, LinkedIn lead search and conversations. Manage connects seats, which spends the workspace balance.
+	APIPermReadSocial
+	APIPermManageSocial
 )
 
 // AgencyAPIPermissionsMask is every agency bit; a workspace key never holds one.
@@ -118,7 +118,7 @@ const AllAPIPermissionsMask uint64 = APIPermReadEmails | APIPermReadCampaigns |
 	APIPermManageReports |
 	APIPermImportTools |
 	APIPermReadStore | APIPermManageStore |
-	APIPermReadLinkedIn | APIPermManageLinkedIn
+	APIPermReadSocial | APIPermManageSocial
 
 // Preset permission sets surfaced via GET /api-keys/permissions so a
 // caller can grant a sane default without picking bits by hand.
@@ -126,7 +126,7 @@ var (
 	APIPermReadOnly uint64 = APIPermReadEmails | APIPermReadCampaigns |
 		APIPermReadContacts | APIPermReadUnibox | APIPermReadAnalytics |
 		APIPermReadTemplates | APIPermReadCRM | APIPermReadAuditLogs |
-		APIPermReadStore | APIPermReadLinkedIn
+		APIPermReadStore | APIPermReadSocial
 
 	APIPermFullAccess uint64 = APIPermReadOnly |
 		APIPermWriteEmails | APIPermWriteCampaigns | APIPermWriteContacts |
@@ -139,7 +139,7 @@ var (
 		APIPermAIAgent | APIPermAIResearch |
 		APIPermManageReports |
 		APIPermImportTools |
-		APIPermManageStore | APIPermManageLinkedIn
+		APIPermManageStore | APIPermManageSocial
 )
 
 type APIPermission struct {
@@ -179,8 +179,8 @@ var AllAPIPermissions = []APIPermission{
 	{"IMPORT_TOOLS", APIPermImportTools, "Migrate data in from another outreach tool", "bulk"},
 	{"READ_STORE", APIPermReadStore, "View purchased domains, mailboxes, orders and store prices", "read"},
 	{"MANAGE_STORE", APIPermManageStore, "Buy, renew and cancel domains and mailboxes, and edit their DNS", "write"},
-	{"READ_LINKEDIN", APIPermReadLinkedIn, "View LinkedIn accounts and conversations, and search LinkedIn for leads", "read"},
-	{"MANAGE_LINKEDIN", APIPermManageLinkedIn, "Connect, configure and remove LinkedIn accounts, import leads and reply to conversations", "write"},
+	{"READ_SOCIAL", APIPermReadSocial, "View social accounts and conversations, and search LinkedIn for leads", "read"},
+	{"MANAGE_SOCIAL", APIPermManageSocial, "Connect, configure and remove social accounts, upload voice notes, import leads and reply to conversations", "write"},
 }
 
 // HasAPIPermission reports whether the bitmask grants every bit in `required`.
@@ -226,8 +226,8 @@ var apiPermissionRoleNeeds = map[uint64]OrganizationPermission{
 	APIPermReadStore:   PermManageEmails,
 	APIPermManageStore: PermManageEmails,
 	// Seat charges and removals also hold the member to manage_billing.
-	APIPermReadLinkedIn:   PermManageEmails,
-	APIPermManageLinkedIn: PermManageEmails,
+	APIPermReadSocial:   PermManageEmails,
+	APIPermManageSocial: PermManageEmails,
 }
 
 // APIPermissionsForMember is the widest API scope set a member may delegate to a key or an app.

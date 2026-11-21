@@ -26,8 +26,8 @@ type Contact struct {
 	Phone     string `json:"phone"`
 
 	CustomFields map[string]string `json:"custom_fields"`
-	// LinkedInURL is the contact's LinkedIn profile, kept in the linkedin_url custom field; nil when it has none.
-	LinkedInURL *string `json:"linkedin_url"`
+	// Social is the contact's handle on each social channel; absent channels are omitted.
+	Social ContactSocial `json:"social"`
 
 	Subscribed bool           `json:"subscribed"`
 	Campaigns  []MiniCampaign `json:"campaigns"`
@@ -783,13 +783,13 @@ type UpdateContact struct {
 	Company      *string            `json:"company"`
 	Phone        *string            `json:"phone"`
 	CustomFields *map[string]string `json:"custom_fields"`
-	// LinkedInURL sets the contact's LinkedIn profile; "" clears it.
-	LinkedInURL      *string  `json:"linkedin_url"`
-	Subscribed       *bool    `json:"subscribed"`
-	Campaigns        []string `json:"campaigns"`         // List of campaign IDs to set (nil = leave as-is)
-	Categories       []string `json:"categories"`        // List of category IDs to set (nil = leave as-is)
-	AddCategories    []string `json:"add_categories"`    // Diff-style add (ignored when Categories is set)
-	RemoveCategories []string `json:"remove_categories"` // Diff-style remove (ignored when Categories is set)
+	// Social sets handles by channel; null clears one, absent ones are left as they are.
+	Social           ContactSocialPatch `json:"social"`
+	Subscribed       *bool              `json:"subscribed"`
+	Campaigns        []string           `json:"campaigns"`         // List of campaign IDs to set (nil = leave as-is)
+	Categories       []string           `json:"categories"`        // List of category IDs to set (nil = leave as-is)
+	AddCategories    []string           `json:"add_categories"`    // Diff-style add (ignored when Categories is set)
+	RemoveCategories []string           `json:"remove_categories"` // Diff-style remove (ignored when Categories is set)
 }
 
 type AddContact struct {
@@ -807,8 +807,8 @@ type AddContact struct {
 	Segments []string `json:"segments,omitempty"`
 
 	CustomFields map[string]string `json:"custom_fields"`
-	// LinkedInURL is the contact's LinkedIn profile URL or public id.
-	LinkedInURL *string `json:"linkedin_url,omitempty"`
+	// Social is the contact's handle on each social channel.
+	Social ContactSocialPatch `json:"social,omitempty"`
 
 	// VerificationStatus is a verdict the caller already holds for this
 	// address, in Warmbly's vocabulary or any provider's the platform knows

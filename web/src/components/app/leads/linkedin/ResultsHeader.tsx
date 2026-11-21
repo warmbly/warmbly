@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CheckSquare } from "@/components/ui/check-square";
 import { NumberInput } from "@/components/ui/field";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuLabel, PopoverMenuTrigger } from "@/components/ui/popover-menu";
-import type { FinderUsage } from "@/lib/api/models/app/linkedin/LinkedIn";
+import type { FinderUsage } from "@/lib/api/models/app/social/Social";
 import { cn } from "@/lib/utils";
 import { Tip } from "./bits";
 import { TableHeader } from "./Results";

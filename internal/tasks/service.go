@@ -164,8 +164,8 @@ type tasksService struct {
 	// automationRunner launches automations from a campaign "run_automation" step.
 	automationRunner AutomationRunner
 
-	// linkedIn queues the campaign's LinkedIn steps (WireLinkedIn). Nil skips them.
-	linkedIn LinkedInSteps
+	// social queues the campaign's social steps (WireSocial). Nil skips them.
+	social SocialSteps
 
 	// formLinks resolves {{form_link:...}} markers to per-recipient URLs.
 	formLinks FormLinkMinter

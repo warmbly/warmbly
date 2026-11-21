@@ -1,3 +1,4 @@
+import type { ContactSocial } from "@/lib/api/models/app/social/Social";
 import type MiniCampaign from "../campaigns/MiniCampaign";
 import type MiniCategory from "./MiniCategory";
 import type { MailHost } from "../emails/MailboxImport";
@@ -143,8 +144,8 @@ export default interface Contact {
     email: string;
     company: string;
     phone: string;
-    // The contact's LinkedIn profile; absent from an older backend.
-    linkedin_url?: string | null;
+    // The contact's handles by channel, each with the consent basis recorded for outreach there.
+    social?: ContactSocial | null;
 
     custom_fields: Record<string, string>;
 

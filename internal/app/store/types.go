@@ -73,9 +73,9 @@ const (
 type NextBundle struct {
 	ChargeOn  time.Time `json:"charge_on"`
 	Mailboxes int       `json:"mailboxes"`
-	// LinkedInSeats are the LinkedIn accounts collected in the same charge.
-	LinkedInSeats int   `json:"linkedin_seats"`
-	AmountMicros  int64 `json:"amount_micros"`
+	// SocialSeats are the social accounts collected in the same charge.
+	SocialSeats  int   `json:"social_seats"`
+	AmountMicros int64 `json:"amount_micros"`
 }
 
 // Offer is one domain search result at retail.

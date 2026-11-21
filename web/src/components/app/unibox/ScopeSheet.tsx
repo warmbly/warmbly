@@ -16,10 +16,10 @@ interface ScopeSheetProps {
     setOpen: (o: boolean) => void;
     scope: UniboxScope;
     onChange: (s: UniboxScope) => void;
-    linkedin?: { unread: number };
+    social?: { unread: number };
 }
 
-export function ScopeSheet({ open, setOpen, scope, onChange, linkedin }: ScopeSheetProps) {
+export function ScopeSheet({ open, setOpen, scope, onChange, social }: ScopeSheetProps) {
     const pick = (s: UniboxScope) => {
         onChange(s);
         setOpen(false);
@@ -58,7 +58,7 @@ export function ScopeSheet({ open, setOpen, scope, onChange, linkedin }: ScopeSh
                             </button>
                         </div>
                         <div className="flex-1 min-h-0">
-                            <ScopeRail browseKey="mobile" scope={scope} onChange={pick} linkedin={linkedin} />
+                            <ScopeRail browseKey="mobile" scope={scope} onChange={pick} social={social} />
                         </div>
                     </motion.aside>
                 </motion.div>

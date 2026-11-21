@@ -2,7 +2,7 @@
 import { Building2Icon, CircleDotIcon, MegaphoneIcon, RepeatIcon, SparklesIcon, UserCheckIcon, UsersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { FinderHit, FinderReach } from "@/lib/api/models/app/linkedin/LinkedIn";
+import type { FinderHit, FinderReach } from "@/lib/api/models/app/social/Social";
 import { cn } from "@/lib/utils";
 import { campaignsOf, contactOf, OUTREACH_LABELS, outreachStatus } from "./view";
 

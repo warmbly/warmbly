@@ -66,9 +66,9 @@ const (
 	AuditEntityStoreOrder   AuditEntityType = "store_order"
 	AuditEntityStoreDomain  AuditEntityType = "store_domain"
 	AuditEntityStoreMailbox AuditEntityType = "store_mailbox"
-	// LinkedIn add-on: a connected account, the link to a GraphKit workspace, a saved lead search.
-	AuditEntityLinkedInAccount     AuditEntityType = "linkedin_account"
-	AuditEntityLinkedInLink        AuditEntityType = "linkedin_link"
+	// Social add-on: a connected account, the link to a GraphKit workspace, a saved LinkedIn lead search.
+	AuditEntitySocialAccount       AuditEntityType = "social_account"
+	AuditEntitySocialLink          AuditEntityType = "social_link"
 	AuditEntityLinkedInSavedSearch AuditEntityType = "linkedin_saved_search"
 	AuditEntityAPIKey              AuditEntityType = "api_key"
 	AuditEntitySequence            AuditEntityType = "step"

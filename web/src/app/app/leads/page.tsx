@@ -37,7 +37,7 @@ import SavedSearches from "@/components/app/leads/SavedSearches";
 import SearchPanel from "@/components/app/leads/SearchPanel";
 import { areaKm2, boundsOf, inPolygon } from "@/components/app/leads/geo";
 import { useConfirm } from "@/hooks/context/confirm";
-import { useLinkedInStatus } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+import { useSocialStatus } from "@/lib/api/hooks/app/social/useSocial";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import {
     useDeleteLeads,
@@ -119,7 +119,7 @@ function loadPrefs(): Prefs {
 
 export default function LeadFinderPage() {
     const [source, setSourceState] = useState<FinderSourceKind>(readSource);
-    const linkedin = useLinkedInStatus();
+    const linkedin = useSocialStatus();
     const setSource = useCallback((s: FinderSourceKind) => {
         setSourceState(s);
         try {

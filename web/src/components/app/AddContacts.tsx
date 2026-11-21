@@ -17,6 +17,7 @@ import useAddContacts from "@/lib/api/hooks/app/contacts/useAddContacts";
 import toast from "react-hot-toast/headless";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import type { ContactSocialPatch } from "@/lib/api/models/app/social/Social";
 
 function MiniTitle({ children, nom }: { children: React.ReactNode, nom?: boolean }) {
     return <h1 className={`text-slate-400 flex items-center gap-2 font-semibold font-inter ${nom ? "mb-0" : "mb-3"} text-sm uppercase tracking-wider`}>{children}</h1>
@@ -36,6 +37,8 @@ export interface AddContact {
     // so a contact created from inside a segment lands in it.
     segments?: string[];
     custom_fields: Record<string, string>;
+    // Handles by channel, each with its consent basis.
+    social?: ContactSocialPatch;
     // First-touch source hint: "campaign" when added from a campaign's
     // Leads tab, else "manual". The server decides every other origin.
     source?: "manual" | "campaign";

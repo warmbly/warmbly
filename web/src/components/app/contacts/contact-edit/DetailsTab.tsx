@@ -33,7 +33,6 @@ import { fmtAbsolute } from "./format";
 import useCrmProvider from "@/hooks/useCrmProvider";
 import { CrmPropertiesList } from "@/components/app/crm/CrmContactCard";
 import { CrmMark } from "@/components/app/crm/crmProviders";
-import LinkedInMark from "@/components/app/linkedin/LinkedInMark";
 
 export default function DetailsTab({
     contact,
@@ -47,8 +46,6 @@ export default function DetailsTab({
     setCompany,
     phone,
     setPhone,
-    linkedinUrl,
-    setLinkedinUrl,
     subscribed,
     setSubscribed,
     campaigns,
@@ -69,8 +66,6 @@ export default function DetailsTab({
     setCompany: (v: string) => void;
     phone: string;
     setPhone: (v: string) => void;
-    linkedinUrl: string;
-    setLinkedinUrl: (v: string) => void;
     subscribed: boolean;
     setSubscribed: (v: boolean) => void;
     campaigns: MiniCampaign[];
@@ -103,9 +98,6 @@ export default function DetailsTab({
                         <TextInput value={phone} onChange={setPhone} className="w-full" placeholder="+1 555…" />
                     </Field>
                 </div>
-                <Field label="LinkedIn" icon={<LinkedInMark className="w-3 h-3" />}>
-                    <TextInput value={linkedinUrl} onChange={setLinkedinUrl} className="w-full" maxLength={300} placeholder="https://www.linkedin.com/in/…" />
-                </Field>
             </Section>
 
             <Section title="Subscription">

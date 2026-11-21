@@ -467,7 +467,7 @@ const STORE_PREVIEW_TLD = "com";
 const STORE_LEAD_MIN = 2;
 const STORE_LEAD_MAX = 10;
 const STORE_MIN_CARD_FLOOR = 0.5;
-const LINKEDIN_USD_MAX = 500;
+const SOCIAL_USD_MAX = 500;
 
 const STORE_DEFAULTS: StoreSettings = {
     mailbox_monthly_micros: 3_000_000,
@@ -475,9 +475,9 @@ const STORE_DEFAULTS: StoreSettings = {
     domain_markup_fixed_micros: 0,
     mailbox_bill_lead_days: 5,
     min_card_charge_micros: 10_000_000,
-    linkedin_seat_monthly_micros: 49_000_000,
-    linkedin_seat_agency_micros: 32_000_000,
-    linkedin_seat_agency_pro_micros: 19_000_000,
+    social_seat_monthly_micros: 49_000_000,
+    social_seat_agency_micros: 32_000_000,
+    social_seat_agency_pro_micros: 19_000_000,
 };
 
 interface StoreForm {
@@ -486,9 +486,9 @@ interface StoreForm {
     markupFixed: string;
     billLead: string;
     minCard: string;
-    linkedinSeat: string;
-    linkedinAgency: string;
-    linkedinAgencyPro: string;
+    socialSeat: string;
+    socialAgency: string;
+    socialAgencyPro: string;
 }
 
 function microsToDollars(micros: number): string {
@@ -508,9 +508,9 @@ function toStoreForm(s: StoreSettings | undefined): StoreForm {
         markupFixed: microsToDollars(store.domain_markup_fixed_micros),
         billLead: String(store.mailbox_bill_lead_days ?? 5),
         minCard: microsToDollars(store.min_card_charge_micros ?? 10_000_000),
-        linkedinSeat: microsToDollars(store.linkedin_seat_monthly_micros ?? 49_000_000),
-        linkedinAgency: microsToDollars(store.linkedin_seat_agency_micros ?? 32_000_000),
-        linkedinAgencyPro: microsToDollars(store.linkedin_seat_agency_pro_micros ?? 19_000_000),
+        socialSeat: microsToDollars(store.social_seat_monthly_micros ?? 49_000_000),
+        socialAgency: microsToDollars(store.social_seat_agency_micros ?? 32_000_000),
+        socialAgencyPro: microsToDollars(store.social_seat_agency_pro_micros ?? 19_000_000),
     };
 }
 
@@ -527,9 +527,9 @@ function storeFormValid(f: StoreForm): boolean {
         syncFieldValid(f.billLead, STORE_LEAD_MIN, STORE_LEAD_MAX) &&
         dollarsValid(f.minCard, STORE_USD_MAX) &&
         Number(f.minCard) >= STORE_MIN_CARD_FLOOR &&
-        dollarsValid(f.linkedinSeat, LINKEDIN_USD_MAX) &&
-        dollarsValid(f.linkedinAgency, LINKEDIN_USD_MAX) &&
-        dollarsValid(f.linkedinAgencyPro, LINKEDIN_USD_MAX)
+        dollarsValid(f.socialSeat, SOCIAL_USD_MAX) &&
+        dollarsValid(f.socialAgency, SOCIAL_USD_MAX) &&
+        dollarsValid(f.socialAgencyPro, SOCIAL_USD_MAX)
     );
 }
 
@@ -854,9 +854,9 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 domain_markup_fixed_micros: dollarsToMicros(form.store.markupFixed),
                 mailbox_bill_lead_days: Number(form.store.billLead),
                 min_card_charge_micros: dollarsToMicros(form.store.minCard),
-                linkedin_seat_monthly_micros: dollarsToMicros(form.store.linkedinSeat),
-                linkedin_seat_agency_micros: dollarsToMicros(form.store.linkedinAgency),
-                linkedin_seat_agency_pro_micros: dollarsToMicros(form.store.linkedinAgencyPro),
+                social_seat_monthly_micros: dollarsToMicros(form.store.socialSeat),
+                social_seat_agency_micros: dollarsToMicros(form.store.socialAgency),
+                social_seat_agency_pro_micros: dollarsToMicros(form.store.socialAgencyPro),
             },
         });
     }
@@ -1342,7 +1342,7 @@ function StorePricingGroup({
             description={
                 <>
                     What a workspace pays for the domains and mailboxes it buys under Buy mailboxes,
-                    and for each LinkedIn account it connects, charged from its balance. Only used when the store is configured with{" "}
+                    and for each social account (LinkedIn, Instagram, WhatsApp, Telegram or Facebook) it connects, charged from its balance. Only used when the store is configured with{" "}
                     <code className="font-mono text-[12px]">GRAPHKIT_API_KEY</code>. A change applies
                     to quotes made after it; a mailbox already bought keeps the monthly price it was
                     bought at. A self-hosted instance with billing off charges workspaces nothing and
@@ -1362,36 +1362,36 @@ function StorePricingGroup({
                 inputMode="decimal"
             />
             <NumberRow
-                id="store-linkedin-seat"
-                label="LinkedIn account price ($ per month)"
-                help="What one connected LinkedIn account costs each month on every plan except the agency plans. A workspace that links its own GraphKit workspace pays GraphKit instead and nothing here."
-                range={`Between $0 and $${LINKEDIN_USD_MAX}.`}
-                value={store.linkedinSeat}
-                onChange={(v) => onChange({ ...store, linkedinSeat: v })}
-                valid={dollarsValid(store.linkedinSeat, LINKEDIN_USD_MAX)}
-                error={`Enter a dollar amount between 0 and ${LINKEDIN_USD_MAX}.`}
+                id="store-social-seat"
+                label="Social account price ($ per month)"
+                help="What one connected social account costs each month, on any channel and every plan except the agency plans. A workspace that links its own GraphKit workspace pays GraphKit instead and nothing here."
+                range={`Between $0 and $${SOCIAL_USD_MAX}.`}
+                value={store.socialSeat}
+                onChange={(v) => onChange({ ...store, socialSeat: v })}
+                valid={dollarsValid(store.socialSeat, SOCIAL_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${SOCIAL_USD_MAX}.`}
                 inputMode="decimal"
             />
             <NumberRow
-                id="store-linkedin-agency"
-                label="LinkedIn account price on Agency ($ per month)"
+                id="store-social-agency"
+                label="Social account price on Agency ($ per month)"
                 help="The same price for workspaces on the Agency plan, and the client workspaces of an Agency."
-                range={`Between $0 and $${LINKEDIN_USD_MAX}.`}
-                value={store.linkedinAgency}
-                onChange={(v) => onChange({ ...store, linkedinAgency: v })}
-                valid={dollarsValid(store.linkedinAgency, LINKEDIN_USD_MAX)}
-                error={`Enter a dollar amount between 0 and ${LINKEDIN_USD_MAX}.`}
+                range={`Between $0 and $${SOCIAL_USD_MAX}.`}
+                value={store.socialAgency}
+                onChange={(v) => onChange({ ...store, socialAgency: v })}
+                valid={dollarsValid(store.socialAgency, SOCIAL_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${SOCIAL_USD_MAX}.`}
                 inputMode="decimal"
             />
             <NumberRow
-                id="store-linkedin-agency-pro"
-                label="LinkedIn account price on Agency Pro ($ per month)"
+                id="store-social-agency-pro"
+                label="Social account price on Agency Pro ($ per month)"
                 help="The same price for workspaces on the Agency Pro plan, and the client workspaces of an Agency Pro."
-                range={`Between $0 and $${LINKEDIN_USD_MAX}.`}
-                value={store.linkedinAgencyPro}
-                onChange={(v) => onChange({ ...store, linkedinAgencyPro: v })}
-                valid={dollarsValid(store.linkedinAgencyPro, LINKEDIN_USD_MAX)}
-                error={`Enter a dollar amount between 0 and ${LINKEDIN_USD_MAX}.`}
+                range={`Between $0 and $${SOCIAL_USD_MAX}.`}
+                value={store.socialAgencyPro}
+                onChange={(v) => onChange({ ...store, socialAgencyPro: v })}
+                valid={dollarsValid(store.socialAgencyPro, SOCIAL_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${SOCIAL_USD_MAX}.`}
                 inputMode="decimal"
             />
             <NumberRow

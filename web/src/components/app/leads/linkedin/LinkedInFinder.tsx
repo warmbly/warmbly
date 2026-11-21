@@ -5,12 +5,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import { BookmarkIcon, CheckIcon, ChevronDownIcon, ClipboardPasteIcon, InfoIcon, Loader2Icon, LockIcon, MapPinnedIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, SearchIcon, SlidersHorizontalIcon, SparklesIcon, TextQuoteIcon, UserPlusIcon, UsersIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import toast from "react-hot-toast/headless";
-import LinkedInMark from "@/components/app/linkedin/LinkedInMark";
+import ChannelMark from "@/components/app/social/ChannelMark";
+import { SocialSetupLink } from "@/components/app/social/SocialSetup";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuLabel, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import { usePermission } from "@/hooks/usePermission";
-import { finderSearchQuery, useFinderCatalog, useFinderSearch, useLinkedInAccounts, useLinkedInStatus } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
-import type { FinderCatalog, FinderHit, FinderQuery, FinderSource, SavedSearch, SearchPage } from "@/lib/api/models/app/linkedin/LinkedIn";
-import { linkedInErrorCode, linkedInErrorMessage } from "@/lib/linkedin/errors";
+import { finderSearchQuery, useFinderCatalog, useFinderSearch, useSocialAccounts, useSocialStatus } from "@/lib/api/hooks/app/social/useSocial";
+import type { FinderCatalog, FinderHit, FinderQuery, FinderSource, SavedSearch, SearchPage } from "@/lib/api/models/app/social/Social";
+import { socialErrorCode, socialErrorMessage } from "@/lib/social/errors";
 import { cn } from "@/lib/utils";
 import { AiBox, AiReview, useFinderAi } from "./Ai";
 import { ImportDialog, PasteUrlDialog, SavedSearchesMenu, SaveSearchDialog, type ImportTarget } from "./Dialogs";
@@ -125,8 +126,8 @@ const flatHits = (pages: SearchPage[] | undefined): FinderHit[] => pages?.flatMa
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export default function LinkedInFinder({ onExit }: { onExit: () => void }) {
-    const status = useLinkedInStatus();
-    const accounts = useLinkedInAccounts();
+    const status = useSocialStatus();
+    const accounts = useSocialAccounts();
     const header = <FinderHeader onExit={onExit} />;
     if (status.isPending || (status.data?.available && accounts.isPending)) {
         return (
@@ -140,7 +141,7 @@ export default function LinkedInFinder({ onExit }: { onExit: () => void }) {
     if (status.isError || accounts.isError) {
         return (
             <Shell header={header}>
-                <Gate icon={<InfoIcon className="size-4" />} title="LinkedIn did not load" body={linkedInErrorMessage(status.error ?? accounts.error)} />
+                <Gate icon={<InfoIcon className="size-4" />} title="LinkedIn did not load" body={socialErrorMessage(status.error ?? accounts.error)} />
             </Shell>
         );
     }
@@ -151,7 +152,7 @@ export default function LinkedInFinder({ onExit }: { onExit: () => void }) {
             </Shell>
         );
     }
-    const list = (accounts.data?.data ?? []).filter((a) => a.status !== "removed");
+    const list = (accounts.data?.data ?? []).filter((a) => a.status !== "removed" && a.channel === "linkedin");
     if (list.length === 0) {
         return (
             <Shell header={header}>
@@ -160,9 +161,12 @@ export default function LinkedInFinder({ onExit }: { onExit: () => void }) {
                     title="Connect a LinkedIn account to search"
                     body="The LinkedIn finder searches LinkedIn, Sales Navigator and Recruiter with one of your connected accounts and its licence. Every search uses that account's daily search budget."
                     action={
-                        <Link to="/app/linkedin" className="h-7 px-3 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 hover:bg-sky-700">
-                            <LinkedInMark className="size-3.5" /> Connect LinkedIn
-                        </Link>
+                        <SocialSetupLink
+                            channel="linkedin"
+                            className="h-7 px-3 rounded-md bg-sky-600 text-white hover:text-white text-[12px] font-medium inline-flex items-center gap-1.5 hover:bg-sky-700 hover:no-underline"
+                        >
+                            <ChannelMark channel="linkedin" className="size-3.5" /> Connect LinkedIn
+                        </SocialSetupLink>
                     }
                 />
             </Shell>
@@ -202,7 +206,7 @@ function FinderHeader({ onExit, actions }: { onExit: () => void; actions?: React
             <PopoverMenu>
                 <PopoverMenuTrigger asChild>
                     <button type="button" className="h-6 px-1.5 rounded-md inline-flex items-center gap-1.5 text-[12px] text-slate-700 hover:bg-slate-100" aria-label="Lead source">
-                        <LinkedInMark className="size-3.5" />
+                        <ChannelMark channel="linkedin" className="size-3.5" />
                         LinkedIn
                         <ChevronDownIcon className="size-3 text-slate-400" />
                     </button>
@@ -212,7 +216,7 @@ function FinderHeader({ onExit, actions }: { onExit: () => void; actions?: React
                     <PopoverMenuItem icon={<MapPinnedIcon className="size-3.5" />} onSelect={onExit} description="Places on a map, with their people and emails">
                         Businesses
                     </PopoverMenuItem>
-                    <PopoverMenuItem icon={<LinkedInMark className="size-3.5" />} selected trailing={<CheckIcon className="size-3.5 text-sky-600" />} description="People and companies on LinkedIn">
+                    <PopoverMenuItem icon={<ChannelMark channel="linkedin" className="size-3.5" />} selected trailing={<CheckIcon className="size-3.5 text-sky-600" />} description="People and companies on LinkedIn">
                         LinkedIn
                     </PopoverMenuItem>
                 </PopoverMenuContent>
@@ -226,7 +230,7 @@ function FinderBody({ onExit }: { onExit: () => void }) {
     const qc = useQueryClient();
     const canWrite = usePermission("MANAGE_CONTACTS");
     const catalogs = useFinderCatalog();
-    const rawAccounts = useLinkedInAccounts();
+    const rawAccounts = useSocialAccounts();
     const accounts = useMemo(() => toFinderAccounts(rawAccounts.data?.data), [rawAccounts.data]);
     const [prefs] = useState(readPrefs);
     const [state, dispatch] = useReducer(finderReducer, undefined, () => initialState(accounts?.some((a) => a.sources.includes("sales_navigator_leads")) ? "sales_navigator_leads" : "classic_people"));
@@ -329,7 +333,7 @@ function FinderBody({ onExit }: { onExit: () => void }) {
     }, [pages?.length, qc]);
 
     // A busy account answers again in a few seconds; a stale cursor means the search starts over.
-    const errCode = results.error ? linkedInErrorCode(results.error) : undefined;
+    const errCode = results.error ? socialErrorCode(results.error) : undefined;
     const fetchNextPage = results.fetchNextPage;
     const refetch = results.refetch;
     const nextFailed = results.isFetchNextPageError;
@@ -457,7 +461,7 @@ function FinderBody({ onExit }: { onExit: () => void }) {
     const filters = catalog ? (
         <FilterGrid accountId={canUse ? accountId : ""} catalog={catalog} state={state} dispatch={dispatch} viewFilters={viewFilters} onViewFilters={setViewFilters} onClearAll={clearAll} hidden={hidden} />
     ) : catalogs.isError ? (
-        <p className="px-3 py-4 text-[12px] text-red-600">{linkedInErrorMessage(catalogs.error)}</p>
+        <p className="px-3 py-4 text-[12px] text-red-600">{socialErrorMessage(catalogs.error)}</p>
     ) : (
         <div className="grid gap-3 px-3 pt-4">
             {Array.from({ length: 8 }, (_, i) => (
@@ -840,17 +844,17 @@ function Empty({ icon, title, body, action }: { icon: ReactNode; title: string; 
 }
 
 function SearchError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-    const code = linkedInErrorCode(error);
+    const code = socialErrorCode(error);
     const limit = code === "search_limit_reached";
     const busy = code === "search_busy";
     return (
         <Empty
             icon={limit ? <InfoIcon className="size-4" /> : busy ? <Loader2Icon className="size-4 animate-spin" /> : <XIcon className="size-4" />}
             title={limit ? "Today's search budget is used" : code === "licence_required" ? "No account can run this search" : busy ? "The account is busy, trying again" : "The search did not run"}
-            body={linkedInErrorMessage(error)}
+            body={socialErrorMessage(error)}
             action={
                 limit ? (
-                    <Link to="/app/linkedin" className="h-7 px-3 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center">
+                    <Link to="/app/settings/social" className="h-7 px-3 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center">
                         Account limits
                     </Link>
                 ) : code === "licence_required" || busy ? undefined : (
@@ -877,7 +881,7 @@ function LockedSource({ source }: { source: FinderSource }) {
                       : `None of your LinkedIn accounts is active. Searching needs ${sourceNeed(source)}.`
             }
             action={
-                <Link to="/app/linkedin" className="h-7 px-3 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center">
+                <Link to="/app/settings/social" className="h-7 px-3 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center">
                     Open LinkedIn accounts
                 </Link>
             }

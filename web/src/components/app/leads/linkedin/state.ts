@@ -1,6 +1,6 @@
 // LinkedIn finder state, kept pure: the query being built, the selection, the end of the result list and formatting.
-import type { AiChange, FinderCatalog, FinderFilter, FinderHit, FinderQuery, FinderSource, FinderUsage, FinderValue, LinkedInAccount, SearchPage } from "@/lib/api/models/app/linkedin/LinkedIn";
-import { usageFor } from "@/components/app/linkedin/parts";
+import type { AiChange, FinderCatalog, FinderFilter, FinderHit, FinderQuery, FinderSource, FinderUsage, FinderValue, SocialAccount, SearchPage } from "@/lib/api/models/app/social/Social";
+import { usageFor } from "@/components/app/social/parts";
 
 export type FiltersState = Record<string, FinderValue[]>;
 
@@ -233,7 +233,7 @@ export interface FinderAccount {
 }
 
 /** The sources an account's licences can search: LinkedIn people for any, plus Sales Navigator and Recruiter. */
-export function accountSources(a: LinkedInAccount): FinderSource[] {
+export function accountSources(a: SocialAccount): FinderSource[] {
     const out: FinderSource[] = [];
     if (a.licences.includes("sales_navigator")) out.push("sales_navigator_leads", "sales_navigator_accounts");
     out.push("classic_people");
@@ -241,9 +241,9 @@ export function accountSources(a: LinkedInAccount): FinderSource[] {
     return out;
 }
 
-export function toFinderAccounts(accounts: LinkedInAccount[] | undefined): FinderAccount[] | undefined {
+export function toFinderAccounts(accounts: SocialAccount[] | undefined): FinderAccount[] | undefined {
     return accounts
-        ?.filter((a) => a.status !== "removed")
+        ?.filter((a) => a.status !== "removed" && a.channel === "linkedin")
         .map((a) => {
             const u = usageFor(a, "search");
             return { id: a.id, display_name: a.display_name, avatar_url: a.avatar_url, status: a.status, licences: a.licences, sources: accountSources(a), usage: { used: u.today, limit: u.daily_limit } };

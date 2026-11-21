@@ -558,20 +558,24 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 			))
 		}
 	}
-	linkedInSteps := 0
+	socialChannels := map[string]bool{}
 	for i, seq := range seqs {
 		if seq.Kind != "action" {
 			continue
 		}
 		var cfg models.ActionConfig
 		_ = json.Unmarshal(seq.Action, &cfg)
-		if !models.IsLinkedInAction(cfg.Type) {
+		if cfg.Type != models.ActionSocial {
 			continue
 		}
-		linkedInSteps++
-		if (cfg.Type == models.ActionLinkedInMessage || cfg.Type == models.ActionLinkedInInMail) && strings.TrimSpace(cfg.Body) == "" {
-			return errx.NewWithIdentifier(errx.BadRequest, "empty_step_body", fmt.Sprintf(
-				"Step %d has no message, so it would send a blank LinkedIn message. Write the message before starting.", i+1))
+		if cfg.Social == nil || !models.IsSocialChannel(cfg.Social.Channel) {
+			return errx.NewWithIdentifier(errx.BadRequest, "social_step_incomplete", fmt.Sprintf(
+				"Step %d is a social step with no channel or action picked. Set it up before starting.", i+1))
+		}
+		socialChannels[cfg.Social.Channel] = true
+		if why := cfg.Social.Incomplete(); why != "" {
+			return errx.NewWithIdentifier(errx.BadRequest, "social_step_incomplete", fmt.Sprintf(
+				"Step %d, a %s step, %s. Finish it before starting.", i+1, models.SocialChannelLabel(cfg.Social.Channel), why))
 		}
 	}
 
@@ -626,15 +630,19 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 			Message:    "Campaign started",
 		})
 	}
-	// A warning, not a refusal: a lead without a profile skips the LinkedIn steps and keeps the rest.
-	if linkedInSteps > 0 && s.campaignLogRepo != nil {
-		if n, cerr := s.campaignRepository.CountLeadsWithoutLinkedIn(ctx, cID); cerr == nil && n > 0 {
-			s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
-				CampaignID: cID,
-				EventType:  "linkedin_missing_profiles",
-				Message:    fmt.Sprintf("%d lead(s) have no LinkedIn profile, so their LinkedIn steps will be skipped", n),
-				Metadata:   map[string]interface{}{"count": n},
-			})
+	// A warning, not a refusal: a lead with no handle on a channel passes over (or stops at) that channel's steps.
+	if len(socialChannels) > 0 && s.campaignLogRepo != nil {
+		if counts, cerr := s.campaignRepository.CountLeadsWithoutSocial(ctx, cID); cerr == nil {
+			for _, ch := range models.SocialChannels {
+				if n := counts[ch]; socialChannels[ch] && n > 0 {
+					s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+						CampaignID: cID,
+						EventType:  "social_missing_handles",
+						Message:    fmt.Sprintf("%d lead(s) have no %s handle, so their %s steps will not reach them", n, models.SocialChannelLabel(ch), models.SocialChannelLabel(ch)),
+						Metadata:   map[string]interface{}{"count": n, "channel": ch},
+					})
+				}
+			}
 		}
 	}
 

@@ -19,11 +19,11 @@ import {
     useParseFinderUrl,
     usePatchSavedSearch,
     useSavedSearches,
-} from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+} from "@/lib/api/hooks/app/social/useSocial";
 import { useLeadFinderConfig } from "@/lib/api/hooks/app/leads/useLeads";
-import type { FinderQuery, ImportResult, ParsedUrl, SavedSearch } from "@/lib/api/models/app/linkedin/LinkedIn";
+import type { FinderQuery, ImportResult, ParsedUrl, SavedSearch } from "@/lib/api/models/app/social/Social";
 import { fmtUsdCost } from "@/lib/money";
-import { linkedInErrorMessage } from "@/lib/linkedin/errors";
+import { socialErrorMessage } from "@/lib/social/errors";
 import { cn } from "@/lib/utils";
 import { SOURCE_LABELS } from "./state";
 
@@ -86,7 +86,7 @@ export function ImportDialog({ open, onClose, target, suggestedSegment, onDone }
             const n = res.created + res.updated;
             if (n > 0) toast.success(`${n.toLocaleString()} contact${n === 1 ? "" : "s"} added`);
         } catch (e) {
-            toast.error(linkedInErrorMessage(e));
+            toast.error(socialErrorMessage(e));
         }
     };
     return (
@@ -352,7 +352,7 @@ export function PasteUrlDialog({ open, onClose, onLoad }: { open: boolean; onClo
                     aria-label="LinkedIn search URL"
                     className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 font-mono text-[12px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 placeholder:text-slate-400"
                 />
-                {parse.isError && <p className="text-[12px] text-red-600">{linkedInErrorMessage(parse.error)}</p>}
+                {parse.isError && <p className="text-[12px] text-red-600">{socialErrorMessage(parse.error)}</p>}
                 {parsed && (
                     <div className="grid gap-1.5 rounded-md border border-slate-200 bg-slate-50/60 p-3 text-[12px]">
                         <p className="flex items-center gap-1.5 font-medium text-slate-900">

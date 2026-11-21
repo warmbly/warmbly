@@ -1,5 +1,5 @@
 // A search in plain words, deterministic (no AI): "VPs and Directors at 11-200-person companies in Germany who changed jobs".
-import type { FinderCatalog, FinderQuery, FinderValue } from "@/lib/api/models/app/linkedin/LinkedIn";
+import type { FinderCatalog, FinderQuery, FinderValue } from "@/lib/api/models/app/social/Social";
 import { filtersByKey } from "./state";
 
 const SENIORITY_PLURAL: Record<string, string> = {

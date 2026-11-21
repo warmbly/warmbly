@@ -13,7 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/graphkit"
 )
 
-// Social is the LinkedIn add-on: it shares the store's GraphKit connection,
+// Social is the social add-on: it shares the store's GraphKit connection,
 // receives its social.* webhooks, and has its seats collected in the
 // workspace's mailbox billing run, in the same charge.
 type Social interface {
@@ -44,7 +44,7 @@ type Social interface {
 	SeatsDue(ctx context.Context, orgID uuid.UUID, dueBefore time.Time) (SeatBatch, error)
 }
 
-// SeatBatch is a set of LinkedIn seats in one charge.
+// SeatBatch is a set of social seats in one charge.
 type SeatBatch struct {
 	Count  int
 	Micros int64
@@ -52,7 +52,7 @@ type SeatBatch struct {
 	Reason string
 }
 
-// WireSocial attaches the LinkedIn add-on, built after the store.
+// WireSocial attaches the social add-on, built after the store.
 func (s *Service) WireSocial(sc Social) {
 	if s == nil {
 		return
@@ -110,7 +110,7 @@ func (s *Service) NotifyBilling(ctx context.Context, orgID uuid.UUID, title, bod
 	s.notify(ctx, orgID, title, body, link, group)
 }
 
-// Upstream maps a GraphKit refusal no LinkedIn code covers to the store's own, logging the cause.
+// Upstream maps a GraphKit refusal no social code covers to the store's own, logging the cause.
 func (s *Service) Upstream(ctx context.Context, op string, err error) *errx.Error {
 	return s.upstream(ctx, op, err)
 }
@@ -190,7 +190,7 @@ func (s *Service) firstSeatAt(ctx context.Context, orgID uuid.UUID) *time.Time {
 	}
 	t, err := sc.FirstSeatAt(ctx, orgID)
 	if err != nil {
-		log.Warn().Err(err).Str("org_id", orgID.String()).Msg("store: reading the first LinkedIn seat failed")
+		log.Warn().Err(err).Str("org_id", orgID.String()).Msg("store: reading the first social seat failed")
 		return nil
 	}
 	return t

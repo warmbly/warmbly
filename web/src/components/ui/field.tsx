@@ -31,6 +31,7 @@ export function TextInput({
     invalid,
     title,
     maxLength,
+    "aria-label": ariaLabel,
 }: {
     value: string;
     // Names the field for a <Label htmlFor>.
@@ -55,10 +56,13 @@ export function TextInput({
     // Caps the value in the field itself, for the cases where the server has a
     // hard limit and silently truncating or failing the save would be worse.
     maxLength?: number;
+    // Names a field that has no visible <Label>.
+    "aria-label"?: string;
 }) {
     return (
         <input
             id={id}
+            aria-label={ariaLabel}
             type={type}
             value={value}
             placeholder={placeholder}

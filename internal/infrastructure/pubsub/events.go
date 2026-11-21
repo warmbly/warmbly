@@ -151,13 +151,13 @@ const (
 	EventStoreOrderUpdated   EventType = "STORE_ORDER_UPDATED"
 	EventStoreDomainUpdated  EventType = "STORE_DOMAIN_UPDATED"
 	EventStoreMailboxUpdated EventType = "STORE_MAILBOX_UPDATED"
-	// LinkedIn add-on.
-	EventLinkedInAccountUpdated    EventType = "LINKEDIN_ACCOUNT_UPDATED"
-	EventLinkedInConnectionUpdated EventType = "LINKEDIN_CONNECTION_UPDATED"
-	EventLinkedInMessage           EventType = "LINKEDIN_MESSAGE"
-	EventLinkedInLinkUpdated       EventType = "LINKEDIN_LINK_UPDATED"
-	EventLinkedInImportUpdated     EventType = "LINKEDIN_IMPORT_UPDATED"
-	EventLinkedInActionUpdated     EventType = "LINKEDIN_ACTION_UPDATED"
+	// Social add-on.
+	EventSocialAccountUpdated    EventType = "SOCIAL_ACCOUNT_UPDATED"
+	EventSocialConnectionUpdated EventType = "SOCIAL_CONNECTION_UPDATED"
+	EventSocialMessage           EventType = "SOCIAL_MESSAGE"
+	EventSocialLinkUpdated       EventType = "SOCIAL_LINK_UPDATED"
+	EventSocialImportUpdated     EventType = "SOCIAL_IMPORT_UPDATED"
+	EventSocialActionUpdated     EventType = "SOCIAL_ACTION_UPDATED"
 )
 
 // BaseEvent contains common fields for all events
@@ -1311,11 +1311,12 @@ func (p *StreamingPublisher) PublishStoreEvent(ctx context.Context, orgID uuid.U
 	_ = p.publish(ctx, TopicUserEvents, &ev, attrs)
 }
 
-// LinkedInEvent says a LinkedIn account, connect session, link or conversation
-// changed. Ids and status only; the dashboard refetches what it shows.
-type LinkedInEvent struct {
+// SocialEvent says a social account, connect session, link, conversation or
+// step changed. Ids and status only; the dashboard refetches what it shows.
+type SocialEvent struct {
 	BaseEvent
 	OrgID          string `json:"org_id"`
+	Channel        string `json:"channel,omitempty"`
 	AccountID      string `json:"account_id,omitempty"`
 	SessionID      string `json:"session_id,omitempty"`
 	ConversationID string `json:"conversation_id,omitempty"`
@@ -1327,8 +1328,8 @@ type LinkedInEvent struct {
 	ActionType     string `json:"action_type,omitempty"`
 }
 
-// PublishLinkedInEvent emits one LINKEDIN_* event to the workspace. Best-effort.
-func (p *StreamingPublisher) PublishLinkedInEvent(ctx context.Context, orgID uuid.UUID, ev LinkedInEvent) {
+// PublishSocialEvent emits one SOCIAL_* event to the workspace. Best-effort.
+func (p *StreamingPublisher) PublishSocialEvent(ctx context.Context, orgID uuid.UUID, ev SocialEvent) {
 	if p == nil || p.client == nil || orgID == uuid.Nil {
 		return
 	}

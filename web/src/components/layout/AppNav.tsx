@@ -36,7 +36,6 @@ import {
     PanelLeftOpenIcon,
     XIcon,
     ZapIcon,
-    BriefcaseBusinessIcon,
 } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -172,7 +171,6 @@ const sections: NavSection[] = [
         label: "Email",
         items: [
             { title: "Accounts", url: "/app/emails", icon: MailIcon, indicator: "accounts", advisorSurface: "emails", permission: "MANAGE_EMAILS", permissionLabel: "Manage mailboxes" },
-            { title: "LinkedIn", url: "/app/linkedin", icon: BriefcaseBusinessIcon, permission: "MANAGE_EMAILS", permissionLabel: "Manage mailboxes" },
             { title: "Campaigns", scoped: true, requires: "subscription", url: "/app/campaigns", icon: MegaphoneIcon, indicator: "campaigns", advisorSurface: "campaigns", permission: "VIEW_CAMPAIGNS", permissionLabel: "View campaigns" },
             { title: "Contacts", requires: "subscription", url: "/app/contacts", icon: UsersIcon, indicator: "contacts", advisorSurface: "contacts", permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
             { title: "Lead finder", requires: "subscription", url: "/app/leads", icon: MapPinnedIcon, permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },

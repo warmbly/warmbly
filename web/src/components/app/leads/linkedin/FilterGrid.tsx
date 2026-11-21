@@ -5,7 +5,7 @@ import { Toggle } from "@/components/app/campaigns/preferences/components/Campai
 import { NumberInput, SearchInput } from "@/components/ui/field";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import ScrollStrip from "@/components/ui/scroll-strip";
-import type { FinderCatalog, FinderFilter, FinderSource, FinderValue } from "@/lib/api/models/app/linkedin/LinkedIn";
+import type { FinderCatalog, FinderFilter, FinderSource, FinderValue } from "@/lib/api/models/app/social/Social";
 import { cn } from "@/lib/utils";
 import { Chips, Options, RangeValue, TextValue, Typeahead, ValueChip } from "./FilterEditors";
 import { readPrefs, writePrefs } from "./prefs";
