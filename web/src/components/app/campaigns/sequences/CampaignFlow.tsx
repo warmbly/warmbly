@@ -73,7 +73,9 @@ import {
     reachableSteps,
     routePort,
 } from "./campaignGraph";
-import { entryView, pickerItems, stepIssue, stepView } from "./campaignSteps";
+import { LINKEDIN_FLOW_KEY, entryView, pickerItems, stepIssue, stepView } from "./campaignSteps";
+import { useLinkedInStatus } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+import { isLinkedInAction } from "@/lib/api/models/app/campaigns/sequences/Action";
 
 const MAX_STEPS = 50;
 const MAX_WAIT_DAYS = 60;
@@ -107,6 +109,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // A restricted member edits emails, waits and paths; steps that act outside the campaign stay as set.
     const restricted = useAccessRestricted();
     const canEditStep = (s: Sequence) => canEdit && (!restricted || s.kind !== "action" || SCOPE_STEP_ACTIONS.has(s.action?.type ?? ""));
+    const linkedInStatus = useLinkedInStatus();
+    const linkedIn = !!linkedInStatus.data?.available || steps.some((s) => isLinkedInAction(s.action?.type ?? ""));
 
     const [selection, setSelection] = React.useState<Selection>(null);
     const [picker, setPicker] = React.useState<{ at: InsertPoint; anchor: DOMRect } | null>(null);
@@ -313,6 +317,19 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 if (from) await saveBranches(from.id, routePort(from, at.port, item.key.slice("goto:".length)));
                 return;
             }
+            if (item.key === LINKEDIN_FLOW_KEY) {
+                // Built leaves first, so every step is wired before anything points at it.
+                const message = await createStep("linkedin_message", []);
+                const email = await createStep("email", []);
+                const router = await createStep("router", [
+                    { branch_id: newBranchId(), target_step_id: message, conditions: [{ field: "linkedin_connected", operator: "within_days", value: 7 }] },
+                    { branch_id: newBranchId(), target_step_id: email, conditions: [] },
+                ]);
+                const invite = await createStep("linkedin_invite", [{ branch_id: newBranchId(), target_step_id: router, conditions: [] }]);
+                if (from) await saveBranches(from.id, routePort(from, at.port, invite));
+                setSelection({ kind: "step", id: invite });
+                return;
+            }
             if (item.key === "condition" || item.key === "reply") {
                 // A new condition is a draft until it is saved in the path panel, so
                 // nothing routes on a default the user never chose.
@@ -478,6 +495,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         ? pickerItems({
               atEnd: pickerAtEnd && picker.at.from !== ENTRY_ID,
               full: steps.length >= MAX_STEPS,
+              linkedIn,
+              roomFor: MAX_STEPS - steps.length,
               canCondition: canAttachCondition(picker.at),
               gotoCandidates: pickerAtEnd
                   ? gotoCandidates(steps, picker.at.from)
@@ -488,6 +507,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
           })
               .filter((i) => picker.at.from !== ENTRY_ID || i.key === "email" || i.key.startsWith("action:"))
               .filter((i) => !restricted || !i.key.startsWith("action:") || SCOPE_STEP_ACTIONS.has(i.key.slice("action:".length)))
+              .filter((i) => !restricted || !i.key.startsWith("flow:"))
         : [];
 
     const activeEdge = selection?.kind === "path" ? (layout.edges.find((e) => e.from === selection.stepId && e.port === selection.port)?.key ?? null) : null;

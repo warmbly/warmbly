@@ -41,6 +41,13 @@ var branchConditionFields = map[string]bool{
 	// (campaign_contact_progress.reply_intent). Pairs with "is"; decides
 	// instantly off the stored value, so no model call at schedule time.
 	"reply_intent": true,
+	// LinkedIn signals across the workspace's LinkedIn accounts. Connected and
+	// replied take within_days/ever like opened; invite_pending is the state now.
+	"linkedin_connected":      true,
+	"not_linkedin_connected":  true,
+	"linkedin_replied":        true,
+	"not_linkedin_replied":    true,
+	"linkedin_invite_pending": true,
 }
 
 var branchConditionOperators = map[string]bool{
@@ -201,9 +208,24 @@ func conditionState(cond models.BranchCondition, prog *CampaignContactProgress, 
 		return BranchNoMatch, time.Time{}
 	}
 
+	if cond.Field == "linkedin_invite_pending" {
+		if prog.LinkedInInvitePending && prog.LinkedInConnectedAt == nil {
+			return BranchMatch, time.Time{}
+		}
+		return BranchNoMatch, time.Time{}
+	}
+
 	var ts *time.Time
 	negate := false
 	switch cond.Field {
+	case "linkedin_connected":
+		ts = prog.LinkedInConnectedAt
+	case "not_linkedin_connected":
+		ts, negate = prog.LinkedInConnectedAt, true
+	case "linkedin_replied":
+		ts = prog.LinkedInRepliedAt
+	case "not_linkedin_replied":
+		ts, negate = prog.LinkedInRepliedAt, true
 	case "opened":
 		ts = prog.OpenedAt
 	case "clicked":

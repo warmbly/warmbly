@@ -63,6 +63,7 @@ export function conditionText(b: SequenceBranch): string {
                 if (c.field === "reply_intent") return `intent: ${replyIntentLabel(c.label)}`;
                 const f = BRANCH_FIELD_LABELS[c.field] ?? c.field;
                 if (isReplyBranchField(c.field)) return f;
+                if (c.operator === "ever") return f;
                 return `${f} within ${c.value ?? 3}d`;
             })
             .join(" + "),
@@ -72,7 +73,7 @@ export function conditionText(b: SequenceBranch): string {
 function branchTone(b: SequenceBranch): BranchTone {
     const f = b.conditions?.[0]?.field;
     if (!f) return "no";
-    if (f === "not_opened" || f === "not_clicked" || f === "not_replied") return "no";
+    if (f.startsWith("not_")) return "no";
     if (f === "random" || f === "ai_label" || f === "reply_intent") return "case";
     return "yes";
 }

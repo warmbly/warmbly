@@ -32,7 +32,26 @@ export type BranchField =
     // Automatic inbox tagging stored this intent for the contact's human reply
     // (campaign_contact_progress.reply_intent). Operator is "is"; the intent
     // rides in `label`. Empty when tagging is off or the classifier was unsure.
-    | "reply_intent";
+    | "reply_intent"
+    // LinkedIn signals, read from the contact's LinkedIn state in this campaign.
+    // Operators as the engagement fields: "within_days" with a value, or "ever".
+    | "linkedin_connected"
+    | "not_linkedin_connected"
+    | "linkedin_replied"
+    | "not_linkedin_replied"
+    | "linkedin_invite_pending";
+
+export const LINKEDIN_BRANCH_FIELDS: BranchField[] = [
+    "linkedin_connected",
+    "not_linkedin_connected",
+    "linkedin_replied",
+    "not_linkedin_replied",
+    "linkedin_invite_pending",
+];
+
+export function isLinkedInBranchField(field: string): boolean {
+    return field.startsWith("linkedin_") || field.startsWith("not_linkedin_");
+}
 
 export type BranchOperator = "within_days" | "ever" | "chance" | "is";
 
@@ -113,6 +132,11 @@ export const BRANCH_FIELD_LABELS: Record<BranchField, string> = {
     reply_automated: "auto-reply / out of office",
     ai_label: "AI label is",
     reply_intent: "reply intent is",
+    linkedin_connected: "accepted the LinkedIn invite",
+    not_linkedin_connected: "didn’t accept the LinkedIn invite",
+    linkedin_replied: "replied on LinkedIn",
+    not_linkedin_replied: "didn’t reply on LinkedIn",
+    linkedin_invite_pending: "LinkedIn invite still pending",
 };
 
 // The intents automatic inbox tagging can store for a human reply, as a

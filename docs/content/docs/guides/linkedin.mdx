@@ -1,0 +1,159 @@
+---
+title: LinkedIn
+description: "Connect LinkedIn accounts to Warmbly, search LinkedIn, Sales Navigator and Recruiter for leads, and answer LinkedIn messages from your workspace."
+---
+
+Connect the LinkedIn accounts your team prospects with, search LinkedIn for people to reach, add them to your contacts and campaigns, and read and answer their LinkedIn messages without leaving Warmbly. LinkedIn runs through GraphKit, the same partner that sells [domains and mailboxes](/guides/buy-mailboxes/) in Warmbly.
+
+## Connect an account
+
+<Steps>
+
+<Step>
+
+Open **LinkedIn** and select **Connect account**.
+
+</Step>
+
+<Step>
+
+Read and accept the terms for automating a LinkedIn account. Warmbly records who accepted them and when.
+
+</Step>
+
+<Step>
+
+Check the price and accept the charge. The first month is paid now, from the workspace balance first and your saved card for the rest. See [pricing](#pricing).
+
+</Step>
+
+<Step>
+
+Sign in to the LinkedIn account, with its email or phone and password, or with its `li_at` session cookie. Choose **Recruiter** to connect the account's Recruiter seat instead of Sales Navigator; one connection holds one of them.
+
+</Step>
+
+<Step>
+
+Answer any check LinkedIn asks for: a code sent by text or email, approval in the LinkedIn app, or the Sales Navigator or Recruiter contract to use. A check that waits for the app finishes on its own.
+
+</Step>
+
+</Steps>
+
+The account appears under **LinkedIn**, active, with its licences, limits and usage.
+
+### Sign-in details are never kept
+
+The password, cookie or code you enter goes to GraphKit once, to sign in, and is never stored by Warmbly or written into a request log. A connection lives 20 minutes, takes at most 5 sign-in attempts and 10 answers, and a code can be resent every 30 seconds.
+
+### When a connection does not finish
+
+If the sign-in fails, you cancel it, or it expires, the first month it charged is refunded to the balance in full. Start a new connection to try again.
+
+### Reconnecting
+
+When LinkedIn signs an account out, its status turns to **Reconnect required**. Reconnect it from its row; a reconnect is never charged and keeps the account's settings and history.
+
+## Pricing
+
+Each connected LinkedIn account is $49 a month, $32 on the Agency plan and $19 on Agency Pro. A client workspace of an agency pays its agency's rate. Lead search is included with every account; the AI search builder is charged to your [AI balance](/guides/ai-credits/).
+
+- Connecting an account needs a Warmbly plan, like [buying mailboxes](/guides/buy-mailboxes/). Without one, link your own GraphKit workspace instead (see [use your own GraphKit workspace](#use-your-own-graphkit-workspace)).
+- The first month is charged when you start the connection, the next ones together with your purchased mailboxes, in one charge on the same billing day. Your billing day is set by your first purchased mailbox or first LinkedIn account.
+- Each month is charged at the price your plan has on that day, so a plan change moves the next month's price.
+- Removing an account stops its next charge. The month in progress is not refunded; a month already charged ahead of your billing day that has not started yet is refunded to the balance.
+- Connecting a removed account again starts a new month from the day it connects, charged like a new account. If its paid month has not run out yet, the new charge is refunded and the account runs to the end of that month.
+- Self-hosted instances set these prices in the admin panel; see [configuration](/development/configuration/).
+
+### When a payment fails
+
+If a month cannot be collected, the people who manage billing are told how to fix it and Warmbly tries again every day. The account keeps working until the end of the month it paid for, then pauses. A payment within the following 7 days charges the month and resumes the account; after that the account is removed and has to be connected again. A paused account cannot be resumed by hand while its month is unpaid.
+
+## Use your own GraphKit workspace
+
+If you already run LinkedIn accounts in GraphKit, link that workspace instead. Its accounts appear in Warmbly, your GraphKit plan bills them, and Warmbly charges nothing for them. Linking works on every Warmbly plan, free included.
+
+1. On **LinkedIn**, choose to link a GraphKit workspace.
+2. Sign in to GraphKit, pick a workspace you administer and approve Warmbly.
+3. Back in Warmbly, the accounts in that workspace are listed and you can connect more.
+
+Good to know:
+
+- A workspace with Warmbly-billed accounts has to remove them before it can link one.
+- Connecting another account may need a seat on your GraphKit plan. Warmbly shows what GraphKit will charge before you accept, and sends you to GraphKit's billing page when the plan has no room.
+- Unlinking, here or from GraphKit's connected apps, removes the accounts from Warmbly and leaves them running in GraphKit.
+
+## Account settings
+
+Open an account to set its daily limits for invitations, messages, InMail and profile visits, its weekly invitation limit, the hours and days it works in its time zone, a warm-up that ramps a new account's limits over a few weeks, and how long unanswered invitations wait before they are withdrawn. A limit above what LinkedIn tolerates for the account is refused with the field named.
+
+**Pause** stops an account's actions, **Resume** starts them again, and **Resync** reads its licences and profile from LinkedIn again.
+
+## Search LinkedIn for leads
+
+In the [lead finder](/guides/lead-finder/), choose LinkedIn as the source and search classic LinkedIn people search, Sales Navigator leads and accounts, or Recruiter, with the filters each one offers. Pick the account to search with, or let Warmbly choose one with the right licence.
+
+- Paste a LinkedIn or Sales Navigator search address to start from its filters.
+- Describe who you want in your own words and the AI search builder turns it into filters you can review. Each build is charged to the AI balance at its cost.
+- Every result shows what Warmbly already knows: the contact it matches, the campaigns that contact is in, whether you have messaged them or they replied, and how many of your contacts work at the same company.
+- Each account searches within a daily budget LinkedIn sets; the remaining searches show above the results.
+- Save a search to run it again later. Saved searches belong to the workspace.
+
+### Add results to contacts
+
+Select results and add them to segments, categories and campaigns. A person already in your contacts, matched by their LinkedIn profile, is updated with what LinkedIn shows (or kept as it is with **Skip people who are already contacts**) and joins the segments, categories and campaigns you chose.
+
+A contact needs an email address, and LinkedIn search gives none, so a person who is not yet a contact is counted as skipped. Turn on **Find work emails** to look one up for each of them through the [lead finder](/guides/lead-finder/#find-people-and-emails), at the lead finder's person email price. Only an address that verifies is charged and used; a lookup that finds none, or a contact that cannot be written, is refunded. The import then runs in the background and its progress updates live; people still without an address are counted under no email. Without it, add their address in your contacts, or import them from a list that has it, and the next search matches them.
+
+Results already reached from LinkedIn show it: an invitation pending, connected, messaged or replied.
+
+## LinkedIn on contacts
+
+Contacts carry a LinkedIn profile. Set it on a contact, send `linkedin_url` through the API, or include a column named **LinkedIn**, **LinkedIn URL** or **linkedin_profile** in a CSV import. Warmbly stores it as `https://www.linkedin.com/in/<id>` and refuses a value that names no LinkedIn profile.
+
+## LinkedIn in campaigns
+
+Campaigns can invite, message, send InMail, visit, follow, like a post and withdraw an invitation as steps, and branch on whether a contact connected, replied or has an invitation pending. Pick which accounts run a campaign's LinkedIn steps in its settings; each contact stays on one account. A queued step that has not run yet is cancelled when the contact replies (with **Stop on reply** on), unsubscribes, is suppressed or leaves the campaign, or when the campaign is paused or deleted; one that has not run within 3 days expires unsent. See [LinkedIn steps](/guides/sequences/#linkedin-steps).
+
+LinkedIn steps need every Warmbly backend on the release that added them or a later one. Rolling back past that release makes the older backends move contacts past LinkedIn steps without running them.
+
+A contact's **LinkedIn** tab shows every LinkedIn step run for them, with its campaign and outcome, and their conversations. Campaign analytics add invitations sent and accepted, the acceptance rate, messages, InMails and replies.
+
+## Conversations
+
+Messages your connected accounts send and receive on LinkedIn appear under each account's conversations, matched to the contact when one has that profile, and update live. Reply from Warmbly and the message is sent from that account. Message content is encrypted at rest with your workspace's key.
+
+A reply on LinkedIn from a contact in a campaign counts as their reply: it is classified like an email reply, stops their sequence when **Stop on reply** is on, runs reply branches, and sends the same reply notification and `campaign.reply_received` webhook, with `"channel": "linkedin"`. The [unibox](/guides/unibox/#linkedin) counts unread LinkedIn conversations.
+
+## Who can do what
+
+| Action | Member permission | API permission |
+| --- | --- | --- |
+| See accounts, connections and the status | Manage emails | `READ_LINKEDIN` |
+| Change an account's settings, pause, resume or resync it, sign in and answer checks | Manage emails | `MANAGE_LINKEDIN` |
+| Connect an account, remove one, link or unlink a GraphKit workspace | Manage emails and Manage billing | `MANAGE_LINKEDIN` |
+| Search, build searches with AI, read profiles and saved searches | View contacts | `READ_LINKEDIN` |
+| Save, change and delete saved searches | View contacts | `MANAGE_LINKEDIN` |
+| Add results to contacts | Manage contacts | `MANAGE_LINKEDIN` |
+| Follow an import and see a contact's LinkedIn activity | View contacts | `READ_LINKEDIN` |
+| Pick a campaign's LinkedIn accounts | Manage campaigns | `WRITE_CAMPAIGNS` and `MANAGE_LINKEDIN` |
+| Read conversations and mark them read | Access unibox | `READ_LINKEDIN` |
+| Reply in a conversation | Access unibox | `MANAGE_LINKEDIN` |
+
+Connecting and removing an account also asks for a recent sign-in. See [team roles](/guides/team-roles/) and the [API endpoints](/api/endpoints/).
+
+## Moving a workspace
+
+Saved LinkedIn searches travel in a [workspace archive](/guides/workspace-export-import/). Connected accounts, connections, conversations, the LinkedIn steps campaigns ran and the accounts a campaign uses do not: they belong to the GraphKit connection of the instance that holds them. Connect the accounts again on the new instance and pick each campaign's accounts again; campaigns keep their LinkedIn steps.
+
+## Self-hosted instances
+
+LinkedIn is available when the instance has a GraphKit connection, set in the admin panel or by environment, the same one the [store](/guides/buy-mailboxes/) uses. Without one, the LinkedIn page says it is not set up. An instance that charges nothing for the store charges nothing for LinkedIn accounts either, and the LinkedIn page, the connect wizard and each account show that no seat is charged.
+
+## Related guides
+
+- [Lead finder](/guides/lead-finder/)
+- [Buy mailboxes](/guides/buy-mailboxes/)
+- [Contacts and CRM](/guides/contacts-crm/)
+- [AI credits](/guides/ai-credits/)

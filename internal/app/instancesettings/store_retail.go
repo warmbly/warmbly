@@ -12,6 +12,10 @@ type StoreRetail struct {
 	MailboxBillLeadDays *int `json:"mailbox_bill_lead_days"`
 	// MinCardChargeMicros is the least a store charge puts on the card; the rest stays on the balance.
 	MinCardChargeMicros *int64 `json:"min_card_charge_micros"`
+	// LinkedIn seats a month: every plan but the agency ones, Agency, and Agency Pro.
+	LinkedInSeatMonthlyMicros   *int64 `json:"linkedin_seat_monthly_micros"`
+	LinkedInSeatAgencyMicros    *int64 `json:"linkedin_seat_agency_micros"`
+	LinkedInSeatAgencyProMicros *int64 `json:"linkedin_seat_agency_pro_micros"`
 }
 
 const (
@@ -27,13 +31,19 @@ const (
 	StoreMinCardDefault int64 = 10_000_000
 	StoreMinCardFloor   int64 = 500_000
 	StoreMinCardMax     int64 = 100_000_000
+	// LinkedIn seat prices a month, by plan tier.
+	LinkedInSeatMonthlyDefault   int64 = 49_000_000
+	LinkedInSeatAgencyDefault    int64 = 32_000_000
+	LinkedInSeatAgencyProDefault int64 = 19_000_000
+	LinkedInSeatMax              int64 = 500_000_000
 )
 
 // DefaultStoreRetail sells mailboxes at $3 a month and domains at cost.
 func DefaultStoreRetail() StoreRetail {
 	monthly, pct, fixed, lead, minCard := StoreMailboxMonthlyDefault, 0, int64(0), StoreBillLeadDefault, StoreMinCardDefault
+	seat, agency, agencyPro := LinkedInSeatMonthlyDefault, LinkedInSeatAgencyDefault, LinkedInSeatAgencyProDefault
 	return StoreRetail{MailboxMonthlyMicros: &monthly, DomainMarkupPercent: &pct, DomainMarkupFixedMicros: &fixed, MailboxBillLeadDays: &lead,
-		MinCardChargeMicros: &minCard}
+		MinCardChargeMicros: &minCard, LinkedInSeatMonthlyMicros: &seat, LinkedInSeatAgencyMicros: &agency, LinkedInSeatAgencyProMicros: &agencyPro}
 }
 
 // Normalize clamps every price into its accepted range and fills what is missing.
@@ -53,6 +63,30 @@ func (s *StoreRetail) Normalize() {
 	lead, minCard := s.MailboxBillLead(), s.MinCardCharge()
 	s.MailboxMonthlyMicros, s.DomainMarkupPercent, s.DomainMarkupFixedMicros, s.MailboxBillLeadDays = &monthly, &pct, &fixed, &lead
 	s.MinCardChargeMicros = &minCard
+	seat, agency, agencyPro := s.LinkedInSeatMonthly(), s.LinkedInSeatAgency(), s.LinkedInSeatAgencyPro()
+	s.LinkedInSeatMonthlyMicros, s.LinkedInSeatAgencyMicros, s.LinkedInSeatAgencyProMicros = &seat, &agency, &agencyPro
+}
+
+func seatPrice(v *int64, def int64) int64 {
+	if v == nil {
+		return def
+	}
+	return max(0, min(*v, LinkedInSeatMax))
+}
+
+// LinkedInSeatMonthly is the resolved monthly LinkedIn seat price on every plan but the agency ones.
+func (s StoreRetail) LinkedInSeatMonthly() int64 {
+	return seatPrice(s.LinkedInSeatMonthlyMicros, LinkedInSeatMonthlyDefault)
+}
+
+// LinkedInSeatAgency is the resolved monthly LinkedIn seat price on the Agency plan.
+func (s StoreRetail) LinkedInSeatAgency() int64 {
+	return seatPrice(s.LinkedInSeatAgencyMicros, LinkedInSeatAgencyDefault)
+}
+
+// LinkedInSeatAgencyPro is the resolved monthly LinkedIn seat price on the Agency Pro plan.
+func (s StoreRetail) LinkedInSeatAgencyPro() int64 {
+	return seatPrice(s.LinkedInSeatAgencyProMicros, LinkedInSeatAgencyProDefault)
 }
 
 // MinCardCharge is the resolved least card charge, never under what the card processor accepts.

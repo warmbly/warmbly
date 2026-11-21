@@ -66,6 +66,8 @@ type CampaignRepository interface {
 	StartCampaign(ctx context.Context, campaignID uuid.UUID) error
 	StopCampaign(ctx context.Context, campaignID uuid.UUID) error
 	ValidateCampaignReady(ctx context.Context, campaignID uuid.UUID) error
+	// CountLeadsWithoutLinkedIn is how many of the campaign's leads have no LinkedIn profile.
+	CountLeadsWithoutLinkedIn(ctx context.Context, campaignID uuid.UUID) (int, error)
 	GetPendingCampaignTasks(ctx context.Context, campaignID uuid.UUID) ([]Task, error)
 	// IsPacedSuccessor reports whether a pending wakeup was parked by a tick
 	// that sent, so it is send spacing rather than a deferral recheck.
@@ -1728,6 +1730,30 @@ func (r *campaignRepository) ValidateCampaignReady(ctx context.Context, campaign
 			"campaign has no leads yet; add contacts, or turn on Keep running for new leads to start it empty and send as they arrive")
 	}
 
+	// LinkedIn steps need a LinkedIn account; a campaign of only LinkedIn steps needs no sender pool.
+	var linkedInSteps, emailSteps, linkedInAccounts, orgMailboxes int
+	if err := resultDB(ctx, r.DB).QueryRow(ctx, `
+		SELECT COUNT(*) FILTER (WHERE kind = 'action' AND action->>'type' LIKE 'linkedin\_%'),
+		       COUNT(*) FILTER (WHERE kind = 'email'),
+		       (SELECT COUNT(*) FROM campaign_linkedin_accounts cla JOIN linkedin_accounts a ON a.id = cla.linkedin_account_id
+		         JOIN campaigns ca ON ca.id = cla.campaign_id
+		         WHERE cla.campaign_id = $1 AND a.organization_id = ca.organization_id AND a.removed_at IS NULL),
+		       (SELECT COUNT(*) FROM email_accounts WHERE organization_id = (SELECT organization_id FROM campaigns WHERE id = $1))
+		FROM sequences WHERE campaign_id = $1`, campaignID).Scan(&linkedInSteps, &emailSteps, &linkedInAccounts, &orgMailboxes); err != nil {
+		return err
+	}
+	if linkedInSteps > 0 && linkedInAccounts == 0 {
+		return errx.NewWithIdentifier(errx.BadRequest, "linkedin_accounts_required",
+			"this campaign has LinkedIn steps but no LinkedIn account to run them; pick its LinkedIn accounts first")
+	}
+	if linkedInSteps > 0 && emailSteps == 0 {
+		if orgMailboxes == 0 {
+			return errx.NewWithIdentifier(errx.BadRequest, "linkedin_needs_mailbox",
+				"connect one mailbox to this workspace first; campaigns are scheduled through a mailbox even when they send no email")
+		}
+		return nil
+	}
+
 	// Sender pool (unified): valid if it has any enabled explicit sender OR any
 	// email tag OR — when neither is selected ("all") — at least one active
 	// mailbox in the campaign's organization to fall back to.
@@ -1766,6 +1792,14 @@ func (r *campaignRepository) ValidateCampaignReady(ctx context.Context, campaign
 		return errx.New(errx.BadRequest, "campaign must have at least one active sending mailbox")
 	}
 	return nil
+}
+
+// CountLeadsWithoutLinkedIn implements the interface comment on CampaignRepository.
+func (r *campaignRepository) CountLeadsWithoutLinkedIn(ctx context.Context, campaignID uuid.UUID) (int, error) {
+	var n int
+	err := resultDB(ctx, r.DB).QueryRow(ctx, `SELECT COUNT(*) FROM campaign_leads cl JOIN contacts c ON c.id = cl.contact_id
+		WHERE cl.campaign_id = $1 AND COALESCE(c.linkedin_url, '') = ''`, campaignID).Scan(&n)
+	return n, err
 }
 
 // IsPacedSuccessor implements the interface comment on CampaignRepository. A

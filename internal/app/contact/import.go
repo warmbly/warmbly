@@ -1214,6 +1214,9 @@ func guessTarget(idx int, header string) models.ContactImportColumnMapping {
 		return models.ContactImportColumnMapping{Index: idx, Target: models.ContactImportTargetSubscribed}
 	case "categories", "category", "tags", "tag", "labels", "label":
 		return models.ContactImportColumnMapping{Index: idx, Target: models.ContactImportTargetCategories}
+	case "linkedin", "linkedinurl", "linkedinprofile", "linkedinprofileurl", "personlinkedinurl":
+		// The custom field the contacts.linkedin_url column is derived from.
+		return models.ContactImportColumnMapping{Index: idx, Target: models.ContactImportTargetCustom, CustomKey: models.ContactLinkedInField}
 	}
 	return models.ContactImportColumnMapping{Index: idx, Target: models.ContactImportTargetIgnore}
 }

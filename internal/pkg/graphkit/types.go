@@ -88,6 +88,7 @@ type Pricing struct {
 	Mailboxes []MailboxPrice `json:"mailboxes"`
 	Limits    Limits         `json:"limits"`
 	Sending   *SendingPrices `json:"sending,omitempty"`
+	Social    *SocialPrices  `json:"social,omitempty"`
 }
 
 // MinYears is the shortest registration a TLD takes, 1 when it is not listed.
@@ -598,6 +599,14 @@ const (
 	EventDomainDisconnected = "domain.disconnected"
 	// EventSendingUpdated is GraphKit's own sending service, which the store does not use.
 	EventSendingUpdated = "sending.updated"
+	// Social accounts: the workspace mode, connect sessions, accounts, actions and conversations.
+	EventSocialUpdated            = "social.updated"
+	EventSocialConnectionUpdated  = "social.connection.updated"
+	EventSocialAccountUpdated     = "social.account.updated"
+	EventSocialActionUpdated      = "social.action.updated"
+	EventSocialMessageReceived    = "social.message.received"
+	EventSocialMessageSent        = "social.message.sent"
+	EventSocialInvitationAccepted = "social.invitation.accepted"
 )
 
 // Pagination is the list cursor.

@@ -89,6 +89,8 @@ type API interface {
 	DeleteWebhook(ctx context.Context, key string) error
 	Events(ctx context.Context, after string, limit int) (*Page[Event], error)
 	Balance(ctx context.Context) (*PartnerBalance, error)
+
+	SocialAPI
 }
 
 // Client is the HTTP implementation of API.

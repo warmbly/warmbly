@@ -39,6 +39,7 @@ import { signinMigrationQuery } from "./lib/api/hooks/app/emails/useMailboxGrant
 import { featureStatusQuery } from "./lib/api/hooks/app/subscription/useFeatureStatus";
 import { balanceBurnQuery, balanceQuery } from "./lib/api/hooks/app/subscription/useBalance";
 import { orderQuery, storeDomainsQuery, storeOrdersQuery, storeStatusQuery } from "./lib/api/hooks/app/store/useStore";
+import { linkedInAccountsQuery, linkedInConversationsQuery, linkedInStatusQuery } from "./lib/api/hooks/app/linkedin/useLinkedIn";
 import { creditUsageQuery } from "./lib/api/hooks/app/subscription/useCreditUsage";
 import { creditSettingsQuery } from "./lib/api/hooks/app/subscription/useCreditSettings";
 import { advisorFindingsQuery, advisorSurfaceQuery } from "./lib/api/hooks/app/advisor/useAdvisor";
@@ -184,6 +185,11 @@ export const domainsLoader = pageLoader((qc) => [
     can("MANAGE_EMAILS") && qc.prefetchQuery(sendingDomainsQuery),
     can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery),
     can("MANAGE_EMAILS") && qc.prefetchQuery(storeDomainsQuery),
+]);
+
+export const linkedinLoader = pageLoader((qc) => [
+    can("MANAGE_EMAILS") && qc.prefetchQuery(linkedInStatusQuery),
+    can("MANAGE_EMAILS") && qc.prefetchQuery(linkedInAccountsQuery),
 ]);
 
 export const buyLoader = pageLoader((qc) => [can("MANAGE_EMAILS") && qc.prefetchQuery(storeStatusQuery)]);
@@ -375,6 +381,7 @@ export const clayLoader = pageLoader((qc, { params }) => [!!params.id && qc.pref
 export const leadsLoader = pageLoader((qc) => [
     can("VIEW_CONTACTS") && qc.prefetchQuery(leadFinderConfigQuery),
     can("VIEW_CONTACTS") && qc.prefetchQuery(leadSearchesQuery),
+    can("VIEW_CONTACTS") && qc.prefetchQuery(linkedInStatusQuery),
 ]);
 
 export const auditLoader = pageLoader((qc) => [canManageTeam() && qc.prefetchQuery(auditLogsQuery({ limit: 50 }))]);
@@ -420,10 +427,12 @@ function allMail(base: UniboxSearchParams): [UniboxSearchParams, string] {
 // Cold cache only: opening a thread is a new match, and a stale refetch here would reload every loaded page (#396).
 export const uniboxLoader = pageLoader((qc, { params, search }) => {
     if (!can("ACCESS_UNIBOX")) return [];
-    const first = uniboxFirstSearch(params.scope ?? "inbox", search.ref || undefined);
+    const linkedIn = params.scope === "linkedin";
+    const first = linkedIn ? null : uniboxFirstSearch(params.scope ?? "inbox", search.ref || undefined);
     const list = first ? uniboxSearchQuery(...first) : null;
     return [
         qc.getQueryData(uniboxOverviewQuery.queryKey) === undefined && qc.prefetchQuery(uniboxOverviewQuery),
+        linkedIn && qc.getQueryData(linkedInConversationsQuery().queryKey) === undefined && qc.prefetchInfiniteQuery(linkedInConversationsQuery()),
         !!list && qc.getQueryData(list.queryKey) === undefined && qc.prefetchInfiniteQuery(list),
     ];
 });

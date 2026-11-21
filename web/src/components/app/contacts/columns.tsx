@@ -22,6 +22,7 @@ import { CategoryChip } from "./CategoryPicker";
 import VerificationBadge from "./VerificationBadge";
 import ContactAvatar from "./ContactAvatar";
 import CompanyLogo from "./CompanyLogo";
+import { LinkedInLink } from "@/components/app/linkedin/LinkedInMark";
 import { companyDomainOf } from "@/lib/companyLogo";
 import { Dash, EngagementValue, InfoHeader, LeadStatusPill, StatusPill } from "./cells";
 
@@ -34,6 +35,7 @@ export interface ContactRow {
     email: string;
     company: string;
     phone: string;
+    linkedin_url?: string | null;
     subscribed: boolean;
     campaigns: { id: string }[];
     categories?: { id: string; title: string; color: string }[];
@@ -134,6 +136,7 @@ const nameColumn: ContactColumn = {
                 <div className="flex-1 min-w-0">
                     <div className={`text-[12.5px] font-medium truncate leading-tight flex items-center gap-1.5 ${processed ? "text-slate-400" : "text-slate-900"}`}>
                         <span className="truncate" {...clippedTitle}>{name}</span>
+                        <LinkedInLink url={c.linkedin_url ?? c.custom_fields?.linkedin_url} label={name} className="shrink-0" />
                         {/* One tag, then a count. The Name column is a fixed width
                             now, and two tags sharing it with a name left each of them
                             about three legible characters. The tags take at most 45%

@@ -143,6 +143,8 @@ export default interface Contact {
     email: string;
     company: string;
     phone: string;
+    // The contact's LinkedIn profile; absent from an older backend.
+    linkedin_url?: string | null;
 
     custom_fields: Record<string, string>;
 

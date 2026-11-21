@@ -4,6 +4,7 @@ export default interface AddContact {
     email: string;
     company: string;
     phone: string;
+    linkedin_url?: string;
     campaigns: string[];
     categories?: string[];
 

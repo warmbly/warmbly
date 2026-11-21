@@ -66,10 +66,14 @@ const (
 	AuditEntityStoreOrder   AuditEntityType = "store_order"
 	AuditEntityStoreDomain  AuditEntityType = "store_domain"
 	AuditEntityStoreMailbox AuditEntityType = "store_mailbox"
-	AuditEntityAPIKey       AuditEntityType = "api_key"
-	AuditEntitySequence     AuditEntityType = "step"
-	AuditEntityUser         AuditEntityType = "user"
-	AuditEntityOrganization AuditEntityType = "organization"
+	// LinkedIn add-on: a connected account, the link to a GraphKit workspace, a saved lead search.
+	AuditEntityLinkedInAccount     AuditEntityType = "linkedin_account"
+	AuditEntityLinkedInLink        AuditEntityType = "linkedin_link"
+	AuditEntityLinkedInSavedSearch AuditEntityType = "linkedin_saved_search"
+	AuditEntityAPIKey              AuditEntityType = "api_key"
+	AuditEntitySequence            AuditEntityType = "step"
+	AuditEntityUser                AuditEntityType = "user"
+	AuditEntityOrganization        AuditEntityType = "organization"
 	// AuditEntityOrgRisk carries a risk-posture transition. It rides the audit
 	// spine like every other entity, so a change reaches every teammate's
 	// dashboard without a bespoke emit site.

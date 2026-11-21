@@ -29,6 +29,8 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import useCampaignSenders from "@/lib/api/hooks/app/campaigns/useCampaignSenders";
 import useReplaceCampaignSenders from "@/lib/api/hooks/app/campaigns/useReplaceCampaignSenders";
+import { LinkedInAccountsSection } from "@/components/app/campaigns/preferences/CampaignLinkedInAccounts";
+import { useCampaignLinkedInAccounts, useLinkedInStatus, usePutCampaignLinkedInAccounts } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
 
 const DAILY_MIN = 3;
 const DAILY_MAX = 5000;
@@ -42,6 +44,11 @@ const SECTIONS = [
         id: "senders",
         label: "Sending accounts",
         description: "Which mailboxes send this campaign — by tag, individually, or both — and the per-mailbox daily cap.",
+    },
+    {
+        id: "linkedin",
+        label: "LinkedIn accounts",
+        description: "Which LinkedIn accounts run this campaign's LinkedIn steps.",
     },
     {
         id: "deliverability",
@@ -182,7 +189,19 @@ export default function CampaignPreferences() {
     const [explicitAccounts, setExplicitAccounts] = React.useState<string[]>([]);
     const [savedAccounts, setSavedAccounts] = React.useState<string[]>([]);
 
-    const ids = React.useMemo(() => SECTIONS.map((s) => s.id), []);
+    // LinkedIn senders: their own endpoint, shown when the workspace has LinkedIn or the campaign already uses it.
+    const linkedInStatus = useLinkedInStatus();
+    const putLinkedIn = usePutCampaignLinkedInAccounts(campaign.id);
+    const { data: linkedInSaved } = useCampaignLinkedInAccounts(campaign.id, !!linkedInStatus.data?.available || !!campaign.linkedin_account_ids?.length);
+    const [linkedInIds, setLinkedInIds] = React.useState<string[]>([]);
+    React.useEffect(() => {
+        if (linkedInSaved) setLinkedInIds(linkedInSaved);
+    }, [linkedInSaved]);
+    const showLinkedIn = !!linkedInStatus.data?.available || !!linkedInSaved?.length;
+    const linkedInDirty = !!linkedInSaved && !sameIdSet(linkedInIds, linkedInSaved);
+    const sections = React.useMemo(() => SECTIONS.filter((s) => s.id !== "linkedin" || showLinkedIn), [showLinkedIn]);
+
+    const ids = React.useMemo(() => sections.map((s) => s.id), [sections]);
     const { activeId, scrollTo } = useScrollSpy(ids);
 
     React.useEffect(() => {
@@ -332,6 +351,7 @@ export default function CampaignPreferences() {
             // CampaignSender with weight 1 so volume splits evenly. An empty list
             // clears the explicit pool (falling back to tags / all mailboxes).
             const writeSenders = accountsDirty;
+            const writeLinkedIn = linkedInDirty ? linkedInIds : null;
             await toast.promise(
                 (async () => {
                     if (Object.keys(data).length > 0) {
@@ -343,6 +363,7 @@ export default function CampaignPreferences() {
                         );
                         setSavedAccounts(explicitAccounts);
                     }
+                    if (writeLinkedIn) await putLinkedIn.mutateAsync(writeLinkedIn);
                 })(),
                 {
                     loading: "Saving…",
@@ -383,6 +404,8 @@ export default function CampaignPreferences() {
                         setExplicitAccounts={setExplicitAccounts}
                     />
                 );
+            case "linkedin":
+                return <LinkedInAccountsSection value={linkedInIds} onChange={setLinkedInIds} />;
             case "deliverability":
                 return <DeliverabilitySection newCampaign={newData} setNewCampaign={setNewData} />;
             case "rotation":
@@ -412,7 +435,7 @@ export default function CampaignPreferences() {
         }
     };
 
-    const hasChanges = Object.keys(getChanges()).length > 0 || accountsDirty;
+    const hasChanges = Object.keys(getChanges()).length > 0 || accountsDirty || linkedInDirty;
     const blocked = validationError() !== null;
 
     return (
@@ -424,7 +447,7 @@ export default function CampaignPreferences() {
                         On this page
                     </p>
                     <div className="flex md:flex-col gap-0.5 overflow-x-auto no-scrollbar py-2 md:py-0 border-b md:border-0 border-slate-200/60">
-                        {SECTIONS.map(({ id, label }) => {
+                        {sections.map(({ id, label }) => {
                             const active = activeId === id;
                             return (
                                 <button
@@ -455,7 +478,7 @@ export default function CampaignPreferences() {
             {/* Stacked sections */}
             <div className="flex-1 min-w-0">
                 <div className="divide-y divide-slate-200/60">
-                    {SECTIONS.map(({ id, label, description }) => (
+                    {sections.map(({ id, label, description }) => (
                         <section key={id} id={id} className="scroll-mt-24 md:scroll-mt-6 py-7 first:pt-0">
                             <div className="mb-4">
                                 <h2 className="text-[13.5px] font-semibold text-slate-900">{label}</h2>
@@ -486,6 +509,7 @@ export default function CampaignPreferences() {
                                 onClick={() => {
                                     setNewData(campaign);
                                     setExplicitAccounts(savedAccounts);
+                                    if (linkedInSaved) setLinkedInIds(linkedInSaved);
                                 }}
                             >
                                 Reset

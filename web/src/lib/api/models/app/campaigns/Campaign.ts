@@ -91,6 +91,11 @@ export default interface Campaign {
     // entered the campaign. 0 sends it as soon as the schedule allows.
     entry_delay_minutes: number;
 
+    // LinkedIn accounts that run the campaign's LinkedIn steps. Absent from a backend without LinkedIn steps.
+    linkedin_account_ids?: string[];
+    // Leads with no LinkedIn profile URL, who skip LinkedIn steps. Absent when the backend does not count them.
+    linkedin_missing_url_count?: number;
+
     // Keep running for new leads: out of leads, the campaign waits (idle_since
     // set) instead of finishing. Linking a segment turns it on.
     continuous: boolean;

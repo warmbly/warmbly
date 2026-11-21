@@ -20,6 +20,7 @@ import {
     ReplyIcon,
 } from "lucide-react";
 import toast from "react-hot-toast/headless";
+import LinkedInMark, { safeLinkedInUrl } from "@/components/app/linkedin/LinkedInMark";
 import type ContactDetail from "@/lib/api/models/app/contacts/ContactDetail";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import { useConfirm } from "@/hooks/context/confirm";
@@ -220,6 +221,22 @@ export default function OverviewTab({
                         value={contact.company || "—"}
                     />
                     <ProfileRow label="Phone" value={contact.phone || "—"} />
+                    {safeLinkedInUrl(contact.linkedin_url) && (
+                        <ProfileRow
+                            label="LinkedIn"
+                            value={
+                                <a
+                                    href={safeLinkedInUrl(contact.linkedin_url) ?? undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer nofollow"
+                                    className="inline-flex items-center gap-1 text-sky-700 hover:underline"
+                                >
+                                    <LinkedInMark className="size-3.5" />
+                                    View profile
+                                </a>
+                            }
+                        />
+                    )}
                     <ProfileRow
                         label="Labels"
                         value={

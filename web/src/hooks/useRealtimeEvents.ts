@@ -141,6 +141,44 @@ export function useRealtimeEvents() {
       const includes = (...needles: string[]) =>
         needles.some((needle) => event.includes(needle))
 
+      // LinkedIn accounts, connect sessions, the GraphKit link and messages. Checked before the ACCOUNT/EMAIL branches
+      // below, whose names these would match. Search results sit outside ['linkedin'] and are never refreshed.
+      if (event.startsWith('LINKEDIN_')) {
+        if (event === 'LINKEDIN_CONNECTION_UPDATED') {
+          const sessionId = getString('session_id') ?? getString('id')
+          invalidate(sessionId ? [['linkedin', 'connections', sessionId]] : [['linkedin', 'connections']])
+          if (getString('status') === 'succeeded') invalidate([['linkedin', 'accounts'], ['linkedin', 'status']])
+          return
+        }
+        if (event === 'LINKEDIN_LINK_UPDATED') {
+          invalidate([['linkedin']])
+          return
+        }
+        if (event === 'LINKEDIN_MESSAGE') {
+          const conversationId = getString('conversation_id')
+          invalidate([['linkedin', 'conversations', 'list'], ['linkedin', 'contacts'], ['unibox', 'overview']])
+          if (conversationId) invalidate([['linkedin', 'conversations', conversationId]])
+          return
+        }
+        // A background import moved (progress, then its summary). A finished one refreshes contacts through useLinkedInImport.
+        if (event.startsWith('LINKEDIN_IMPORT')) {
+          const importId = getString('import_id') ?? getString('id')
+          invalidate(importId ? [['linkedin', 'imports', importId]] : [['linkedin', 'imports']])
+          return
+        }
+        // A campaign's LinkedIn step was queued, done, skipped or failed, or an invitation was accepted.
+        if (event.startsWith('LINKEDIN_ACTION') || event.startsWith('LINKEDIN_INVITATION')) {
+          const campaignId = getString('campaign_id')
+          invalidate([['linkedin', 'contacts']])
+          if (campaignId) campaignRefresh.add([['analytics', 'campaigns', campaignId]])
+          return
+        }
+        const accountId = getString('account_id') ?? getString('id')
+        invalidate([['linkedin', 'accounts', 'list'], ['linkedin', 'status']])
+        if (accountId) invalidate([['linkedin', 'accounts', accountId]])
+        return
+      }
+
       // A purchased domain or mailbox moved (an order step, a renewal, a mailbox connecting).
       // Checked before the EMAIL and ACCOUNT branches, whose names these would otherwise match.
       // Each carries org_id, id (of the order, domain or mailbox) and status; a mailbox also its
@@ -607,6 +645,10 @@ export function useRealtimeEvents() {
           store_order: [['store', 'orders'], ['store', 'status']],
           store_domain: [['store', 'domains'], ['sending-domains']],
           store_mailbox: [['store', 'mailboxes'], ['emails']],
+          // LinkedIn accounts connected, changed or removed, the GraphKit link, and saved lead searches.
+          linkedin_account: [['linkedin', 'accounts'], ['linkedin', 'status']],
+          linkedin_link: [['linkedin']],
+          linkedin_saved_search: [['linkedin', 'saved-searches']],
           api_key: [['api-keys']],
           webhook: [['webhooks'], ['integrations', 'connections']],
           template: [['templates']],

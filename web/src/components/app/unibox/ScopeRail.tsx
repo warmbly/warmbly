@@ -97,6 +97,7 @@ import { UNIBOX_VIEWS, viewCategories, type UniboxViewId } from "@/lib/unibox/vi
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { shortcutLabel } from "@/components/ui/shortcut-tooltip";
 import { useAnchoredMenu } from "@/hooks/useAnchoredMenu";
+import LinkedInMark from "@/components/app/linkedin/LinkedInMark";
 
 export type UniboxScope =
   | { kind: "all" }
@@ -107,6 +108,7 @@ export type UniboxScope =
   | { kind: "agent_drafts" }
   | { kind: "snoozed" }
   | { kind: "scheduled" }
+  | { kind: "linkedin" }
   | { kind: "folder"; folder: UniboxFolder }
   | { kind: "mailbox"; mailboxId: string }
   | { kind: "tag"; tagId: string }
@@ -192,6 +194,8 @@ interface ScopeRailProps {
   browseKey?: string;
   scope: UniboxScope;
   onChange: (s: UniboxScope) => void;
+  // The LinkedIn scope, offered when the workspace has LinkedIn.
+  linkedin?: { unread: number };
 }
 
 // What a section needs to fold its siblings and move itself among them.
@@ -227,7 +231,7 @@ function undoToast(id: string, message: string, onUndo: () => void) {
   );
 }
 
-export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailProps) {
+export function ScopeRail({ scope, onChange, browseKey = "desktop", linkedin }: ScopeRailProps) {
   const overview = useUniboxOverview();
   const data = overview.data;
   const markSeen = useMarkSeen();
@@ -322,6 +326,13 @@ export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailP
       data?.scheduled_pending,
       { accent: !!data?.scheduled_pending },
     ),
+    ...(linkedin
+      ? [
+          scopeRow({ kind: "linkedin" }, "LinkedIn", <LinkedInMark className={ICON} />, linkedin.unread || undefined, {
+            accent: linkedin.unread > 0,
+          }),
+        ]
+      : []),
     ...MAIL_FOLDERS.slice(2).map((f) => folderRow(f.folder, f.label, f.icon)),
   ];
 
