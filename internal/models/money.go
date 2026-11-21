@@ -40,3 +40,18 @@ func CreditsFromMicro(m Micro) int {
 	}
 	return int(m / LegacyCreditMicro)
 }
+
+// TopUpFeeBasisPoints is the processing fee a card payment into a balance adds on top of the amount added: 3%.
+const TopUpFeeBasisPoints = 300
+
+// TopUpFeeLabel is the fee's receipt line.
+const TopUpFeeLabel = "Processing fee (3%)"
+
+// TopUpCharge is what adding cents to a balance by card costs: the fee, rounded half up to the cent, and the total charged.
+func TopUpCharge(cents int64) (fee, total int64) {
+	if cents <= 0 {
+		return 0, cents
+	}
+	fee = (cents*TopUpFeeBasisPoints + 5_000) / 10_000
+	return fee, cents + fee
+}

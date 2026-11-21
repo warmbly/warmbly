@@ -1,5 +1,6 @@
 // What the order summary says: the Pay button's label, why it cannot be pressed yet, and how the months after are paid.
 import type { QuotePayment, StoreCard } from "@/lib/api/models/app/store/Store";
+import { topUpCharge } from "@/lib/money";
 import { cardLabel, fmtMicros, fmtMonthly } from "./money";
 
 /** How a workspace with no saved card adds one: in the page with Stripe.js, or on Stripe's page when that cannot load. */
@@ -60,6 +61,8 @@ export function monthlyLine(monthly: number, metered: boolean, payer: MonthlyPay
 export interface PaymentPlan {
     /** What the card is charged today; 0 when the balance covers it. */
     cardCharge: number;
+    /** The processing fee the card adds on a top-up the buyer chose, on top of cardCharge; absent otherwise. */
+    topUpFee?: number;
     fromBalance: number;
     /** The balance once the order is paid, or null while there is no total yet. */
     balanceAfter: number | null;
@@ -91,7 +94,8 @@ export function paymentPlan(p: QuotePayment | undefined, balance: number, due: n
 export function withTopUp(plan: PaymentPlan, topUpMicros: number, due: number | null): PaymentPlan {
     if (due === null || topUpMicros <= plan.cardCharge) return plan;
     const before = (plan.balanceAfter ?? 0) - plan.cardCharge + due;
-    return { ...plan, cardCharge: topUpMicros, balanceAfter: before + topUpMicros - due };
+    const fee = Math.round(topUpCharge(topUpMicros / 1_000_000).feeUsd * 1_000_000);
+    return { ...plan, cardCharge: topUpMicros, topUpFee: fee, balanceAfter: before + topUpMicros - due };
 }
 
 /** The one line under the total on how today is paid, or null when the card simply pays what is due. */
@@ -110,8 +114,8 @@ export type ReloadView = { kind: "on"; amount: number; threshold: number } | { k
 
 /** What the automatic top-up already does, or what turning it on would. */
 export function autoReloadLine(r: NonNullable<ReloadView>): string {
-    if (r.kind === "on") return `Balance tops up by ${fmtMicros(r.amount)} when it falls below ${fmtMicros(r.threshold)}`;
-    return `Keep my balance topped up · adds ${fmtMicros(r.amount)} when it won't cover next month's mailboxes`;
+    if (r.kind === "on") return `Balance tops up by ${fmtMicros(r.amount)} (+3% processing fee) when it falls below ${fmtMicros(r.threshold)}`;
+    return `Keep my balance topped up · adds ${fmtMicros(r.amount)} (+3% processing fee) when it won't cover next month's mailboxes`;
 }
 
 /** One thing the order still needs before it can be paid, ticked off as it is done. */

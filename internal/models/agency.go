@@ -571,6 +571,8 @@ type AgencyAITopUpInfo struct {
 	MaxUSD     float64 `json:"max_usd"`
 	PresetsUSD []int   `json:"presets_usd"`
 	DefaultUSD int     `json:"default_usd"`
+	// FeeBps is the card processing fee charged on top of the amount, in basis points.
+	FeeBps int `json:"fee_bps"`
 }
 
 // AgencyAITransfer is a move of agency balance into a client workspace's own balance.

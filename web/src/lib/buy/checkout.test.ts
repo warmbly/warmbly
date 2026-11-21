@@ -42,8 +42,8 @@ describe("checkout summary", () => {
         const plan = paymentPlan(p, 0, 3_000_000);
         expect(balanceLine(plan, 3_000_000)).toBe("Adds $10.00 to your balance · $3.00 used now, $7.00 left for next month");
         expect(payLabel({ metered: true, due: plan.cardCharge, card: visa, cardEntry: "inline" })).toBe("Pay $10.00");
-        expect(autoReloadLine({ kind: "offer", amount: plan.autoReload!.amount })).toBe("Keep my balance topped up · adds $10.00 when it won't cover next month's mailboxes");
-        expect(autoReloadLine({ kind: "on", amount: 10_000_000, threshold: 3_000_000 })).toBe("Balance tops up by $10.00 when it falls below $3.00");
+        expect(autoReloadLine({ kind: "offer", amount: plan.autoReload!.amount })).toBe("Keep my balance topped up · adds $10.00 (+3% processing fee) when it won't cover next month's mailboxes");
+        expect(autoReloadLine({ kind: "on", amount: 10_000_000, threshold: 3_000_000 })).toBe("Balance tops up by $10.00 (+3% processing fee) when it falls below $3.00");
         // Rounding the card charge up to a preset leaves the difference on the balance.
         const rounded = withTopUp(plan, 100_000_000, 3_000_000);
         expect(balanceLine(rounded, 3_000_000)).toBe("Adds $100.00 to your balance · $3.00 used now, $97.00 left for next month");

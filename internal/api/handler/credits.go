@@ -156,6 +156,7 @@ func (h *Handler) GetBalance(c *gin.Context) {
 		"top_up": gin.H{
 			"min_usd": usd(credits.TopUpMin), "max_usd": usd(credits.TopUpMax),
 			"presets_usd": []int{10, 25, 50, 100, 250}, "default_usd": 25,
+			"fee_bps": models.TopUpFeeBasisPoints,
 		},
 	}
 	// What the workspace's agency balance would add, so the dashboard does not call a funded client out of balance.
@@ -316,7 +317,7 @@ func (h *Handler) TopUpBalance(c *gin.Context) {
 		status = http.StatusAccepted
 	}
 	c.JSON(status, gin.H{
-		"status": res.Status, "amount_usd": usd(res.Amount), "balance_usd": usd(bal),
+		"status": res.Status, "amount_usd": usd(res.Amount), "charged_usd": float64(res.ChargedCents) / 100, "balance_usd": usd(bal),
 		"charge_in_progress": res.Status != "paid",
 	})
 }

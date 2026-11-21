@@ -17,7 +17,7 @@ import {
 import type { AgencyAutoTopup } from "@/lib/api/models/app/agency/Agency";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import { fmtUsdTrim } from "@/lib/money";
+import { fmtUsd, fmtUsdTrim, topUpCharge } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "./styles";
 
@@ -320,7 +320,7 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
             name="Automatic top-up of AI balance"
             summary={
                 data.enabled
-                    ? `When less than ${fmtUsdTrim(data.threshold_usd)} is left in the shared AI balance, we add ${fmtUsdTrim(data.amount_usd)} and charge your card. We stop once ${fmtUsdTrim(data.limit_usd)} has been added in a month.`
+                    ? `When less than ${fmtUsdTrim(data.threshold_usd)} is left in the shared AI balance, we add ${fmtUsdTrim(data.amount_usd)} and charge your card ${fmtUsd(topUpCharge(data.amount_usd).totalUsd)}, the 3% processing fee included. We stop once ${fmtUsdTrim(data.limit_usd)} has been added in a month.`
                     : `Turn this on and we add ${fmtUsdTrim(each)} of AI balance whenever it runs low, so AI features never stop for your clients. Until then you add balance yourself.`
             }
             enabled={data.enabled}
@@ -356,10 +356,10 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
                 </Setting>
             </div>
             <Costs
-                each={fmtUsdTrim(each)}
-                eachNote="added to the shared AI balance, dollar for dollar"
-                most={fmtUsdTrim(times * each)}
-                mostNote={`up to ${times} ${times === 1 ? "top-up" : "top-ups"} of ${fmtUsdTrim(each)}, plus tax where it applies`}
+                each={fmtUsd(topUpCharge(each).totalUsd)}
+                eachNote={`${fmtUsdTrim(each)} added to the shared AI balance, plus the 3% processing fee`}
+                most={fmtUsd(times * topUpCharge(each).totalUsd)}
+                mostNote={`up to ${times} ${times === 1 ? "top-up" : "top-ups"} of ${fmtUsdTrim(each)} with the fee, plus tax where it applies`}
             />
         </Panel>
     );

@@ -8,7 +8,7 @@ import { useStoreEnabled } from "@/lib/api/hooks/app/store/useStore";
 import type { Balance } from "@/lib/api/models/app/subscription/Credits";
 import { fmtMonthly } from "@/lib/buy/money";
 import { HOVER_LIFT, PRESS_SPRING } from "@/lib/buy/motion";
-import { fmtUsd, fmtUsdTrim } from "@/lib/money";
+import { fmtUsd, fmtUsdTrim, topUpCharge } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { RELOAD_FAILURE_COPY, balanceAlert, expiresSoon, fmtClock, fmtDay, paymentMethodExpiry, paymentMethodLabel, reloadCovers } from "./balanceModel";
 import type { FundsTab } from "./AddFundsDialog";
@@ -132,7 +132,7 @@ function BalanceCard({ b, canBuy, onAddFunds, onPaymentMethod }: { b: Balance; c
                         <RefreshCwIcon className="w-3 h-3 text-slate-400 shrink-0" />
                         <span className="min-w-0">
                             {ar.enabled
-                                ? `Auto top-up adds ${fmtUsdTrim(ar.amount_usd)} when the balance drops below ${fmtUsd(ar.threshold_usd)}, up to ${fmtUsdTrim(ar.monthly_limit_usd)} a month.`
+                                ? `Auto top-up adds ${fmtUsdTrim(ar.amount_usd)} (charged ${fmtUsd(topUpCharge(ar.amount_usd).totalUsd)} with the 3% processing fee) when the balance drops below ${fmtUsd(ar.threshold_usd)}, up to ${fmtUsdTrim(ar.monthly_limit_usd)} a month.`
                                 : "Auto top-up is off."}{" "}
                             {(ar.enabled || canBuy) && (
                                 <button type="button" onClick={() => onAddFunds("auto")} className="font-medium text-sky-700 hover:text-sky-900 transition-colors">

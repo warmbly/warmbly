@@ -90,6 +90,7 @@ func (s *Service) aiBalance(ctx context.Context, a *models.Agency) (*models.Agen
 		Clients: []models.AgencyAIClient{},
 		TopUp: models.AgencyAITopUpInfo{
 			MinUSD: credits.TopUpMin.USD(), MaxUSD: credits.TopUpMax.USD(), PresetsUSD: aiTopUpPresets, DefaultUSD: 25,
+			FeeBps: models.TopUpFeeBasisPoints,
 		},
 	}
 	var spent, moved models.Micro
@@ -200,21 +201,13 @@ func (s *Service) AITopup(ctx context.Context, agencyID, actorID uuid.UUID, amou
 		metaPurpose: purposeAgencyAITopup, metaAgencyID: a.ID.String(), "user_id": actorID.String(),
 		"amount_cents": strconv.FormatInt(cents, 10),
 	}
+	fee, _ := models.TopUpCharge(cents)
+	meta["fee_cents"] = strconv.FormatInt(fee, 10)
 	params := &stripe.CheckoutSessionParams{
-		Params:          stripe.Params{Context: ctx},
-		Mode:            stripe.String(string(stripe.CheckoutSessionModePayment)),
-		InvoiceCreation: &stripe.CheckoutSessionInvoiceCreationParams{Enabled: stripe.Bool(true)},
-		LineItems: []*stripe.CheckoutSessionLineItemParams{{
-			Quantity: stripe.Int64(1),
-			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-				Currency:    stripe.String("usd"),
-				UnitAmount:  stripe.Int64(cents),
-				TaxBehavior: stripe.String(businesscheckout.TaxExclusive),
-				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
-					Name: stripe.String("Agency AI balance"),
-				},
-			},
-		}},
+		Params:            stripe.Params{Context: ctx},
+		Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
+		InvoiceCreation:   &stripe.CheckoutSessionInvoiceCreationParams{Enabled: stripe.Bool(true)},
+		LineItems:         businesscheckout.TopUpLineItems("Agency AI balance", cents),
 		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{Metadata: meta},
 		ClientReferenceID: stripe.String(a.ID.String()),
 		SuccessURL:        stripe.String(successURL),

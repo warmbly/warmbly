@@ -2412,7 +2412,7 @@ The workspace balance in US dollars: the plan's monthly allowance plus money the
     "failure_code": null,
     "failed_at": null
   },
-  "top_up": { "min_usd": 5, "max_usd": 5000, "presets_usd": [10, 25, 50, 100, 250], "default_usd": 25 },
+  "top_up": { "min_usd": 5, "max_usd": 5000, "presets_usd": [10, 25, 50, 100, 250], "default_usd": 25, "fee_bps": 300 },
   "burn": {
     "per_day_usd": 1.12,
     "mailboxes_per_day_usd": 0.3,
@@ -2437,7 +2437,7 @@ The workspace balance in US dollars: the plan's monthly allowance plus money the
 |-------|------|----------|-------------|
 | `amount_usd` | number | yes | From `5` to `5000`, rounded to whole cents. |
 
-Charges the saved card now, billed as a Stripe invoice, and answers `200` with `{"status": "paid", "amount_usd": 25, "balance_usd": 46.4375, "charge_in_progress": false}`. While the payment is still going through (the card network has not confirmed, or Stripe did not answer and Warmbly retries it in the background) it answers `202` with `status` `processing` and `charge_in_progress` `true`; the money is added when the payment lands. Needs an active paid plan (`403` otherwise). Send an `Idempotency-Key` to retry the call safely; without one, a retry while the first payment is pending answers `409` `charge_in_progress` rather than charging twice.
+Charges the saved card now, billed as a Stripe invoice, and answers `200` with `{"status": "paid", "amount_usd": 25, "charged_usd": 25.75, "balance_usd": 46.4375, "charge_in_progress": false}`. The card is charged `amount_usd` plus the processing fee of `top_up.fee_bps` basis points (3%), rounded half up to the cent and billed as its own invoice line; `amount_usd` is what the balance gains and `charged_usd` what the card paid. While the payment is still going through (the card network has not confirmed, or Stripe did not answer and Warmbly retries it in the background) it answers `202` with `status` `processing` and `charge_in_progress` `true`; the money is added when the payment lands. Needs an active paid plan (`403` otherwise). Send an `Idempotency-Key` to retry the call safely; without one, a retry while the first payment is pending answers `409` `charge_in_progress` rather than charging twice.
 
 | Status | Code | Meaning |
 |--------|------|---------|
@@ -2449,7 +2449,7 @@ Charges the saved card now, billed as a Stripe invoice, and answers `200` with `
 
 `POST /subscription/balance/checkout`
 
-Takes the same `amount_usd` and returns `{"session_id": "cs_...", "checkout_url": "https://checkout.stripe.com/..."}`. Checkout saves the card for later one-click payments. The money is added when Stripe confirms the payment, in the webhook, exactly once.
+Takes the same `amount_usd` and returns `{"session_id": "cs_...", "checkout_url": "https://checkout.stripe.com/..."}`. Checkout shows the amount and the 3% processing fee as two lines, and the balance gains `amount_usd`. Checkout saves the card for later one-click payments. The money is added when Stripe confirms the payment, in the webhook, exactly once.
 
 #### Save or replace the card
 
@@ -2477,8 +2477,8 @@ No body. Returns `{"client_secret": "seti_..._secret_...", "publishable_key": "p
 |-------|------|----------|-------------|
 | `enabled` | boolean | yes | Turns automatic reload on or off. Turning it on needs a saved card and an active paid plan. |
 | `threshold_usd` | number | yes | Reload when the balance falls below this, `0.01` to `1000`. |
-| `amount_usd` | number | yes | What each reload adds, `5` to `5000`, more than `threshold_usd`. |
-| `monthly_limit_usd` | number | yes | The most reloaded in a calendar month, at least `amount_usd` and at most `50000`. |
+| `amount_usd` | number | yes | What each reload adds, `5` to `5000`, more than `threshold_usd`. Each reload charges it plus the 3% processing fee. |
+| `monthly_limit_usd` | number | yes | The most reloaded in a calendar month (added to the balance, the fee not counted), at least `amount_usd` and at most `50000`. |
 
 Answers with the body of `GET /subscription/balance`. Refusals: `422` `recharge_too_small` (the amount is not above the threshold), `422` `monthly_limit_too_small` (the limit is below one reload or above the maximum), `409` `payment_method_required`.
 
