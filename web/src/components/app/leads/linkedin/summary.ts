@@ -64,7 +64,7 @@ export function joinList(items: string[], word = "and", max = 3): string {
 }
 
 const label = (v: FinderValue) => (v.text || v.id || "").trim();
-const quoted = (s: string) => `"${s}"`;
+const quoted = (s: string) => `“${s}”`;
 
 /** "11-200" from headcount buckets "11-50" and "51-200"; disjoint ranges are listed with "or". */
 export function mergeRanges(ids: string[]): string {

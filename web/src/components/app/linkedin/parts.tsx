@@ -98,7 +98,7 @@ export function Meter({ usage, compact = false }: { usage: LinkedInUsage; compac
     const pct = limit > 0 ? Math.min(100, Math.round((usage.today / limit) * 100)) : 0;
     const full = limit > 0 && usage.today >= limit;
     return (
-        <div className={cn("min-w-0", compact ? "w-[62px]" : "w-full")} title={`${ACTION_LABEL[usage.action] ?? usage.action}: ${usage.today} of ${limit} today`}>
+        <div className={cn("min-w-0", compact ? "w-[84px]" : "w-full")} title={`${ACTION_LABEL[usage.action] ?? usage.action}: ${usage.today} of ${limit} today`}>
             <div className="flex items-baseline justify-between gap-1">
                 <span className="text-[10.5px] text-slate-500 truncate">{ACTION_LABEL[usage.action] ?? usage.action}</span>
                 <span className={cn("text-[10.5px] tabular-nums", full ? "text-amber-700 font-medium" : "text-slate-700")}>
@@ -120,12 +120,13 @@ export function fmtDay(d: Date | string | null | undefined): string {
     return t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: t.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
 }
 
-/** "Paid through Mar 3 · $49/mo", "Billed by GraphKit", or the overdue line. */
+/** "Paid through Mar 3 · $49/mo", "Billed by GraphKit", "Not charged", or the overdue line. */
 export function billingLine(a: Pick<LinkedInAccount, "billing">): { text: string; tone: "muted" | "warn" } {
     const b = a.billing;
     if (!b) return { text: "", tone: "muted" };
     if (b.mode === "linked") return { text: "Billed by GraphKit", tone: "muted" };
     if (b.unpaid_since) return { text: `Payment overdue since ${fmtDay(b.unpaid_since)}`, tone: "warn" };
+    if (!b.monthly_micros) return { text: "Not charged", tone: "muted" };
     const price = b.monthly_micros ? ` · ${fmtMonthly(b.monthly_micros)}` : "";
     return b.paid_through ? { text: `Paid through ${fmtDay(b.paid_through)}${price}`, tone: "muted" } : { text: price.replace(/^ · /, ""), tone: "muted" };
 }

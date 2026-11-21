@@ -18,6 +18,8 @@ export interface LinkedInStatus {
     price: { monthly_micros: number; tier: LinkedInTier | string };
     acknowledgement_version: string;
     accounts: number;
+    /** False on an instance that charges nothing for seats; absent from older backends. */
+    metered?: boolean;
 }
 
 export interface LinkedInLinkStart {
@@ -30,7 +32,7 @@ export interface LinkedInConnectQuote {
     tier: LinkedInTier | string;
     due_now_micros: number;
     payment: QuotePayment;
-    /** Nothing is charged: a reconnect, or a linked GraphKit workspace. */
+    /** Nothing is charged: a reconnect, a linked GraphKit workspace, or an instance that charges nothing. */
     free: boolean;
 }
 

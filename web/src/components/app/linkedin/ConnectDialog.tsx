@@ -391,7 +391,11 @@ function PriceStep({
                 <div className="min-w-0 flex-1">
                     <p className="text-[12.5px] font-medium text-slate-900">One LinkedIn account</p>
                     <p className="text-[11.5px] text-slate-500">
-                        {free ? "Billed by your GraphKit workspace" : `${TIER_LABEL[tier] ?? tier} seat · ${fmtMonthly(monthly)}`}
+                        {free
+                            ? status?.mode === "linked"
+                                ? "Billed by your GraphKit workspace"
+                                : "Seats are not charged on this instance"
+                            : `${TIER_LABEL[tier] ?? tier} seat · ${fmtMonthly(monthly)}`}
                     </p>
                 </div>
                 {loading ? <span className="h-3.5 w-14 rounded skeleton-shimmer" /> : <span className="text-[12.5px] font-medium tabular-nums text-slate-900">{free ? "Free" : fmtMicros(monthly)}</span>}

@@ -518,6 +518,17 @@ function BillingTab({ account }: { account: LinkedInAccount }) {
             </div>
         );
     }
+    if (!b.monthly_micros && !b.unpaid_since) {
+        return (
+            <div className="space-y-3">
+                <div className="rounded-lg border border-slate-200 px-3">
+                    <Fact label="Price" value="Not charged" />
+                    {account.connected_at && <Fact label="Connected" value={fmtDay(account.connected_at)} />}
+                </div>
+                <p className="text-[11.5px] text-slate-500 leading-relaxed">Nothing is taken from your balance or card for this seat.</p>
+            </div>
+        );
+    }
     return (
         <div className="space-y-3">
             {b.unpaid_since && (

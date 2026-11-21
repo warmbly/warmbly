@@ -219,6 +219,8 @@ type Status struct {
 	Price                  Price                   `json:"price"`
 	AcknowledgementVersion string                  `json:"acknowledgement_version"`
 	Accounts               int                     `json:"accounts"`
+	// Metered is false on an instance that charges nothing for seats.
+	Metered bool `json:"metered"`
 }
 
 // Status is the workspace's LinkedIn state, refreshed from GraphKit when it answers in time.
@@ -232,7 +234,7 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 	if err != nil {
 		return nil, err
 	}
-	st.Price = price
+	st.Price, st.Metered = price, s.Store.Metered()
 	if ws, err := s.refreshWorkspace(ctx, orgID, 3*time.Second); err != nil {
 		if ge, ok := graphkit.AsError(err); ok && ge.Code == graphkit.CodeSocialUnavailable {
 			st.Available = false

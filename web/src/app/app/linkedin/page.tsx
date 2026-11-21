@@ -47,6 +47,7 @@ export default function LinkedInPage() {
 function modeLabel(s: LinkedInStatus | undefined): string {
     if (!s) return "";
     if (s.mode === "linked") return `Linked to ${s.linked_workspace?.name ?? "GraphKit"}`;
+    if (s.metered === false) return "Seats are not charged on this instance";
     return `${fmtMonthly(s.price.monthly_micros)} per account · ${TIER_LABEL[s.price.tier] ?? s.price.tier} pricing`;
 }
 
@@ -406,7 +407,11 @@ function EmptyState({ status, onConnect, blocked, completing }: { status: Linked
                 <h1 className="mt-3 text-[17px] font-semibold tracking-[-0.01em] text-slate-900">Add LinkedIn to your outreach</h1>
                 <p className="mt-1.5 text-[12.5px] text-slate-500 max-w-[52ch] leading-relaxed">
                     Connect a LinkedIn account and run it beside your mailboxes.{" "}
-                    {status.mode === "linked" ? "Your GraphKit workspace pays for its seats." : `${fmtMonthly(status.price.monthly_micros)} per account, paid from your balance first.`}
+                    {status.mode === "linked"
+                        ? "Your GraphKit workspace pays for its seats."
+                        : status.metered === false
+                          ? "Seats are not charged on this instance."
+                          : `${fmtMonthly(status.price.monthly_micros)} per account, paid from your balance first.`}
                 </p>
                 <button
                     type="button"
