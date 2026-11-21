@@ -38,6 +38,14 @@ func GoogleOAuthAppName() string {
 	return "Warmbly"
 }
 
+// GoogleOAuthClientID is the deployment's Google mailbox sign-in client, "" when Google sign-in is off.
+func GoogleOAuthClientID() string {
+	if !GoogleOAuthConnect() {
+		return ""
+	}
+	return strings.TrimSpace(os.Getenv("BOX_GOOGLE_CLIENT_ID"))
+}
+
 func GoogleOauth2Inbox(baseURL string) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     os.Getenv("BOX_GOOGLE_CLIENT_ID"),

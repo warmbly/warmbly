@@ -483,3 +483,38 @@ var (
 	_ API = (*Fake)(nil)
 	_ API = (*Client)(nil)
 )
+
+func (f *Fake) PutMailboxSignInLink(_ context.Context, mailboxID, url string, expiresAt time.Time, key string) (*Mailbox, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return replay(f, key, "signin-link:"+mailboxID, url, func() (*Mailbox, error) {
+		m, err := f.mailboxLocked(mailboxID)
+		if err != nil {
+			return nil, err
+		}
+		if m.m.Connection.Method != ConnectOAuth || m.m.Connection.Ready {
+			return nil, fakeErr(http.StatusConflict, CodeStateConflict, "this mailbox does not wait for a sign-in")
+		}
+		at := expiresAt.UTC()
+		m.m.Connection.SignIn = &ConnectionSignIn{LinkExpiresAt: &at}
+		return cloneJSON(m.m), nil
+	})
+}
+
+func (f *Fake) MailboxSignedIn(_ context.Context, mailboxID, key string) (*Mailbox, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return replay(f, key, "signed-in:"+mailboxID, nil, func() (*Mailbox, error) {
+		m, err := f.mailboxLocked(mailboxID)
+		if err != nil {
+			return nil, err
+		}
+		if m.m.Connection.Method != ConnectOAuth {
+			return nil, fakeErr(http.StatusConflict, CodeStateConflict, "this mailbox does not connect by sign-in")
+		}
+		now := f.now().UTC()
+		m.m.Connection.Ready = true
+		m.m.Connection.SignIn = &ConnectionSignIn{SignedInAt: &now}
+		return cloneJSON(m.m), nil
+	})
+}

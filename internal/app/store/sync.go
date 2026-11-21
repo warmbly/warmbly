@@ -122,6 +122,7 @@ func (s *Service) apply(ctx context.Context, ev graphkit.Event) error {
 		if err != nil || row == nil {
 			return err
 		}
+		s.syncSignIn(ctx, row, &m)
 		s.connectLater(ctx, row, &m)
 	}
 	return nil
@@ -354,6 +355,11 @@ func (s *Service) PushDelegation(ctx context.Context) error {
 	if s.Delegator != nil {
 		if id, scopes, ok := s.Delegator.GoogleAppIdentity(); ok {
 			d.Google = &graphkit.GoogleDelegation{ClientID: id, Scopes: scopes}
+			// New Workspaces connect by sign-in to this instance's OAuth client: new domain-wide delegation
+			// grants are retired. Not in the sandbox or simulator, where no vendor team signs anything in.
+			if !s.Simulate && s.links != nil {
+				d.Google.SignInClientID = config.GoogleOAuthClientID()
+			}
 		}
 		if app, perms, ok := s.Delegator.MicrosoftAppIdentity(); ok {
 			d.Microsoft = &graphkit.MicrosoftDelegation{AppID: app, Permissions: perms}

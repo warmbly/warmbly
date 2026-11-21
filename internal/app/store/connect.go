@@ -38,7 +38,7 @@ func (s *Service) connectLater(ctx context.Context, row *models.StoreMailbox, m 
 }
 
 func connectable(row *models.StoreMailbox, m *graphkit.Mailbox) bool {
-	return row.EmailAccountID == nil && m.Status == graphkit.MailboxActive && m.Connection.Ready
+	return row.EmailAccountID == nil && m.Status == graphkit.MailboxActive && m.Connection.Ready && m.Connection.Method != graphkit.ConnectOAuth
 }
 
 func (s *Service) retryConnects(ctx context.Context) error {
@@ -62,6 +62,7 @@ func (s *Service) retryConnects(ctx context.Context) error {
 		if fresh, err := s.upsertMailbox(ctx, row.OrganizationID, nil, m, 0); err == nil && fresh != nil {
 			row = fresh
 		}
+		s.syncSignIn(ctx, row, m)
 		if connectable(row, m) {
 			cctx, cancel := context.WithTimeout(ctx, connectBudget)
 			s.connect(cctx, row, m)
@@ -97,6 +98,12 @@ func (s *Service) connect(ctx context.Context, row *models.StoreMailbox, m *grap
 		s.publishMailbox(ctx, &models.StoreMailbox{ID: row.ID, OrganizationID: orgID, DomainID: row.DomainID, Status: row.Status, ConnectState: models.StoreConnectFailed})
 		return
 	}
+	s.connected(ctx, row, acc)
+}
+
+// connected records a mailbox as connected to acc and puts it to work: warmup, photo, signature, tracking.
+func (s *Service) connected(ctx context.Context, row *models.StoreMailbox, acc *models.Email) {
+	orgID := row.OrganizationID
 	if err := s.Repo.FinishConnect(context.WithoutCancel(ctx), orgID, row.ID, &acc.ID, models.StoreConnectConnected, ""); err != nil {
 		log.Error().Err(err).Str("store_mailbox_id", row.ID.String()).Msg("store: recording the connected mailbox failed")
 	}
@@ -123,6 +130,9 @@ func (s *Service) connect(ctx context.Context, row *models.StoreMailbox, m *grap
 // that has not approved this instance's app is left to its administrator, which is not a failure.
 func (s *Service) connectBy(ctx context.Context, orgID, userID uuid.UUID, row *models.StoreMailbox, m *graphkit.Mailbox, name string) (*models.Email, string, string) {
 	switch m.Connection.Method {
+	case graphkit.ConnectOAuth:
+		// Connects only through its sign-in link (signin.go), never here.
+		return nil, connectFailed, ""
 	case graphkit.ConnectToken, graphkit.ConnectDelegation:
 		if s.Delegator == nil {
 			return nil, connectFailed, ""
