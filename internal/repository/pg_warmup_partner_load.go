@@ -45,8 +45,9 @@ func newPoolSnapshot[T any](db sendResultDB, ttl time.Duration, load func(contex
 	return &poolSnapshot[T]{ttl: ttl, db: db, load: load}
 }
 
-// get returns the snapshot. Until a first refresh lands the caller reads it
-// itself through fallback, so a failing refresh never fails the draw.
+// get returns the snapshot. Until a first refresh lands the caller waits for
+// it, then reads through fallback if it failed; only the caller's own context
+// ending fails the draw, which a fallback read could not survive either.
 func (c *poolSnapshot[T]) get(ctx context.Context, fallback sendResultDB) (T, error) {
 	c.mu.Lock()
 	data, ok := c.data, c.ok
