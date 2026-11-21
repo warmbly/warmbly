@@ -328,14 +328,26 @@ type warmupRepository struct {
 	receiptSlots chan struct{}
 	// sessionLocks is set behind a transaction pooler; see UseSessionLocks.
 	sessionLocks *pgxpool.Pool
-	// partnerWeeks7d is nil in tests that build the struct directly, which
-	// then read every candidate's counts exactly.
-	partnerWeeks7d *partnerWeekCache
+	// Pool-wide snapshots the partner draw shares across senders.
+	partnerWeeks7d *poolSnapshot[map[uuid.UUID]partnerWeek]
+	partnerDay     *poolSnapshot[partnerDay]
+	partnerCohorts map[string]*poolSnapshot[[]poolMember]
 }
 
 // NewWarmupRepository creates a new warmup repository
 func NewWarmupRepository(db *pgxpool.Pool) WarmupRepository {
-	return &warmupRepository{db: db, partnerWeeks7d: newPartnerWeekCache(partnerWeekTTL)}
+	r := &warmupRepository{
+		db:             db,
+		partnerWeeks7d: newPoolSnapshot(db, partnerWeekTTL, loadPartnerWeeks),
+		partnerDay:     newPoolSnapshot(db, partnerDayTTL, loadPartnerDay),
+		partnerCohorts: make(map[string]*poolSnapshot[[]poolMember]),
+	}
+	for _, pool := range []models.WarmupPoolType{models.WarmupPoolFree, models.WarmupPoolPremium} {
+		r.partnerCohorts[string(pool)] = newPoolSnapshot(db, partnerDayTTL, func(ctx context.Context, q sendResultDB) ([]poolMember, error) {
+			return loadPoolCohort(ctx, q, string(pool))
+		})
+	}
+	return r
 }
 
 // GetPoolParticipants retrieves all participant account IDs from a pool
@@ -1389,33 +1401,27 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 	}
 	recipientSQL := partnerEligibleSQL
 
-	cands, err := r.partnerCohort(ctx, partnerCandidateColumns+`
-		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wpp.pool_id = wp.id
-		JOIN email_accounts ea ON ea.id = wpp.email_account_id
-		WHERE wp.pool_type = $1
-		  AND wpp.email_account_id <> $2
-		  AND `+recipientSQL,
-		poolType, models.WarmupPartnerOwnTier, poolType, senderID)
+	own, err := r.poolCohort(ctx, poolType)
 	if err != nil {
 		return nil, err
 	}
+	cands := make([]models.WarmupPartnerCandidate, 0, len(own))
+	for _, m := range own {
+		if m.ID != senderID {
+			cands = append(cands, m.as(models.WarmupPartnerOwnTier))
+		}
+	}
 
 	if borrowFrom, ok := models.WarmupPoolBorrowsFrom(poolType); ok {
-		borrowed, err := r.partnerCohort(ctx, partnerCandidateColumns+`
-			FROM warmup_pool_participants wpp
-			JOIN warmup_pools wp ON wpp.pool_id = wp.id
-			JOIN email_accounts ea ON ea.id = wpp.email_account_id
-			JOIN organizations o ON o.id = ea.organization_id
-			WHERE wp.pool_type = $1
-			  AND ea.organization_id IS DISTINCT FROM $3
-			  AND `+recipientSQL+`
-			  AND `+partnerProvenSQL,
-			borrowFrom, models.WarmupPartnerBorrowed, borrowFrom, config.WarmupPoolFallbackMinAgeDays, senderOrg)
+		members, err := r.poolCohort(ctx, borrowFrom)
 		if err != nil {
 			return nil, err
 		}
-		cands = append(cands, borrowed...)
+		for _, m := range members {
+			if m.proven && orgDistinct(m.OrganizationID, senderOrg) {
+				cands = append(cands, m.as(models.WarmupPartnerBorrowed))
+			}
+		}
 	}
 
 	if returnTo, ok := models.WarmupPoolReturnsTo(poolType); ok {
@@ -1464,6 +1470,59 @@ type warmupExecutionExclusion struct{}
 // A reserved send must not consume its own recipient capacity during revalidation.
 func (r *warmupRepository) WarmupExecutionCandidates(ctx context.Context, pool string, sender, task uuid.UUID) ([]models.WarmupPartnerCandidate, error) {
 	return r.WarmupPartnerCandidates(context.WithValue(ctx, warmupExecutionExclusion{}, task), pool, sender)
+}
+
+// poolMember is a recipient the draw may reach in one pool, and whether it is
+// proven enough to be borrowed across tiers.
+type poolMember struct {
+	models.WarmupPartnerCandidate
+	proven bool
+}
+
+func (m poolMember) as(origin models.WarmupPartnerOrigin) models.WarmupPartnerCandidate {
+	c := m.WarmupPartnerCandidate
+	c.Origin = origin
+	return c
+}
+
+// orgDistinct is SQL's a IS DISTINCT FROM b.
+func orgDistinct(a, b *uuid.UUID) bool {
+	if a == nil || b == nil {
+		return (a == nil) != (b == nil)
+	}
+	return *a != *b
+}
+
+// poolCohort is every recipient the draw may reach in pool, from the shared
+// snapshot; each sender leaves itself and its own workspace out.
+func (r *warmupRepository) poolCohort(ctx context.Context, pool string) ([]poolMember, error) {
+	if c := r.partnerCohorts[pool]; c != nil {
+		return c.get(ctx, resultDB(ctx, r.db))
+	}
+	return loadPoolCohort(ctx, resultDB(ctx, r.db), pool)
+}
+
+func loadPoolCohort(ctx context.Context, db sendResultDB, pool string) ([]poolMember, error) {
+	rows, err := db.Query(ctx, partnerCandidateColumns+`, (`+partnerProvenSQL+`)
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		JOIN organizations o ON o.id = ea.organization_id
+		WHERE wp.pool_type = $1 AND `+partnerEligibleSQL,
+		pool, config.WarmupPoolFallbackMinAgeDays)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []poolMember
+	for rows.Next() {
+		m := poolMember{WarmupPartnerCandidate: models.WarmupPartnerCandidate{PoolType: pool}}
+		if err := rows.Scan(&m.ID, &m.Email, &m.OrganizationID, &m.Provider, &m.MailHost, &m.proven); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 // partnerCohort reads one cohort's members, uncapped; capPartnerCandidates

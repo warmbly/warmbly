@@ -196,6 +196,9 @@ func NewWMail(
 		SyncContext:               syncContext,
 		CipherService:             cipherService,
 	}
+	if emailMessageMapRepository != nil && (data.Type == models.InboxProviderGoogle || data.Type == models.InboxProviderOutlook) {
+		mail.EmailMessageMapRepository = newCachedMessageMap(emailMessageMapRepository)
+	}
 	mail.rememberExecution(data)
 	mail.ApplyPush(data.Push)
 	ready := false
