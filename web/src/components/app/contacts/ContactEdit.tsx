@@ -41,6 +41,7 @@ import ActivityTab from "./contact-edit/ActivityTab";
 import DealsTab from "./contact-edit/DealsTab";
 import NotesTab from "./contact-edit/NotesTab";
 import ResearchTab from "./contact-edit/ResearchTab";
+import LinkedInTab from "./contact-edit/LinkedInTab";
 import DetailsTab from "./contact-edit/DetailsTab";
 import { type CustomField, customFieldsPatch, customFieldsProblem } from "./customFields";
 import {
@@ -108,8 +109,10 @@ function ContactEditPanel({
     // teammate editing the same person sees the live-viewer pill up top.
     usePresenceResource(`contact:${contact.id}`, "editing");
 
-    const [tab, setTab] = useBrowseState<ContactSlideTab>(`contacts:${contact.id}:panel:tab`, "overview", contactTabSchema,
+    const [storedTab, setTab] = useBrowseState<ContactSlideTab>(`contacts:${contact.id}:panel:tab`, "overview", contactTabSchema,
         initialTab ? { initialOverride: initialTab } : undefined);
+    const hasLinkedIn = !!(detail.data?.linkedin_url ?? contact.linkedin_url);
+    const tab: ContactSlideTab = storedTab === "linkedin" && !hasLinkedIn ? "overview" : storedTab;
 
     const [firstName, setFirstName] = React.useState(contact.first_name);
     const [lastName, setLastName] = React.useState(contact.last_name);
@@ -271,7 +274,7 @@ function ContactEditPanel({
                     onClose={requestClose}
                 />
 
-                <TabStrip tab={tab} setTab={setTab} />
+                <TabStrip tab={tab} setTab={setTab} linkedIn={hasLinkedIn} />
 
                 <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
                     {tab === "overview" && (
@@ -288,6 +291,7 @@ function ContactEditPanel({
                             defaultName={contact.company || (firstName || lastName ? displayName : contact.email)}
                         />
                     )}
+                    {tab === "linkedin" && <LinkedInTab contactId={contact.id} />}
                     {tab === "notes" && <NotesTab contactId={contact.id} />}
                     {tab === "research" && <ResearchTab contactId={contact.id} />}
                     {tab === "details" && (
@@ -479,13 +483,15 @@ function ContactHeader({
 function TabStrip({
     tab,
     setTab,
+    linkedIn,
 }: {
     tab: ContactSlideTab;
     setTab: (t: ContactSlideTab) => void;
+    linkedIn: boolean;
 }) {
     return (
         <ScrollStrip activeKey={tab} className="shrink-0 border-b border-slate-200" innerClassName="px-3 gap-1">
-            {CONTACT_SLIDE_TABS.map((t) => {
+            {CONTACT_SLIDE_TABS.filter((t) => t.id !== "linkedin" || linkedIn).map((t) => {
                 const isActive = tab === t.id;
                 return (
                     <button

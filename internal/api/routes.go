@@ -851,6 +851,8 @@ func Run(
 				// The search builder is charged to the AI balance at GraphKit's cost.
 				linkedInRoutes.POST("/search/ai", search, h.LinkedInSearchAI)
 				linkedInRoutes.POST("/search/import", importer, h.LinkedInSearchImport)
+				linkedInRoutes.GET("/imports/:id", search, h.GetLinkedInImport)
+				linkedInRoutes.GET("/contacts/:contact_id/activity", search, h.GetLinkedInContactActivity)
 				linkedInRoutes.GET("/saved-searches", search, h.ListLinkedInSavedSearches)
 				linkedInRoutes.POST("/saved-searches", saved, h.CreateLinkedInSavedSearch)
 				linkedInRoutes.PATCH("/saved-searches/:id", saved, h.PatchLinkedInSavedSearch)
@@ -1003,6 +1005,9 @@ func Run(
 				// naturally safe.
 				campaigns.GET("/:id/segments", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListCampaignSegments)
 				campaigns.PUT("/:id/segments", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.SetCampaignSegments)
+				// The LinkedIn accounts that run the campaign's LinkedIn steps.
+				campaigns.GET("/:id/linkedin-accounts", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignLinkedInAccounts)
+				campaigns.PUT("/:id/linkedin-accounts", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), m.RequireAccess(models.PermManageCampaigns, models.APIPermManageLinkedIn), h.PutCampaignLinkedInAccounts)
 
 				// Campaign-scoped tracking-domain verification.
 				campaigns.POST("/:id/tracking-domain/verify", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.VerifyCampaignTrackingDomain)

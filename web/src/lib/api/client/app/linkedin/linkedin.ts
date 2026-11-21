@@ -11,7 +11,12 @@ import type {
     FinderSource,
     ImportRequest,
     ImportResult,
+    ImportStarted,
     LinkedInAccount,
+    LinkedInContactActivity,
+    LinkedInConversation,
+    LinkedInImport,
+    LinkedInMessage,
     LinkedInAccountPatch,
     LinkedInConnectQuote,
     LinkedInLinkStart,
@@ -162,8 +167,13 @@ export async function finderAi(body: { prompt: string; source: FinderSource; cur
     return await Request<AiResult>({ method: "POST", url: "/linkedin/search/ai", data: body, headers: idem(), authorization: true });
 }
 
-export async function importFinderHits(body: ImportRequest, idempotencyKey: string): Promise<ImportResult> {
-    return await Request<ImportResult>({ method: "POST", url: "/linkedin/search/import", data: body, headers: idem(idempotencyKey), authorization: true });
+/** A plain import answers its result; one that finds work emails answers 202 with the background import to follow. */
+export async function importFinderHits(body: ImportRequest, idempotencyKey: string): Promise<ImportResult | ImportStarted> {
+    return await Request<ImportResult | ImportStarted>({ method: "POST", url: "/linkedin/search/import", data: body, headers: idem(idempotencyKey), authorization: true });
+}
+
+export async function getLinkedInImport(importId: string, signal?: AbortSignal): Promise<LinkedInImport> {
+    return await Request<LinkedInImport>({ method: "GET", url: `/linkedin/imports/${id(importId)}`, authorization: true, signal });
 }
 
 export async function listSavedSearches(signal?: AbortSignal): Promise<SavedSearch[]> {
@@ -191,4 +201,76 @@ export async function getLinkedInProfile(identifier: string, accountId: string |
         authorization: true,
         signal,
     });
+}
+
+// ---------------------------------------------------------------- conversations
+
+export async function listLinkedInConversations(
+    p: { cursor?: string | null; accountId?: string | null; contactId?: string | null; unread?: boolean; limit?: number },
+    signal?: AbortSignal,
+): Promise<LinkedInList<LinkedInConversation>> {
+    return await Request<LinkedInList<LinkedInConversation>>({
+        method: "GET",
+        url: "/linkedin/conversations",
+        params: {
+            cursor: p.cursor ?? undefined,
+            account_id: p.accountId ?? undefined,
+            contact_id: p.contactId ?? undefined,
+            unread: p.unread ? "true" : undefined,
+            limit: p.limit ?? 50,
+        },
+        authorization: true,
+        signal,
+    });
+}
+
+export async function getLinkedInConversation(conversationId: string, signal?: AbortSignal): Promise<LinkedInConversation> {
+    return await Request<LinkedInConversation>({ method: "GET", url: `/linkedin/conversations/${id(conversationId)}`, authorization: true, signal });
+}
+
+export async function listLinkedInMessages(conversationId: string, cursor: string | null, signal?: AbortSignal): Promise<LinkedInList<LinkedInMessage>> {
+    return await Request<LinkedInList<LinkedInMessage>>({
+        method: "GET",
+        url: `/linkedin/conversations/${id(conversationId)}/messages`,
+        params: { cursor: cursor ?? undefined, limit: 50 },
+        authorization: true,
+        signal,
+    });
+}
+
+export async function sendLinkedInMessage(conversationId: string, body: string, idempotencyKey: string): Promise<LinkedInMessage> {
+    return await Request<LinkedInMessage>({
+        method: "POST",
+        url: `/linkedin/conversations/${id(conversationId)}/messages`,
+        data: { body },
+        headers: idem(idempotencyKey),
+        authorization: true,
+    });
+}
+
+export async function markLinkedInConversationRead(conversationId: string): Promise<void> {
+    await Request<void>({ method: "POST", url: `/linkedin/conversations/${id(conversationId)}/read`, headers: idem(), authorization: true });
+}
+
+export async function getLinkedInContactActivity(contactId: string, signal?: AbortSignal): Promise<LinkedInContactActivity> {
+    const res = await Request<Partial<LinkedInContactActivity> | null>({ method: "GET", url: `/linkedin/contacts/${id(contactId)}/activity`, authorization: true, signal });
+    return { actions: res?.actions ?? [], conversations: res?.conversations ?? [] };
+}
+
+// ---------------------------------------------------------------- campaign senders
+
+export async function getCampaignLinkedInAccounts(campaignId: string, signal?: AbortSignal): Promise<string[]> {
+    const res = await Request<{ account_ids?: string[] | null } | null>({ method: "GET", url: `/campaigns/${id(campaignId)}/linkedin-accounts`, authorization: true, signal });
+    return res?.account_ids ?? [];
+}
+
+export async function putCampaignLinkedInAccounts(campaignId: string, accountIds: string[]): Promise<string[]> {
+    const res = await Request<{ account_ids?: string[] | null } | null>({
+        method: "PUT",
+        url: `/campaigns/${id(campaignId)}/linkedin-accounts`,
+        data: { account_ids: accountIds },
+        headers: idem(),
+        authorization: true,
+    });
+    return res?.account_ids ?? accountIds;
 }

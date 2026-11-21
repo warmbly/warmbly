@@ -592,6 +592,13 @@ defmodule RealtimeWeb.OrgChannel do
           String.starts_with?(event_type, "LINKEDIN_LINK") ->
         has.(:manage_emails)
 
+      # A background LinkedIn import writes contacts; a LinkedIn step's outcome is campaign activity.
+      String.starts_with?(event_type, "LINKEDIN_IMPORT") ->
+        has.(:view_contacts)
+
+      String.starts_with?(event_type, "LINKEDIN_ACTION") ->
+        has.(:view_campaigns)
+
       # Billing
       String.contains?(event_type, "SUBSCRIPTION") or String.contains?(event_type, "BILLING") ->
         has.(:manage_billing)

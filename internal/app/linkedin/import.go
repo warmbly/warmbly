@@ -27,6 +27,8 @@ type ImportRequest struct {
 	CategoryIDs  []string        `json:"category_ids"`
 	CampaignIDs  []string        `json:"campaign_ids"`
 	SkipExisting bool            `json:"skip_existing"`
+	// FindEmails looks up a work email for each person without one, in the background.
+	FindEmails bool `json:"find_emails"`
 }
 
 // ImportResult says what became of an import. NoEmail counts people skipped because a contact needs an email
@@ -57,22 +59,47 @@ var importColumns = []struct {
 // person already a contact (matched by LinkedIn profile) is updated, or kept as is with skip_existing, and still
 // joins the segments, categories and campaigns.
 func (s *Service) Import(ctx context.Context, orgID, userID uuid.UUID, in ImportRequest) (*ImportResult, error) {
-	if !validQuery(in.Query) {
-		return nil, errBadQuery
-	}
-	switch {
-	case len(in.Keys) > maxImport:
-		return nil, invalid("Import at most 500 people at once.")
-	case len(in.Keys) == 0 && (in.Max < 1 || in.Max > maxImport):
-		return nil, invalid("Send keys, or max between 1 and 500.")
-	}
-	if err := s.requireSearch(ctx, orgID); err != nil {
+	if err := s.checkImport(ctx, orgID, in); err != nil {
 		return nil, err
 	}
 	hits, err := s.collect(ctx, orgID, in)
 	if err != nil {
 		return nil, err
 	}
+	people, emails, res, err := s.importPeople(ctx, orgID, hits)
+	if err != nil {
+		return nil, err
+	}
+	var cells [][]string
+	for i := range people {
+		if email := emails[i]; email != "" {
+			cells = append(cells, hitCells(&people[i], email))
+		} else {
+			res.Skipped++
+			res.NoEmail++
+		}
+	}
+	if _, err := s.importCells(ctx, orgID, userID, in, cells, res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (s *Service) checkImport(ctx context.Context, orgID uuid.UUID, in ImportRequest) error {
+	if !validQuery(in.Query) {
+		return errBadQuery
+	}
+	switch {
+	case len(in.Keys) > maxImport:
+		return invalid("Import at most 500 people at once.")
+	case len(in.Keys) == 0 && (in.Max < 1 || in.Max > maxImport):
+		return invalid("Send keys, or max between 1 and 500.")
+	}
+	return s.requireSearch(ctx, orgID)
+}
+
+// importPeople is the distinct people among hits, each with the email its contact already has ("" when none).
+func (s *Service) importPeople(ctx context.Context, orgID uuid.UUID, hits []graphkit.Hit) ([]graphkit.Hit, []string, *ImportResult, error) {
 	res := &ImportResult{ContactIDs: []uuid.UUID{}}
 	var ids []string
 	for i := range hits {
@@ -82,18 +109,19 @@ func (s *Service) Import(ctx context.Context, orgID, userID uuid.UUID, in Import
 	}
 	matches, err := s.Repo.ContactMatches(ctx, orgID, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	contactIDs := make([]uuid.UUID, 0, len(matches))
 	for _, m := range matches {
 		contactIDs = append(contactIDs, m.ContactID)
 	}
-	emails, err := s.Repo.ContactEmails(ctx, orgID, contactIDs)
+	known, err := s.Repo.ContactEmails(ctx, orgID, contactIDs)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	seen := map[string]bool{}
-	var cells [][]string
+	var people []graphkit.Hit
+	var emails []string
 	for i := range hits {
 		h := &hits[i]
 		id := hitPublicID(h)
@@ -102,20 +130,21 @@ func (s *Service) Import(ctx context.Context, orgID, userID uuid.UUID, in Import
 			continue
 		}
 		seen[id] = true
-		m, ok := matches[id]
 		email := ""
-		if ok {
-			email = emails[m.ContactID]
+		if m, ok := matches[id]; ok {
+			email = known[m.ContactID]
 		}
-		if email == "" {
-			res.Skipped++
-			res.NoEmail++
-			continue
-		}
-		cells = append(cells, hitCells(h, email))
+		people = append(people, *h)
+		emails = append(emails, email)
 	}
+	return people, emails, res, nil
+}
+
+// importCells runs the contact importer over rows of importColumns and folds its counts into res; the outcome
+// of each row is returned by its index.
+func (s *Service) importCells(ctx context.Context, orgID, userID uuid.UUID, in ImportRequest, cells [][]string, res *ImportResult) (map[int]models.ContactImportRowOutcome, error) {
 	if len(cells) == 0 {
-		return res, nil
+		return map[int]models.ContactImportRowOutcome{}, nil
 	}
 	mapping := make([]models.ContactImportColumnMapping, len(importColumns))
 	for i, c := range importColumns {
@@ -140,12 +169,18 @@ func (s *Service) Import(ctx context.Context, orgID, userID uuid.UUID, in Import
 	res.Created += result.Imported
 	res.Updated += result.Updated
 	res.Skipped += result.Skipped + result.Failed
+	out := make(map[int]models.ContactImportRowOutcome, len(cells))
 	for i := range cells {
-		if o, ok := sink.byLine[i+1]; ok && o.ContactID != nil && o.Status != models.ContactImportRowFailed {
+		o, ok := sink.byLine[i+1]
+		if !ok {
+			continue
+		}
+		out[i] = o
+		if o.ContactID != nil && o.Status != models.ContactImportRowFailed {
 			res.ContactIDs = append(res.ContactIDs, *o.ContactID)
 		}
 	}
-	return res, nil
+	return out, nil
 }
 
 func hitCells(h *graphkit.Hit, email string) []string {

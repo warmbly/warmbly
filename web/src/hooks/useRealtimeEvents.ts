@@ -156,8 +156,21 @@ export function useRealtimeEvents() {
         }
         if (event === 'LINKEDIN_MESSAGE') {
           const conversationId = getString('conversation_id')
-          invalidate([['linkedin', 'conversations', 'list']])
+          invalidate([['linkedin', 'conversations', 'list'], ['linkedin', 'contacts'], ['unibox', 'overview']])
           if (conversationId) invalidate([['linkedin', 'conversations', conversationId]])
+          return
+        }
+        // A background import moved (progress, then its summary). A finished one refreshes contacts through useLinkedInImport.
+        if (event.startsWith('LINKEDIN_IMPORT')) {
+          const importId = getString('import_id') ?? getString('id')
+          invalidate(importId ? [['linkedin', 'imports', importId]] : [['linkedin', 'imports']])
+          return
+        }
+        // A campaign's LinkedIn step was queued, done, skipped or failed, or an invitation was accepted.
+        if (event.startsWith('LINKEDIN_ACTION') || event.startsWith('LINKEDIN_INVITATION')) {
+          const campaignId = getString('campaign_id')
+          invalidate([['linkedin', 'contacts']])
+          if (campaignId) campaignRefresh.add([['analytics', 'campaigns', campaignId]])
           return
         }
         const accountId = getString('account_id') ?? getString('id')

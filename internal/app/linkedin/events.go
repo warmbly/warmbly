@@ -47,8 +47,19 @@ func (s *Service) ApplySocialEvent(ctx context.Context, orgID uuid.UUID, ev grap
 			return err
 		}
 		return s.applyMessage(ctx, orgID, &me)
+	case graphkit.EventSocialActionUpdated:
+		var a graphkit.Action
+		if err := json.Unmarshal(ev.Data, &a); err != nil {
+			return err
+		}
+		return s.applyAction(ctx, orgID, &a)
+	case graphkit.EventSocialInvitationAccepted:
+		var ia graphkit.InvitationAccepted
+		if err := json.Unmarshal(ev.Data, &ia); err != nil {
+			return err
+		}
+		return s.applyInvitationAccepted(ctx, orgID, &ia)
 	}
-	// Actions and accepted invitations belong to campaign steps, which come later.
 	return nil
 }
 
@@ -58,7 +69,7 @@ func (s *Service) ReconcileSocial(ctx context.Context) error {
 	if s.available() {
 		errs = append(errs, s.reconcileSessions(ctx))
 	}
-	errs = append(errs, s.backfillContacts(ctx))
+	errs = append(errs, s.backfillContacts(ctx), s.resumeImports(ctx))
 	return errors.Join(errs...)
 }
 

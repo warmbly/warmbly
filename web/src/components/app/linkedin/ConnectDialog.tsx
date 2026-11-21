@@ -39,7 +39,7 @@ import { useAddPaymentMethod } from "@/lib/api/hooks/app/subscription/useBalance
 import type { ConnectCheckpoint, ConnectChoice, ConnectSession, LinkedInAccount, LinkedInStatus } from "@/lib/api/models/app/linkedin/LinkedIn";
 import { balanceLine, paymentPlan } from "@/lib/buy/checkout";
 import { cardLabel, fmtMicros, fmtMonthly } from "@/lib/buy/money";
-import { attemptsRemaining, checkoutUrl, linkedInErrorMessage } from "@/lib/linkedin/errors";
+import { acceptQuoteMicros, attemptsRemaining, checkoutUrl, linkedInErrorMessage } from "@/lib/linkedin/errors";
 import { cn } from "@/lib/utils";
 import LinkedInMark from "./LinkedInMark";
 import { Avatar, LicenceChips, TIER_LABEL } from "./parts";
@@ -169,9 +169,12 @@ export default function ConnectDialog({
                 ? "Add a card to pay for the seat."
                 : null;
 
-    const startSession = () => {
+    // accept is the charge the person saw; a server that prices it differently answers linkedin_accept_required with its quote.
+    const startSession = (accept = !free) => {
+        const key = accept === !free ? idemKey : crypto.randomUUID();
+        if (key !== idemKey) setIdemKey(key);
         create.mutate(
-            { body: { account_id: accountId, timezone: localTimezone(), accept: !free, acknowledged: true }, idempotencyKey: idemKey },
+            { body: { account_id: accountId, timezone: localTimezone(), accept, acknowledged: true }, idempotencyKey: key },
             {
                 onSuccess: (r) => {
                     setCharged(r.charged_micros);
@@ -212,7 +215,7 @@ export default function ConnectDialog({
                         Cancel
                     </button>
                 )}
-                <button type="button" disabled={!acknowledged || create.isPending} onClick={startSession} className={primary}>
+                <button type="button" disabled={!acknowledged || create.isPending} onClick={() => startSession()} className={primary}>
                     {create.isPending && <Loader2Icon className="w-3.5 h-3.5 animate-spin" />}
                     {payLabel}
                 </button>
@@ -282,7 +285,14 @@ export default function ConnectDialog({
                             />
                         )}
                         {step === "ack" && (
-                            <AckStep checked={acknowledged} onChange={setAcknowledged} error={create.isError ? create.error : null} reconnect={reconnect ?? null} />
+                            <AckStep
+                                checked={acknowledged}
+                                onChange={setAcknowledged}
+                                error={create.isError ? create.error : null}
+                                reconnect={reconnect ?? null}
+                                pending={create.isPending}
+                                onAccept={() => startSession(true)}
+                            />
                         )}
                         {step === "sign_in" && sessionId && (
                             <SignInStep sessionId={sessionId} session={session.data} onDirty={() => setDirty(true)} onSubmitted={() => setSigningIn(false)} />
@@ -435,8 +445,23 @@ function PriceStep({
 
 const needsCardRow = (free: boolean, p: Parameters<typeof paymentPlan>[0]) => !free && p?.needs_payment_method === true;
 
-function AckStep({ checked, onChange, error, reconnect }: { checked: boolean; onChange: (v: boolean) => void; error: unknown; reconnect: LinkedInAccount | null }) {
+function AckStep({
+    checked,
+    onChange,
+    error,
+    reconnect,
+    pending,
+    onAccept,
+}: {
+    checked: boolean;
+    onChange: (v: boolean) => void;
+    error: unknown;
+    reconnect: LinkedInAccount | null;
+    pending: boolean;
+    onAccept: () => void;
+}) {
     const url = checkoutUrl(error);
+    const quote = acceptQuoteMicros(error);
     return (
         <div className="space-y-3">
             {reconnect && (
@@ -465,7 +490,21 @@ function AckStep({ checked, onChange, error, reconnect }: { checked: boolean; on
                 <Checkbox tone="slate" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5" />
                 <span className="text-[12px] text-slate-700 leading-relaxed">I understand LinkedIn may restrict an automated account, and I accept that risk for this account.</span>
             </label>
-            {!!error && (
+            {quote !== null ? (
+                <div role="alert" className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-2.5 flex items-start gap-2.5">
+                    <CreditCardIcon className="w-4 h-4 text-sky-700 mt-0.5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-medium text-sky-950">This account is charged {fmtMonthly(quote)}</p>
+                        <p className="text-[11.5px] text-sky-900/80 leading-snug">
+                            The first month is taken now, from your balance first and your card for the rest. It goes back to your balance if the sign-in does not finish.
+                        </p>
+                    </div>
+                    <button type="button" disabled={!checked || pending} onClick={onAccept} className={cn(primary, "shrink-0")}>
+                        {pending && <Loader2Icon className="w-3.5 h-3.5 animate-spin" />}
+                        Accept and pay {fmtMicros(quote)}
+                    </button>
+                </div>
+            ) : !!error && (
                 <Notice tone="error">
                     {linkedInErrorMessage(error)}
                     {url && (

@@ -156,6 +156,8 @@ const (
 	EventLinkedInConnectionUpdated EventType = "LINKEDIN_CONNECTION_UPDATED"
 	EventLinkedInMessage           EventType = "LINKEDIN_MESSAGE"
 	EventLinkedInLinkUpdated       EventType = "LINKEDIN_LINK_UPDATED"
+	EventLinkedInImportUpdated     EventType = "LINKEDIN_IMPORT_UPDATED"
+	EventLinkedInActionUpdated     EventType = "LINKEDIN_ACTION_UPDATED"
 )
 
 // BaseEvent contains common fields for all events
@@ -1319,6 +1321,10 @@ type LinkedInEvent struct {
 	ConversationID string `json:"conversation_id,omitempty"`
 	Status         string `json:"status,omitempty"`
 	Direction      string `json:"direction,omitempty"`
+	ImportID       string `json:"import_id,omitempty"`
+	CampaignID     string `json:"campaign_id,omitempty"`
+	ContactID      string `json:"contact_id,omitempty"`
+	ActionType     string `json:"action_type,omitempty"`
 }
 
 // PublishLinkedInEvent emits one LINKEDIN_* event to the workspace. Best-effort.

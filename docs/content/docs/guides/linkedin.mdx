@@ -103,15 +103,25 @@ In the [lead finder](/guides/lead-finder/), choose LinkedIn as the source and se
 
 Select results and add them to segments, categories and campaigns. A person already in your contacts, matched by their LinkedIn profile, is updated with what LinkedIn shows (or kept as it is with **Skip people who are already contacts**) and joins the segments, categories and campaigns you chose.
 
-A contact needs an email address, and LinkedIn search gives none, so a person who is not yet a contact is counted as skipped. Add their address in your contacts, or import them from a list that has it, and the next search matches them.
+A contact needs an email address, and LinkedIn search gives none, so a person who is not yet a contact is counted as skipped. Turn on **Find work emails** to look one up for each of them through the [lead finder](/guides/lead-finder/#find-people-and-emails), at the lead finder's person email price. Only an address that verifies is charged and used; a lookup that finds none, or a contact that cannot be written, is refunded. The import then runs in the background and its progress updates live; people still without an address are counted under no email. Without it, add their address in your contacts, or import them from a list that has it, and the next search matches them.
+
+Results already reached from LinkedIn show it: an invitation pending, connected, messaged or replied.
 
 ## LinkedIn on contacts
 
 Contacts carry a LinkedIn profile. Set it on a contact, send `linkedin_url` through the API, or include a column named **LinkedIn**, **LinkedIn URL** or **linkedin_profile** in a CSV import. Warmbly stores it as `https://www.linkedin.com/in/<id>` and refuses a value that names no LinkedIn profile.
 
+## LinkedIn in campaigns
+
+Campaigns can invite, message, send InMail, visit, follow, like a post and withdraw an invitation as steps, and branch on whether a contact connected, replied or has an invitation pending. Pick which accounts run a campaign's LinkedIn steps in its settings; each contact stays on one account. See [LinkedIn steps](/guides/sequences/#linkedin-steps).
+
+A contact's **LinkedIn** tab shows every LinkedIn step run for them, with its campaign and outcome, and their conversations. Campaign analytics add invitations sent and accepted, the acceptance rate, messages, InMails and replies.
+
 ## Conversations
 
 Messages your connected accounts send and receive on LinkedIn appear under each account's conversations, matched to the contact when one has that profile, and update live. Reply from Warmbly and the message is sent from that account. Message content is encrypted at rest with your workspace's key.
+
+A reply on LinkedIn from a contact in a campaign counts as their reply: it is classified like an email reply, stops their sequence when **Stop on reply** is on, runs reply branches, and sends the same reply notification and `campaign.reply_received` webhook, with `"channel": "linkedin"`. The [unibox](/guides/unibox/#linkedin) counts unread LinkedIn conversations.
 
 ## Who can do what
 
@@ -123,6 +133,8 @@ Messages your connected accounts send and receive on LinkedIn appear under each 
 | Search, build searches with AI, read profiles and saved searches | View contacts | `READ_LINKEDIN` |
 | Save, change and delete saved searches | View contacts | `MANAGE_LINKEDIN` |
 | Add results to contacts | Manage contacts | `MANAGE_LINKEDIN` |
+| Follow an import and see a contact's LinkedIn activity | View contacts | `READ_LINKEDIN` |
+| Pick a campaign's LinkedIn accounts | Manage campaigns | `WRITE_CAMPAIGNS` and `MANAGE_LINKEDIN` |
 | Read conversations and mark them read | Access unibox | `READ_LINKEDIN` |
 | Reply in a conversation | Access unibox | `MANAGE_LINKEDIN` |
 
@@ -130,7 +142,7 @@ Connecting and removing an account also asks for a recent sign-in. See [team rol
 
 ## Moving a workspace
 
-Saved LinkedIn searches travel in a [workspace archive](/guides/workspace-export-import/). Connected accounts, connections and conversations do not: they belong to the GraphKit connection of the instance that holds them. Connect the accounts again on the new instance.
+Saved LinkedIn searches travel in a [workspace archive](/guides/workspace-export-import/). Connected accounts, connections, conversations, the LinkedIn steps campaigns ran and the accounts a campaign uses do not: they belong to the GraphKit connection of the instance that holds them. Connect the accounts again on the new instance and pick each campaign's accounts again; campaigns keep their LinkedIn steps.
 
 ## Self-hosted instances
 

@@ -489,6 +489,17 @@ func (h *Handler) LinkedInSearchImport(c *gin.Context) {
 	if !bindLinkedIn(c, &in) {
 		return
 	}
+	if in.FindEmails {
+		im, err := h.LinkedInService.StartImport(c.Request.Context(), orgID, userID, in)
+		if err != nil {
+			linkedInError(c, err)
+			return
+		}
+		h.auditOrg(c, models.AuditActionImport, models.AuditEntityContact, nil, nil, map[string]string{
+			"source": "linkedin", "import_id": im.ID.String(), "find_emails": "true"})
+		c.JSON(http.StatusAccepted, gin.H{"import_id": im.ID})
+		return
+	}
 	res, err := h.LinkedInService.Import(c.Request.Context(), orgID, userID, in)
 	if err != nil {
 		linkedInError(c, err)

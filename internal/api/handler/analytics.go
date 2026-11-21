@@ -145,6 +145,11 @@ func (h *Handler) GetCampaignAnalytics(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+	if h.LinkedInService != nil && analytics != nil && linkedInReadable(c) {
+		if stats, err := h.LinkedInService.CampaignStats(c.Request.Context(), *orgID, []uuid.UUID{campaignID}); err == nil {
+			analytics.LinkedIn = stats[campaignID]
+		}
+	}
 
 	c.JSON(http.StatusOK, analytics)
 }

@@ -46,7 +46,7 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	}
 
 	if len(accounts) == 0 {
-		return time.Time{}, nil, uuid.Nil, ErrNoEmailAccounts
+		return s.placeWithoutMailbox(ctx, campaign)
 	}
 
 	// STEP 2.5: What the pool can do this pass, resolved once. `paced` is the

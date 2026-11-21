@@ -250,6 +250,10 @@ func (s *Service) annotate(ctx context.Context, orgID uuid.UUID, hits []graphkit
 	if err != nil {
 		counts = nil
 	}
+	invites, err := s.Repo.InviteStates(ctx, orgID, ids)
+	if err != nil {
+		invites = nil
+	}
 	out := make([]Hit, len(hits))
 	for i := range hits {
 		h := &hits[i]
@@ -267,8 +271,12 @@ func (s *Service) annotate(ctx context.Context, orgID uuid.UUID, hits []graphkit
 			m.Outreach = OutreachReplied
 		case conversed || match.Contacted:
 			m.Outreach = OutreachMessaged
-		case h.Person != nil && h.Person.NetworkDistance == "1st":
+		case (h.Person != nil && h.Person.NetworkDistance == "1st") || invites[id]:
 			m.Outreach = OutreachConnected
+		default:
+			if _, pending := invites[id]; pending {
+				m.Outreach = OutreachInvitePending
+			}
 		}
 		if c := hitCompany(h); c != "" {
 			m.CompanyContacts = counts[strings.ToLower(strings.TrimSpace(c))]

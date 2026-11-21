@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,7 +70,13 @@ type Deps struct {
 	Publisher     Publisher
 	Contacts      contact.ContactService
 	Cipher        cipher.CipherService
-	Now           func() time.Time
+	// Replies, Campaigns and CampaignLogs carry LinkedIn steps and replies into campaigns; each is optional.
+	Replies      Replies
+	Campaigns    Campaigns
+	CampaignLogs CampaignLogs
+	// Finder looks up work emails for a LinkedIn import; optional.
+	Finder EmailFinder
+	Now    func() time.Time
 }
 
 // Service is the LinkedIn add-on.
@@ -83,6 +90,8 @@ type Service struct {
 	hits map[uuid.UUID]*hitCache
 	// pulled spaces out conversation pulls per workspace.
 	pulled map[uuid.UUID]time.Time
+	// finderRef is the finder WireFinder attached; it wins over Deps.Finder.
+	finderRef atomic.Pointer[finderBox]
 }
 
 // New builds the service.

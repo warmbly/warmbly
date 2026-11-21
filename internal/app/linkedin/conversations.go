@@ -147,7 +147,11 @@ func (s *Service) applyMessage(ctx context.Context, orgID uuid.UUID, ev *graphki
 	}
 	s.publish(ctx, orgID, pubsub.LinkedInEvent{BaseEvent: pubsub.BaseEvent{EventType: pubsub.EventLinkedInMessage},
 		AccountID: conv.AccountID.String(), ConversationID: conv.ID.String(), Direction: ev.Message.Direction, Status: ev.Message.Status})
-	return nil
+	acct, err := s.Repo.GetAccount(ctx, orgID, conv.AccountID)
+	if err != nil {
+		return err
+	}
+	return s.noteMessage(ctx, conv, acct, &ev.Message)
 }
 
 func (s *Service) toConversation(ctx context.Context, ci *cipher.Cipher, c *models.LinkedInConversation) *Conversation {

@@ -56,6 +56,8 @@ type schedulerService struct {
 	// workers says whether a mailbox's worker is heartbeating. Optional/
 	// nil-safe: without it every mailbox is taken to be reachable.
 	workers WorkerLiveness
+	// linkedIn lets a campaign with no sending mailbox run its LinkedIn steps (WireLinkedIn). Optional/nil-safe.
+	linkedIn LinkedInWake
 }
 
 // WorkerLiveness reports whether a worker is heartbeating, the check the send

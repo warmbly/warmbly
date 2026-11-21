@@ -217,6 +217,40 @@ A step can perform an action instead of sending: add or remove a label, label th
 **Label conversation** is reply-only. It labels the conversation the contact replied on, so place it on a reply branch; anywhere else it is a no-op because there is no thread to label.
 </Callout>
 
+### LinkedIn steps
+
+With the [LinkedIn add-on](/guides/linkedin/), a step can act on LinkedIn instead of sending email. Pick the campaign's LinkedIn accounts first (the campaign's **LinkedIn accounts** setting, or `PUT /campaigns/:id/linkedin-accounts`); a campaign with LinkedIn steps and none of them does not start.
+
+| Step | What it does | Copy |
+| --- | --- | --- |
+| **Invite** | Sends a connection invitation | An optional note, at most 300 characters once rendered (500 as written) |
+| **Message** | Messages a 1st-degree connection | A body, up to 8,000 characters |
+| **InMail** | Sends an InMail, which needs a licence that includes it | A subject (up to 200 characters) and a body |
+| **Visit profile**, **Follow**, **Like latest post** | Visits, follows, or likes the person's latest post | None |
+| **Withdraw invite** | Withdraws a pending invitation | None |
+
+The copy takes the same [variables](/guides/expressions/) and spintax as an email, with `.Sender` being the LinkedIn account's name.
+
+Each contact stays on one LinkedIn account for the whole campaign: the account that ran their first LinkedIn step runs every later one. A new contact goes to the account with the most room left today. GraphKit runs the action inside the account's own limits and working hours, so a queued step can take a while; the next step waits for its own wait as usual. Every step is queued once, whatever happens to the campaign's ticks or a restart.
+
+A step is skipped, and the contact goes on to the next one, when the contact has no LinkedIn profile, none of the campaign's accounts can be used, or GraphKit skips it (already connected, an invitation already pending, not a connection, no InMail credits). A step GraphKit refuses outright is marked failed; one it could not reach is tried again, up to 5 times. Skipped and failed steps are written to the campaign's activity. Starting a campaign warns, without refusing, when some leads have no LinkedIn profile.
+
+A campaign of only LinkedIn steps needs no sending mailboxes, but the workspace still needs one mailbox, which it is scheduled through; nothing is sent from it. Its steps follow the campaign's start and end dates and sending windows. An email step reached by a contact with no email address is skipped and the contact goes on, written once to the campaign's activity.
+
+Branch on LinkedIn with these conditions:
+
+| Condition | Meaning |
+| --- | --- |
+| `linkedin_connected` / `not_linkedin_connected` | The contact accepted an invitation from, or is connected to, one of the workspace's accounts |
+| `linkedin_replied` / `not_linkedin_replied` | The contact replied on LinkedIn since entering the campaign |
+| `linkedin_invite_pending` | An invitation to the contact is waiting for an answer |
+
+A LinkedIn reply counts as a reply everywhere a reply counts: `if replied`, reply intent, reply branches and **Stop on reply**. Like a wait or a Switch, a LinkedIn step reached by an instant reply branch runs at the next boundary.
+
+<Callout type="info">
+Upgrade every backend before adding LinkedIn steps. An older release reads them as no-op actions and moves the contact past them.
+</Callout>
+
 ### Switch steps
 
 A Switch step routes each contact down one of several named cases (`interested`, `not_now`, `wrong_person`). Every case is its own column under the step; add the steps that case leads to under it. **Otherwise** is the fallback for contacts no case matched. Renaming a case keeps the steps under it. Side effects stay as ordinary action steps on a path, so the decision and its consequences remain separately visible.

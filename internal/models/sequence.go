@@ -91,7 +91,7 @@ func StepSubject(seqs []Sequence, i int) string {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | add_to_segment | remove_from_segment | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | ai_step | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | add_to_segment | remove_from_segment | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | ai_step | end | linkedin_invite | linkedin_message | linkedin_inmail | linkedin_visit | linkedin_follow | linkedin_like | linkedin_withdraw
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -197,6 +197,41 @@ type ActionConfig struct {
 	AIRemoveTags      []AITagRef `json:"ai_remove_tags,omitempty"`
 	AILabels          []AITagRef `json:"ai_labels,omitempty"`
 	AIAllowCreateTags bool       `json:"ai_allow_create_tags,omitempty"`
+
+	// linkedin_* steps run through one of the campaign's LinkedIn accounts. Note
+	// (invite), Body (message, inmail) and Subject (inmail) render like email copy.
+	Note    string `json:"note,omitempty"`
+	Body    string `json:"body,omitempty"`
+	Subject string `json:"subject,omitempty"`
+}
+
+// LinkedIn step types.
+const (
+	ActionLinkedInInvite   = "linkedin_invite"
+	ActionLinkedInMessage  = "linkedin_message"
+	ActionLinkedInInMail   = "linkedin_inmail"
+	ActionLinkedInVisit    = "linkedin_visit"
+	ActionLinkedInFollow   = "linkedin_follow"
+	ActionLinkedInLike     = "linkedin_like"
+	ActionLinkedInWithdraw = "linkedin_withdraw"
+)
+
+// LinkedIn step limits: the note is cut to LinkedInInviteNoteMax after rendering.
+const (
+	LinkedInInviteNoteMax     = 300
+	LinkedInInviteTemplateMax = 500
+	LinkedInMessageBodyMax    = 8000
+	LinkedInInMailSubjectMax  = 200
+)
+
+// IsLinkedInAction reports whether an action type is a LinkedIn step.
+func IsLinkedInAction(t string) bool {
+	switch t {
+	case ActionLinkedInInvite, ActionLinkedInMessage, ActionLinkedInInMail, ActionLinkedInVisit,
+		ActionLinkedInFollow, ActionLinkedInLike, ActionLinkedInWithdraw:
+		return true
+	}
+	return false
 }
 
 // AITagRef is one tag in an AI agent step's add/remove pool (id + display name).

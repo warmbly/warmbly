@@ -111,4 +111,16 @@ export default interface CampaignAnalytics {
     daily_stats?: DailyStats[]
     // Where and on what people opened and clicked; human events only.
     engagement?: CampaignEngagementBreakdown | null
+    // LinkedIn steps' results; null or absent when the campaign has none.
+    linkedin?: CampaignLinkedInStats | null
+}
+
+export interface CampaignLinkedInStats {
+    invites_sent: number
+    invites_accepted: number
+    // Percentage of invites_sent, like the other rates.
+    acceptance_rate: number
+    messages_sent: number
+    inmails_sent: number
+    replies: number
 }

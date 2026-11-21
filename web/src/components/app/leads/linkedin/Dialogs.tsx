@@ -1,6 +1,6 @@
 // The finder's dialogs: add to contacts, paste a LinkedIn URL, save a search, and the saved searches menu.
 import { Link } from "@tanstack/react-router";
-import { ArrowRightIcon, BookmarkIcon, CheckCircle2Icon, ClipboardPasteIcon, FolderTreeIcon, Loader2Icon, MegaphoneIcon, PencilIcon, TagsIcon, Trash2Icon, UserPlusIcon, type LucideIcon } from "lucide-react";
+import { ArrowRightIcon, BookmarkIcon, CheckCircle2Icon, CircleAlertIcon, ClipboardPasteIcon, FolderTreeIcon, Loader2Icon, MegaphoneIcon, PencilIcon, TagsIcon, Trash2Icon, UserPlusIcon, XIcon, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast/headless";
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
@@ -10,8 +10,19 @@ import { CampaignMultiPicker, SegmentMultiPicker } from "@/components/app/segmen
 import { TextInput } from "@/components/ui/field";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuLabel, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
-import { useCreateSavedSearch, useDeleteSavedSearch, useImportFinderHits, useParseFinderUrl, usePatchSavedSearch, useSavedSearches } from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+import {
+    importFinished,
+    useCreateSavedSearch,
+    useDeleteSavedSearch,
+    useImportFinderHits,
+    useLinkedInImport,
+    useParseFinderUrl,
+    usePatchSavedSearch,
+    useSavedSearches,
+} from "@/lib/api/hooks/app/linkedin/useLinkedIn";
+import { useLeadFinderConfig } from "@/lib/api/hooks/app/leads/useLeads";
 import type { FinderQuery, ImportResult, ParsedUrl, SavedSearch } from "@/lib/api/models/app/linkedin/LinkedIn";
+import { fmtUsdCost } from "@/lib/money";
 import { linkedInErrorMessage } from "@/lib/linkedin/errors";
 import { cn } from "@/lib/utils";
 import { SOURCE_LABELS } from "./state";
@@ -31,6 +42,8 @@ export function ImportDialog({ open, onClose, target, suggestedSegment, onDone }
     const [categoryIds, setCategoryIds] = useState<string[]>([]);
     const [campaignIds, setCampaignIds] = useState<string[]>([]);
     const [skipExisting, setSkipExisting] = useState(false);
+    const [findEmails, setFindEmails] = useState(false);
+    const emailCost = useLeadFinderConfig().data?.person_email_cost_usd;
     const [result, setResult] = useState<ImportResult | null>(null);
     // One key per opening, so a retried click is the same import.
     const key = useRef(newKey());
@@ -57,9 +70,17 @@ export function ImportDialog({ open, onClose, target, suggestedSegment, onDone }
                     category_ids: categoryIds,
                     campaign_ids: campaignIds,
                     skip_existing: skipExisting,
+                    find_emails: findEmails,
                 },
             });
             if (mine !== attempt.current) return;
+            if ("import_id" in res) {
+                // Finding emails runs in the background; its progress lives in a toast, not this dialog.
+                showImportProgress(res.import_id);
+                onDone();
+                close();
+                return;
+            }
             setResult(res);
             onDone();
             const n = res.created + res.updated;
@@ -125,6 +146,7 @@ export function ImportDialog({ open, onClose, target, suggestedSegment, onDone }
                             </div>
                         ))}
                     </dl>
+                    <NoEmailNote count={result.no_email ?? 0} />
                     <p className="text-[11.5px] text-slate-500">Each contact keeps its LinkedIn profile, so LinkedIn steps and the email finder can use it.</p>
                 </div>
             ) : (
@@ -155,10 +177,92 @@ export function ImportDialog({ open, onClose, target, suggestedSegment, onDone }
                             </div>
                             <Toggle value={skipExisting} onChange={setSkipExisting} ariaLabel="Skip people who are already contacts" />
                         </div>
+                        <div className="flex items-start gap-3 border-t border-slate-100 px-4 py-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[12.5px] font-medium text-slate-900">Find work emails</p>
+                                <p className="text-[11.5px] text-slate-500">
+                                    {findEmails
+                                        ? `Looks up a work email for each person in the background, at ${emailCost != null ? `${fmtUsdCost(emailCost)} per email found` : "the lead finder's price per email found"}, from your balance. You can keep working while it runs.`
+                                        : "People without an email on their profile are left out."}
+                                </p>
+                            </div>
+                            <Toggle value={findEmails} onChange={setFindEmails} ariaLabel="Find work emails" />
+                        </div>
                     </section>
                 </div>
             )}
         </LeadDialog>
+    );
+}
+
+function NoEmailNote({ count }: { count: number }) {
+    if (count <= 0) return null;
+    return (
+        <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-[11.5px] leading-relaxed text-amber-800 ring-1 ring-amber-200">
+            <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+            {count === 1 ? "1 person had no email" : `${count.toLocaleString()} people had no email`}; turn on Find work emails to look them up.
+        </p>
+    );
+}
+
+const IMPORT_TOAST = (id: string) => `linkedin-import:${id}`;
+
+function showImportProgress(importId: string) {
+    toast.custom(<ImportProgressToast importId={importId} />, { id: IMPORT_TOAST(importId), duration: Infinity, position: "bottom-right" });
+}
+
+// A background import's progress, then its result; dismissed by hand.
+function ImportProgressToast({ importId }: { importId: string }) {
+    const { data: imp, isError } = useLinkedInImport(importId);
+    const done = importFinished(imp);
+    const failed = imp?.status === "failed";
+    const total = imp?.total ?? 0;
+    const pct = total > 0 ? Math.min(100, Math.round(((imp?.processed ?? 0) / total) * 100)) : 0;
+    const added = (imp?.created ?? 0) + (imp?.updated ?? 0);
+    return (
+        <div role="status" className="w-[320px] max-w-[calc(100vw-2rem)] rounded-lg bg-white px-3 py-2.5 text-slate-800 shadow-[0_3px_10px_rgb(0_0_0/0.1),0_3px_3px_rgb(0_0_0/0.05)] ring-1 ring-slate-200">
+            <div className="flex items-center gap-2">
+                {failed || isError ? (
+                    <CircleAlertIcon className="size-4 shrink-0 text-rose-500" />
+                ) : done ? (
+                    <CheckCircle2Icon className="size-4 shrink-0 text-emerald-500" />
+                ) : (
+                    <Loader2Icon className="size-4 shrink-0 animate-spin text-sky-600" />
+                )}
+                <p className="min-w-0 flex-1 truncate text-[12.5px] font-medium">
+                    {failed ? "The LinkedIn import stopped" : done ? `${added.toLocaleString()} contact${added === 1 ? "" : "s"} from LinkedIn` : "Adding people from LinkedIn"}
+                </p>
+                <button type="button" aria-label="Dismiss" onClick={() => toast.dismiss(IMPORT_TOAST(importId))} className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                    <XIcon className="size-3.5" />
+                </button>
+            </div>
+            {!done && !isError && (
+                <div className="mt-2">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-sky-500 transition-[width] duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    <p className="mt-1 text-[11px] tabular-nums text-slate-500">
+                        {total > 0 ? `${(imp?.processed ?? 0).toLocaleString()} of ${total.toLocaleString()}` : "Starting"}
+                        {imp && imp.emails_found > 0 ? `, ${imp.emails_found.toLocaleString()} emails found` : ""}
+                    </p>
+                </div>
+            )}
+            {isError && !imp && <p className="mt-1 text-[11.5px] text-slate-500">Its progress could not be read. The contacts still arrive as it finishes.</p>}
+            {failed && imp?.error && <p className="mt-1 text-[11.5px] text-slate-500">{imp.error}</p>}
+            {done && imp && (
+                <>
+                    <p className="mt-1 text-[11.5px] leading-relaxed text-slate-500">
+                        {imp.created.toLocaleString()} new, {imp.updated.toLocaleString()} updated, {imp.emails_found.toLocaleString()} emails found
+                        {imp.skipped > 0 ? `, ${imp.skipped.toLocaleString()} skipped` : ""}.
+                    </p>
+                    {imp.no_email > 0 && <p className="mt-1 text-[11.5px] text-amber-700">{imp.no_email === 1 ? "1 person had" : `${imp.no_email.toLocaleString()} people had`} no work email to find and {imp.no_email === 1 ? "was" : "were"} not added.</p>}
+                    <Link to="/app/contacts" onClick={() => toast.dismiss(IMPORT_TOAST(importId))} className="mt-1.5 inline-flex items-center gap-1 text-[11.5px] font-medium text-sky-700 hover:underline">
+                        Open contacts
+                        <ArrowRightIcon className="size-3" />
+                    </Link>
+                </>
+            )}
+        </div>
     );
 }
 

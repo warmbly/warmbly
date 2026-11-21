@@ -15,8 +15,13 @@ const COPY: Record<string, string> = {
     search_busy: "LinkedIn is busy with another search on this account. Retrying in a moment.",
     stale_cursor: "These results expired. Run the search again to keep going.",
     recipient_invalid: "That person cannot be messaged from this account.",
-    account_unavailable: "That LinkedIn account is not ready. Reconnect it, then try again.",
-    ai_unavailable: "Describing a search is not available right now.",
+    account_unavailable: "There is no LinkedIn account ready to do this. Connect one, or reconnect the one you have, then try again.",
+    ai_unavailable: "Describing a search is not available right now. Try again shortly, or set the filters by hand.",
+    linkedin_unpaid: "This LinkedIn account is paused because its month was not paid. Update your card and it resumes with the next payment.",
+    linkedin_invalid_request: "Some of the details were not accepted. Check them and try again.",
+    linkedin_acknowledgement_required: "Tick the box that you accept the risk of automating this account, then continue.",
+    linkedin_accept_required: "Connecting this account is charged. Accept the charge to continue.",
+    invalid_linkedin_url: "That is not a LinkedIn profile address. Use one like linkedin.com/in/name.",
 };
 
 export function linkedInErrorCode(err: unknown): string | undefined {
@@ -26,6 +31,9 @@ export function linkedInErrorCode(err: unknown): string | undefined {
 /** One friendly sentence for any LinkedIn error, with the store's copy for payment codes. */
 export function linkedInErrorMessage(err: unknown): string {
     const code = linkedInErrorCode(err);
+    // A refused field is named by the server, which says exactly what to fix.
+    const message = (err as Partial<AppError> | null)?.message;
+    if (code === "linkedin_invalid_request" && message) return message;
     if (code && COPY[code]) return COPY[code];
     return storeErrorMessage(err);
 }
@@ -40,4 +48,17 @@ export function attemptsRemaining(err: unknown): number | null {
 export function checkoutUrl(err: unknown): string | null {
     const v = (err as Partial<AppError> | null)?.details?.url;
     return typeof v === "string" && v.startsWith("https://") ? v : null;
+}
+
+/** The fields a linkedin_invalid_request names, when it names them. */
+export function invalidFields(err: unknown): Record<string, string> | null {
+    const v = (err as Partial<AppError> | null)?.details?.fields;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : null;
+}
+
+/** The charge a linkedin_accept_required answer asks to accept, in micro-USD. */
+export function acceptQuoteMicros(err: unknown): number | null {
+    if (linkedInErrorCode(err) !== "linkedin_accept_required") return null;
+    const q = (err as Partial<AppError> | null)?.details?.quote as { monthly_micros?: unknown } | undefined;
+    return typeof q?.monthly_micros === "number" ? q.monthly_micros : null;
 }

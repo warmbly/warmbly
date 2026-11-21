@@ -196,7 +196,7 @@ func orgAddressHolders(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, userID s
 	const query = `
 		SELECT DISTINCT ON (LOWER(email)) LOWER(email), user_id::text
 		FROM contacts
-		WHERE organization_id = $1 AND LOWER(email) = ANY($2::text[])
+		WHERE organization_id = $1 AND email <> '' AND LOWER(email) = ANY($2::text[])
 		ORDER BY LOWER(email), (user_id::text = $3) DESC, created_at ASC, id ASC`
 	rows, err := tx.Query(ctx, query, orgID, emails, userID)
 	if err != nil {
@@ -242,7 +242,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 		// normalizes the same way, so the two cannot disagree about what an
 		// address is.
 		addr, ok := email.Normalize(lead.Email)
-		if !ok {
+		if !ok && !(config.ContactsWithoutEmail && strings.TrimSpace(lead.Email) == "" && strings.TrimSpace(lead.CustomFields[models.ContactLinkedInField]) != "") {
 			return nil, errx.ErrEmail
 		}
 		lead.Email = addr
@@ -399,7 +399,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 			  ($14::text = 'catch_all'),
 			  CASE WHEN $13::text <> '' THEN NOW() ELSE NULL END
 			 )
-			 ON CONFLICT (user_id, (LOWER(email))) DO UPDATE SET
+			 ON CONFLICT (user_id, (LOWER(email))) WHERE email <> '' DO UPDATE SET
 			  organization_id = COALESCE(contacts.organization_id, EXCLUDED.organization_id),
 			  -- Enrich, never erase: a blank cell in a re-imported file must
 			  -- not wipe a name we already have.
@@ -910,7 +910,7 @@ func (r *contactRepository) SetContactLocations(ctx context.Context, results []C
 func (r *contactRepository) SetSubscribedByEmail(ctx context.Context, orgID uuid.UUID, email string, subscribed bool) error {
 	_, err := resultDB(ctx, r.DB).Exec(ctx,
 		`UPDATE contacts SET subscribed = $3, updated_at = NOW()
-		 WHERE organization_id = $1 AND LOWER(email) = LOWER($2) AND subscribed IS DISTINCT FROM $3`,
+		 WHERE organization_id = $1 AND email <> '' AND LOWER(email) = LOWER($2) AND subscribed IS DISTINCT FROM $3`,
 		orgID, email, subscribed)
 	return err
 }
@@ -1222,7 +1222,7 @@ func (r *contactRepository) GetByEmailAndOrganization(ctx context.Context, organ
 	query := `
 		SELECT ` + lookupContactColumns + `
 		FROM contacts c
-		WHERE c.organization_id = $1
+		WHERE c.organization_id = $1 AND c.email <> ''
 		  AND LOWER(c.email) = LOWER($2)
 		ORDER BY c.updated_at DESC
 		LIMIT 1
@@ -2629,7 +2629,7 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 			var taken bool
 			dupQ := `SELECT EXISTS (
 				SELECT 1 FROM contacts
-				WHERE LOWER(email) = $1 AND id <> $2 AND (organization_id = $3 OR user_id = $4)
+				WHERE email <> '' AND LOWER(email) = $1 AND id <> $2 AND (organization_id = $3 OR user_id = $4)
 			)`
 			dupP := []any{next, contactID, orgID, ownerID}
 			if err := tx.QueryRow(ctx, dupQ, dupP...).Scan(&taken); err != nil {
@@ -3526,7 +3526,7 @@ func (r *contactRepository) GetByEmailsAndUser(ctx context.Context, userID uuid.
 	rows, err := resultDB(ctx, r.DB).Query(ctx, `
 		SELECT id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at
 		FROM contacts
-		WHERE user_id = $1 AND LOWER(email) = ANY($2)
+		WHERE user_id = $1 AND email <> '' AND LOWER(email) = ANY($2)
 	`, userID, norm)
 	if err != nil {
 		db.CaptureError(err, "", nil, "GetByEmailsAndUser query")
@@ -3567,7 +3567,7 @@ func (r *contactRepository) ImportLookup(ctx context.Context, orgID, userID uuid
 	query := `
 		SELECT DISTINCT ON (LOWER(email)) LOWER(email), id, organization_id = $1
 		FROM contacts
-		WHERE LOWER(email) = ANY($3::text[]) AND (organization_id = $1 OR user_id = $2)
+		WHERE email <> '' AND LOWER(email) = ANY($3::text[]) AND (organization_id = $1 OR user_id = $2)
 		ORDER BY LOWER(email), (organization_id = $1) DESC, (user_id = $2) DESC, created_at ASC, id ASC`
 	rows, err := resultDB(ctx, r.DB).Query(ctx, query, orgID, userID, norm)
 	if err != nil {

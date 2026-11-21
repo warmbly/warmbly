@@ -204,7 +204,7 @@ func (h *Handler) GetCampaign(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, h.withLinkedIn(c, *orgID, resp))
 }
 
 func (h *Handler) SearchCampaigns(c *gin.Context) {

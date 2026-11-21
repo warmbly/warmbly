@@ -180,3 +180,118 @@ type LinkedInCampaignRef struct {
 	Name   string    `json:"name"`
 	Status string    `json:"status"`
 }
+
+// LinkedIn action row statuses: pending is reserved here and not yet queued at GraphKit.
+const (
+	LinkedInActionPending   = "pending"
+	LinkedInActionQueued    = "queued"
+	LinkedInActionRunning   = "running"
+	LinkedInActionSucceeded = "succeeded"
+	LinkedInActionSkipped   = "skipped"
+	LinkedInActionFailed    = "failed"
+	LinkedInActionCancelled = "cancelled"
+	LinkedInActionExpired   = "expired"
+)
+
+// LinkedInAction is one LinkedIn step queued at GraphKit for one contact.
+type LinkedInAction struct {
+	ID             uuid.UUID  `json:"id"`
+	OrganizationID uuid.UUID  `json:"-"`
+	GraphKitID     *string    `json:"-"`
+	AccountID      *uuid.UUID `json:"account_id"`
+	CampaignID     *uuid.UUID `json:"campaign_id"`
+	CampaignName   string     `json:"campaign_name,omitempty"`
+	ContactID      uuid.UUID  `json:"contact_id"`
+	SequenceID     *uuid.UUID `json:"step_id"`
+	Type           string     `json:"type"`
+	Status         string     `json:"status"`
+	SkipReason     *string    `json:"skip_reason"`
+	ErrorCode      *string    `json:"error_code"`
+	Reference      string     `json:"-"`
+	Attempts       int        `json:"-"`
+	QueuedAt       *time.Time `json:"queued_at"`
+	CompletedAt    *time.Time `json:"completed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+// LinkedInStepRequest is one due LinkedIn step of a campaign for one contact.
+type LinkedInStepRequest struct {
+	OrganizationID uuid.UUID
+	CampaignID     uuid.UUID
+	ContactID      uuid.UUID
+	SequenceID     uuid.UUID
+	Config         ActionConfig
+	LinkedInURL    string
+	// Render renders a template for the contact as email copy is, with the sending account's name as the sender.
+	Render func(text, part, senderName string) string
+}
+
+// LinkedIn step outcomes: done routes on, retry keeps the step due.
+const (
+	LinkedInStepQueued  = "queued"
+	LinkedInStepSkipped = "skipped"
+	LinkedInStepFailed  = "failed"
+	LinkedInStepRetry   = "retry"
+)
+
+// LinkedInStepOutcome is what became of a due LinkedIn step; Reason is a plain sentence for the campaign feed.
+type LinkedInStepOutcome struct {
+	State  string
+	Reason string
+	// Code is the skip reason or error code behind a skipped or failed step.
+	Code string
+	// RetryAfter is how soon a retry is due; zero is the default.
+	RetryAfter time.Duration
+}
+
+// LinkedInReply is an inbound LinkedIn message for the reply path; the campaign fields are set when it answers a campaign.
+type LinkedInReply struct {
+	OrganizationID uuid.UUID
+	ConversationID uuid.UUID
+	AccountID      uuid.UUID
+	NotifyUserID   *uuid.UUID
+	ContactID      *uuid.UUID
+	CampaignID     *uuid.UUID
+	SequenceID     *uuid.UUID
+	Sender         string
+	Body           string
+}
+
+// LinkedInCampaignStats is the LinkedIn half of a campaign's analytics.
+type LinkedInCampaignStats struct {
+	InvitesSent     int     `json:"invites_sent"`
+	InvitesAccepted int     `json:"invites_accepted"`
+	AcceptanceRate  float64 `json:"acceptance_rate"`
+	MessagesSent    int     `json:"messages_sent"`
+	InmailsSent     int     `json:"inmails_sent"`
+	Replies         int     `json:"replies"`
+}
+
+// LinkedIn import statuses.
+const (
+	LinkedInImportQueued  = "queued"
+	LinkedInImportRunning = "running"
+	LinkedInImportDone    = "done"
+	LinkedInImportFailed  = "failed"
+)
+
+// LinkedInImport is a LinkedIn import that looks up work emails in the background.
+type LinkedInImport struct {
+	ID             uuid.UUID       `json:"id"`
+	OrganizationID uuid.UUID       `json:"-"`
+	UserID         *uuid.UUID      `json:"-"`
+	Status         string          `json:"status"`
+	Total          int             `json:"total"`
+	Processed      int             `json:"processed"`
+	Created        int             `json:"created"`
+	Updated        int             `json:"updated"`
+	Skipped        int             `json:"skipped"`
+	NoEmail        int             `json:"no_email"`
+	EmailsFound    int             `json:"emails_found"`
+	ContactIDs     []uuid.UUID     `json:"contact_ids"`
+	Request        json.RawMessage `json:"-"`
+	Error          *string         `json:"error"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}

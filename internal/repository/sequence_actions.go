@@ -3,6 +3,7 @@ package repository
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -85,6 +86,23 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 				return errx.ErrSequenceAction
 			}
 		}
+		return nil
+	case models.ActionLinkedInInvite:
+		if utf8.RuneCountInString(a.Note) > models.LinkedInInviteTemplateMax {
+			return errx.ErrSequenceAction
+		}
+		return nil
+	case models.ActionLinkedInMessage:
+		if utf8.RuneCountInString(a.Body) > models.LinkedInMessageBodyMax {
+			return errx.ErrSequenceAction
+		}
+		return nil
+	case models.ActionLinkedInInMail:
+		if utf8.RuneCountInString(a.Body) > models.LinkedInMessageBodyMax || utf8.RuneCountInString(a.Subject) > models.LinkedInInMailSubjectMax {
+			return errx.ErrSequenceAction
+		}
+		return nil
+	case models.ActionLinkedInVisit, models.ActionLinkedInFollow, models.ActionLinkedInLike, models.ActionLinkedInWithdraw:
 		return nil
 	default:
 		return errx.ErrSequenceAction

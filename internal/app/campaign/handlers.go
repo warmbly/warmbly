@@ -2,6 +2,7 @@ package campaign
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog/log"
@@ -557,6 +558,22 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 			))
 		}
 	}
+	linkedInSteps := 0
+	for i, seq := range seqs {
+		if seq.Kind != "action" {
+			continue
+		}
+		var cfg models.ActionConfig
+		_ = json.Unmarshal(seq.Action, &cfg)
+		if !models.IsLinkedInAction(cfg.Type) {
+			continue
+		}
+		linkedInSteps++
+		if (cfg.Type == models.ActionLinkedInMessage || cfg.Type == models.ActionLinkedInInMail) && strings.TrimSpace(cfg.Body) == "" {
+			return errx.NewWithIdentifier(errx.BadRequest, "empty_step_body", fmt.Sprintf(
+				"Step %d has no message, so it would send a blank LinkedIn message. Write the message before starting.", i+1))
+		}
+	}
 
 	// Refuse a launch whose list is known to be largely undeliverable. Only
 	// KNOWN-invalid addresses count: a list nobody has verified is not evidence
@@ -608,6 +625,17 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 			EventType:  "started",
 			Message:    "Campaign started",
 		})
+	}
+	// A warning, not a refusal: a lead without a profile skips the LinkedIn steps and keeps the rest.
+	if linkedInSteps > 0 && s.campaignLogRepo != nil {
+		if n, cerr := s.campaignRepository.CountLeadsWithoutLinkedIn(ctx, cID); cerr == nil && n > 0 {
+			s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+				CampaignID: cID,
+				EventType:  "linkedin_missing_profiles",
+				Message:    fmt.Sprintf("%d lead(s) have no LinkedIn profile, so their LinkedIn steps will be skipped", n),
+				Metadata:   map[string]interface{}{"count": n},
+			})
+		}
 	}
 
 	// Publish realtime event

@@ -164,8 +164,15 @@ export interface CreateConnection {
 }
 
 export type SignIn =
-    | { method: "password"; username: string; password: string; recruiter: boolean }
+    | { method: "password"; username: string; password: string; recruiter: boolean; country?: string }
     | { method: "cookie"; li_at: string; li_a?: string; recruiter: boolean };
+
+/** details.quote on a 409 linkedin_accept_required: what connecting charges before the charge is accepted. */
+export interface AcceptQuote {
+    monthly_micros: number;
+    currency?: string;
+    billed_by?: string;
+}
 
 export type CheckpointAnswer = { code: string } | { choice: string } | { choices: string[] };
 
@@ -355,13 +362,40 @@ export interface ImportRequest {
     category_ids: string[];
     campaign_ids: string[];
     skip_existing: boolean;
+    /** Runs the lead finder's person email finder for people without an email; the import then runs in the background. */
+    find_emails?: boolean;
 }
 
 export interface ImportResult {
     created: number;
     updated: number;
     skipped: number;
+    /** People left out because a contact needs an email and none was found. */
+    no_email?: number;
     contact_ids: string[];
+}
+
+/** 202 from POST /linkedin/search/import with find_emails: the background import to follow. */
+export interface ImportStarted {
+    import_id: string;
+}
+
+export type LinkedInImportStatus = "queued" | "running" | "done" | "failed";
+
+/** GET /linkedin/imports/:id: a background import's progress and, once done, its summary. */
+export interface LinkedInImport {
+    id: string;
+    status: LinkedInImportStatus | string;
+    total: number;
+    processed: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    no_email: number;
+    emails_found: number;
+    error?: string | null;
+    created_at: Date | string;
+    updated_at: Date | string;
 }
 
 export interface SavedSearch {
@@ -382,4 +416,73 @@ export interface LinkedInProfile {
     follower_count?: number;
     relation?: { network_distance?: string; invitation_pending?: boolean; is_following?: boolean };
     experience?: { title?: string; company?: string; started_on?: string; ended_on?: string | null }[];
+}
+
+// ---------------------------------------------------------------- conversations
+
+export interface LinkedInParticipant {
+    provider_id?: string;
+    public_id?: string;
+    full_name: string;
+    headline?: string;
+    profile_url?: string;
+    picture_url?: string;
+}
+
+export type ConversationKind = "chat" | "message" | "inmail" | string;
+
+export interface LinkedInConversation {
+    id: string;
+    account_id: string;
+    contact_id: string | null;
+    participant: LinkedInParticipant;
+    kind: ConversationKind;
+    unread_count: number;
+    last_message_at: Date | string | null;
+    last_message_preview: string;
+    created_at: Date | string;
+    updated_at: Date | string;
+}
+
+export type MessageDirection = "inbound" | "outbound";
+export type MessageStatus = "pending" | "sent" | "failed";
+export type MessageKind = "message" | "inmail" | "invite_note";
+
+export interface LinkedInMessage {
+    id: string;
+    conversation_id: string;
+    direction: MessageDirection | string;
+    body: string;
+    sent_at: Date | string | null;
+    status: MessageStatus | string;
+    kind: MessageKind | string;
+    sent_by: string | null;
+    created_at: Date | string;
+}
+
+// ---------------------------------------------------------------- contact activity
+
+export type LinkedInActionType = "invite" | "message" | "inmail" | "profile_visit" | "follow" | "like_post" | "withdraw_invite" | string;
+export type LinkedInActionStatus = "pending" | "queued" | "running" | "succeeded" | "skipped" | "failed" | "cancelled" | "expired" | string;
+
+/** One LinkedIn step a campaign ran (or tried to run) for a contact. */
+export interface LinkedInContactAction {
+    id: string;
+    type: LinkedInActionType;
+    status: LinkedInActionStatus;
+    skip_reason?: string | null;
+    error_code?: string | null;
+    /** Plain-language reason for a failed or skipped action, when the server words one. */
+    reason?: string | null;
+    account_id?: string | null;
+    campaign_id?: string | null;
+    campaign_name?: string | null;
+    step_id?: string | null;
+    queued_at?: Date | string | null;
+    completed_at?: Date | string | null;
+}
+
+export interface LinkedInContactActivity {
+    actions: LinkedInContactAction[];
+    conversations: LinkedInConversation[];
 }

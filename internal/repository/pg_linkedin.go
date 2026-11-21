@@ -93,6 +93,49 @@ type LinkedInRepository interface {
 	BackfillContactLinkedIn(ctx context.Context, after uuid.UUID, limit int) (last uuid.UUID, n int, err error)
 	BackfillProgress(ctx context.Context) (after uuid.UUID, done bool, err error)
 	SaveBackfillProgress(ctx context.Context, after uuid.UUID, done bool) error
+
+	// CampaignAccountIDs are the live LinkedIn accounts a campaign sends its LinkedIn steps from.
+	CampaignAccountIDs(ctx context.Context, orgID, campaignID uuid.UUID) ([]uuid.UUID, error)
+	// LeadsWithoutProfile counts the campaign's leads with no LinkedIn profile.
+	LeadsWithoutProfile(ctx context.Context, orgID, campaignID uuid.UUID) (int, error)
+	// SetCampaignAccounts replaces them; false when the campaign or an account is not the workspace's.
+	SetCampaignAccounts(ctx context.Context, orgID, campaignID uuid.UUID, ids []uuid.UUID) (bool, error)
+	CampaignAccounts(ctx context.Context, orgID, campaignID uuid.UUID) ([]models.LinkedInAccount, error)
+	// CampaignWakeAccount is a mailbox of the campaign's workspace to park its wake-ups on, when it has LinkedIn accounts.
+	CampaignWakeAccount(ctx context.Context, campaignID uuid.UUID) (uuid.UUID, bool, error)
+
+	// ReserveAction writes the step's action row once and returns the row the step holds.
+	ReserveAction(ctx context.Context, a *models.LinkedInAction) (*models.LinkedInAction, error)
+	SetActionQueued(ctx context.Context, orgID, id, accountID uuid.UUID, graphkitID, status string) error
+	CountActionAttempt(ctx context.Context, orgID, id uuid.UUID) (int, error)
+	FinishAction(ctx context.Context, orgID, id uuid.UUID, status string, skipReason, errorCode *string) error
+	// ApplyActionUpdate records GraphKit's status for an action; changed is false when it already had it.
+	ApplyActionUpdate(ctx context.Context, orgID uuid.UUID, u LinkedInActionUpdate) (row *models.LinkedInAction, changed bool, err error)
+	// StickyAccount is the account a contact keeps in a campaign: the one used before, else one connected to or inviting them.
+	StickyAccount(ctx context.Context, orgID, campaignID, contactID uuid.UUID, candidates []uuid.UUID) (*uuid.UUID, error)
+	// OpenActionsToday counts actions not yet run per account and type, created since.
+	OpenActionsToday(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID, since time.Time) (map[uuid.UUID]map[string]int, error)
+	ContactActions(ctx context.Context, orgID, contactID uuid.UUID, limit int) ([]models.LinkedInAction, error)
+	CampaignStats(ctx context.Context, orgID uuid.UUID, campaignIDs []uuid.UUID) (map[uuid.UUID]*models.LinkedInCampaignStats, error)
+
+	// NoteContactState folds one signal into the state of an account and each of the workspace's contacts named.
+	NoteContactState(ctx context.Context, orgID uuid.UUID, contactIDs []uuid.UUID, accountID uuid.UUID, c LinkedInStateChange) error
+	ContactIDsByPublicID(ctx context.Context, orgID uuid.UUID, publicID string) ([]uuid.UUID, error)
+	// InviteStates is, per public id with an invite pending or a connection, whether it is connected.
+	InviteStates(ctx context.Context, orgID uuid.UUID, publicIDs []string) (map[string]bool, error)
+	ActiveCampaignsFor(ctx context.Context, orgID uuid.UUID, contactIDs []uuid.UUID) ([]string, error)
+	// ReplyCampaign is the campaign step a LinkedIn message at that time answers: the contact's latest step in a campaign that reached them on LinkedIn.
+	ReplyCampaign(ctx context.Context, orgID, contactID uuid.UUID, at time.Time) (campaignID, sequenceID *uuid.UUID, err error)
+	// ClaimInboundReply takes an inbound message for the reply path once.
+	ClaimInboundReply(ctx context.Context, orgID, messageID uuid.UUID) (bool, error)
+	MessageID(ctx context.Context, orgID uuid.UUID, graphkitID string) (uuid.UUID, error)
+	UnreadConversations(ctx context.Context, orgID uuid.UUID) (int, error)
+
+	CreateImport(ctx context.Context, im *models.LinkedInImport) error
+	GetImport(ctx context.Context, orgID, id uuid.UUID) (*models.LinkedInImport, error)
+	// ClaimImport takes a queued import, or a running one untouched since staleBefore, across workspaces; id narrows it to one.
+	ClaimImport(ctx context.Context, id *uuid.UUID, staleBefore time.Time) (*models.LinkedInImport, error)
+	SaveImport(ctx context.Context, im *models.LinkedInImport) error
 }
 
 // LinkedInConversationFilter narrows a conversation list.

@@ -1,5 +1,6 @@
 // LinkedIn reads and writes, under ['linkedin'] so the LINKEDIN_* realtime events and the linkedin_* audit
 // spine refresh every teammate's view. Search results live outside it, so nothing refreshes a page someone paid for.
+import { useEffect } from "react";
 import { infiniteQueryOptions, keepPreviousData, queryOptions, useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import toast from "react-hot-toast/headless";
 import {
@@ -12,8 +13,12 @@ import {
     deleteSavedSearch,
     finderAi,
     finderTypeahead,
+    getCampaignLinkedInAccounts,
     getConnection,
     getConnectQuote,
+    getLinkedInContactActivity,
+    getLinkedInConversation,
+    getLinkedInImport,
     getFinderCatalog,
     getLinkedInAccount,
     getLinkedInProfile,
@@ -21,13 +26,18 @@ import {
     importFinderHits,
     linkedInAccountAction,
     listLinkedInAccounts,
+    listLinkedInConversations,
+    listLinkedInMessages,
     listSavedSearches,
+    markLinkedInConversationRead,
     parseFinderUrl,
     patchLinkedInAccount,
     patchSavedSearch,
+    putCampaignLinkedInAccounts,
     removeLinkedInAccount,
     resendConnectionCode,
     runFinderSearch,
+    sendLinkedInMessage,
     signInConnection,
     startLinkedInLink,
     unlinkLinkedIn,
@@ -43,7 +53,10 @@ import type {
     ImportRequest,
     LinkedInAccount,
     LinkedInAccountPatch,
+    LinkedInConversation,
+    LinkedInImport,
     LinkedInList,
+    LinkedInMessage,
     LinkedInStatus,
     SavedSearch,
     SearchPage,
@@ -374,11 +387,40 @@ export function useImportFinderHits() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: ({ body, idempotencyKey }: { body: ImportRequest; idempotencyKey: string }) => importFinderHits(body, idempotencyKey),
-        onSuccess: () => {
+        onSuccess: (r) => {
+            // A background import refreshes contacts when it finishes, not when it is queued.
+            if ("import_id" in r) return;
             void qc.invalidateQueries({ queryKey: ["contacts"] });
             void qc.invalidateQueries({ queryKey: ["segments"] });
         },
     });
+}
+
+export const linkedInImportQuery = (id: string) =>
+    queryOptions({
+        queryKey: [...LINKEDIN_KEY, "imports", id],
+        queryFn: ({ signal }) => getLinkedInImport(id, signal),
+        staleTime: 2_000,
+    });
+
+export const importFinished = (i: LinkedInImport | undefined) => i?.status === "done" || i?.status === "failed";
+
+/** A background import. LINKEDIN_IMPORT_UPDATED moves it; a 5 s re-read covers a missed event until it finishes. */
+export function useLinkedInImport(id: string | null) {
+    const qc = useQueryClient();
+    const q = useQuery({
+        ...linkedInImportQuery(id ?? ""),
+        enabled: !!id,
+        refetchInterval: (query) => (importFinished(query.state.data) ? false : 5_000),
+    });
+    const done = importFinished(q.data);
+    useEffect(() => {
+        if (!done) return;
+        void qc.invalidateQueries({ queryKey: ["contacts"] });
+        void qc.invalidateQueries({ queryKey: ["segments"] });
+        void qc.invalidateQueries({ queryKey: ["subscription", "credits"] });
+    }, [done, qc]);
+    return q;
 }
 
 export const savedSearchesQuery = queryOptions({
@@ -450,5 +492,204 @@ export function useLinkedInProfile(identifier: string | null, accountId: string 
         refetchOnWindowFocus: false,
         refetchOnMount: false,
         retry: false,
+    });
+}
+
+// ---------------------------------------------------------------- conversations
+
+export interface ConversationFilter {
+    accountId?: string | null;
+    contactId?: string | null;
+    unread?: boolean;
+}
+
+type ConversationPages = InfiniteData<LinkedInList<LinkedInConversation>, string | null>;
+type MessagePages = InfiniteData<LinkedInList<LinkedInMessage>, string | null>;
+
+const CONVERSATIONS_LIST = [...LINKEDIN_KEY, "conversations", "list"] as const;
+
+export const linkedInConversationsQuery = (f: ConversationFilter = {}) =>
+    infiniteQueryOptions({
+        queryKey: [...CONVERSATIONS_LIST, f.accountId ?? null, f.contactId ?? null, !!f.unread] as const,
+        queryFn: ({ pageParam, signal }) => listLinkedInConversations({ cursor: pageParam, ...f }, signal),
+        initialPageParam: null as string | null,
+        getNextPageParam: (last) => (last.pagination?.has_more ? (last.pagination.next_cursor ?? undefined) : undefined),
+        staleTime: 15_000,
+        retry: false,
+    });
+
+/** The workspace's LinkedIn conversations, latest activity first. LINKEDIN_MESSAGE refreshes it. */
+export function useLinkedInConversations(f: ConversationFilter = {}, enabled = true) {
+    return useInfiniteQuery({ ...linkedInConversationsQuery(f), enabled });
+}
+
+/** Whether the unibox offers its LinkedIn scope, and the unread count for its rail row. */
+export function useLinkedInUnibox(overviewUnread: number | undefined): { visible: boolean; unread: number } {
+    const status = useLinkedInStatus();
+    const has = !!status.data?.available && (status.data.accounts ?? 0) > 0;
+    // A backend that counts it in the overview spares the list read.
+    const unreadList = useLinkedInConversations({ unread: true }, has && overviewUnread === undefined);
+    const unread = overviewUnread ?? (unreadList.data?.pages[0]?.data ?? []).reduce((n, c) => n + (c.unread_count ?? 0), 0);
+    return { visible: has || unread > 0, unread };
+}
+
+export const linkedInConversationQuery = (id: string) =>
+    queryOptions({
+        queryKey: [...LINKEDIN_KEY, "conversations", id],
+        queryFn: ({ signal }) => getLinkedInConversation(id, signal),
+        staleTime: 15_000,
+    });
+
+function findConversation(qc: ReturnType<typeof useQueryClient>, id: string): LinkedInConversation | undefined {
+    for (const [, data] of qc.getQueriesData<ConversationPages>({ queryKey: CONVERSATIONS_LIST })) {
+        const hit = data?.pages.flatMap((p) => p.data).find((c) => c.id === id);
+        if (hit) return hit;
+    }
+    return undefined;
+}
+
+/** One conversation, seeded from whichever list holds it so the thread opens with its header already drawn. */
+export function useLinkedInConversation(id: string | null) {
+    const qc = useQueryClient();
+    return useQuery({
+        ...linkedInConversationQuery(id ?? ""),
+        enabled: !!id,
+        initialData: () => (id ? findConversation(qc, id) : undefined),
+        initialDataUpdatedAt: 0,
+    });
+}
+
+export const linkedInMessagesQuery = (id: string) =>
+    infiniteQueryOptions({
+        queryKey: [...LINKEDIN_KEY, "conversations", id, "messages"] as const,
+        queryFn: ({ pageParam, signal }) => listLinkedInMessages(id, pageParam, signal),
+        initialPageParam: null as string | null,
+        getNextPageParam: (last) => (last.pagination?.has_more ? (last.pagination.next_cursor ?? undefined) : undefined),
+        staleTime: 10_000,
+    });
+
+/** A conversation's messages, newest first per page. */
+export function useLinkedInMessages(id: string | null) {
+    return useInfiniteQuery({ ...linkedInMessagesQuery(id ?? ""), enabled: !!id });
+}
+
+function patchConversation(qc: ReturnType<typeof useQueryClient>, id: string, fn: (c: LinkedInConversation) => LinkedInConversation) {
+    qc.setQueriesData<ConversationPages>({ queryKey: CONVERSATIONS_LIST }, (prev) =>
+        prev ? { ...prev, pages: prev.pages.map((p) => ({ ...p, data: p.data.map((c) => (c.id === id ? fn(c) : c)) })) } : prev,
+    );
+    qc.setQueryData<LinkedInConversation>(linkedInConversationQuery(id).queryKey, (prev) => (prev ? fn(prev) : prev));
+}
+
+/** Clears a conversation's unread count first; the read is not worth a toast if LinkedIn refuses it. */
+export function useMarkLinkedInRead() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) => markLinkedInConversationRead(id),
+        onMutate: async (id) => {
+            await qc.cancelQueries({ queryKey: CONVERSATIONS_LIST });
+            const before = findConversation(qc, id)?.unread_count ?? qc.getQueryData<LinkedInConversation>(linkedInConversationQuery(id).queryKey)?.unread_count ?? 0;
+            patchConversation(qc, id, (c) => ({ ...c, unread_count: 0 }));
+            return { before };
+        },
+        onError: (_e, id, ctx) => {
+            if (ctx?.before) patchConversation(qc, id, (c) => ({ ...c, unread_count: ctx.before }));
+        },
+        onSettled: () => {
+            void qc.invalidateQueries({ queryKey: CONVERSATIONS_LIST });
+            void qc.invalidateQueries({ queryKey: ["unibox", "overview"] });
+        },
+    });
+}
+
+export const PENDING_PREFIX = "pending:";
+
+/** A reply. The pending bubble shows at once; a refusal leaves it marked failed with the reason, ready to retry. */
+export function useSendLinkedInMessage(conversationId: string) {
+    const qc = useQueryClient();
+    const key = linkedInMessagesQuery(conversationId).queryKey;
+    const replace = (tempId: string, fn: (m: LinkedInMessage) => LinkedInMessage) =>
+        qc.setQueryData<MessagePages>(key, (prev) =>
+            prev ? { ...prev, pages: prev.pages.map((p) => ({ ...p, data: p.data.map((m) => (m.id === tempId ? fn(m) : m)) })) } : prev,
+        );
+    return useMutation({
+        mutationFn: ({ body, idempotencyKey }: { body: string; idempotencyKey: string; tempId: string; userId?: string | null }) =>
+            sendLinkedInMessage(conversationId, body, idempotencyKey),
+        onMutate: async ({ body, tempId, userId }) => {
+            await qc.cancelQueries({ queryKey: key });
+            const now = new Date().toISOString();
+            const pending: LinkedInMessage = {
+                id: tempId,
+                conversation_id: conversationId,
+                direction: "outbound",
+                body,
+                sent_at: null,
+                status: "pending",
+                kind: "message",
+                sent_by: userId ?? null,
+                created_at: now,
+            };
+            qc.setQueryData<MessagePages>(key, (prev) => {
+                if (!prev || prev.pages.length === 0) return { pages: [{ data: [pending] }], pageParams: [null] };
+                const [first, ...rest] = prev.pages;
+                return { ...prev, pages: [{ ...first, data: [pending, ...first.data.filter((m) => m.id !== tempId)] }, ...rest] };
+            });
+            patchConversation(qc, conversationId, (c) => ({ ...c, last_message_preview: body.replace(/\s+/g, " ").slice(0, 140), last_message_at: now }));
+        },
+        onSuccess: (m, { tempId }) => replace(tempId, () => m),
+        onError: (_e, { tempId }) => replace(tempId, (m) => ({ ...m, status: "failed" })),
+        onSettled: (_d, e) => {
+            if (!e) void qc.invalidateQueries({ queryKey: key });
+            void qc.invalidateQueries({ queryKey: CONVERSATIONS_LIST });
+        },
+    });
+}
+
+/** Drops a failed pending bubble, before a retry or when the reply is given up. */
+export function useDiscardPendingLinkedInMessage(conversationId: string) {
+    const qc = useQueryClient();
+    return (tempId: string) =>
+        qc.setQueryData<MessagePages>(linkedInMessagesQuery(conversationId).queryKey, (prev) =>
+            prev ? { ...prev, pages: prev.pages.map((p) => ({ ...p, data: p.data.filter((m) => m.id !== tempId) })) } : prev,
+        );
+}
+
+// ---------------------------------------------------------------- contact activity
+
+export const linkedInContactActivityQuery = (contactId: string) =>
+    queryOptions({
+        queryKey: [...LINKEDIN_KEY, "contacts", contactId, "activity"],
+        queryFn: ({ signal }) => getLinkedInContactActivity(contactId, signal),
+        staleTime: 30_000,
+        retry: false,
+    });
+
+export function useLinkedInContactActivity(contactId: string, enabled = true) {
+    return useQuery({ ...linkedInContactActivityQuery(contactId), enabled: enabled && !!contactId });
+}
+
+// ---------------------------------------------------------------- campaign senders
+
+export const campaignLinkedInAccountsQuery = (campaignId: string) =>
+    queryOptions({
+        queryKey: ["campaigns", campaignId, "linkedin-accounts"],
+        queryFn: ({ signal }) => getCampaignLinkedInAccounts(campaignId, signal),
+        staleTime: 30_000,
+        retry: false,
+    });
+
+export function useCampaignLinkedInAccounts(campaignId: string, enabled = true) {
+    return useQuery({ ...campaignLinkedInAccountsQuery(campaignId), enabled: enabled && !!campaignId });
+}
+
+/** Replaces the campaign's LinkedIn senders; the campaign detail carries the same ids, so it refreshes too. */
+export function usePutCampaignLinkedInAccounts(campaignId: string) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (accountIds: string[]) => putCampaignLinkedInAccounts(campaignId, accountIds),
+        onSuccess: (ids) => {
+            qc.setQueryData(campaignLinkedInAccountsQuery(campaignId).queryKey, ids);
+            qc.setQueryData(["campaigns", campaignId], (old: unknown) => (old ? { ...(old as object), linkedin_account_ids: ids } : old));
+        },
+        onSettled: () => void qc.invalidateQueries({ queryKey: ["campaigns", campaignId] }),
     });
 }

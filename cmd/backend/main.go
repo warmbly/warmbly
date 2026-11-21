@@ -2217,8 +2217,16 @@ func main() {
 		linkedInServiceForHandler = linkedin.New(linkedin.Deps{
 			Store: storeService, Repo: repository.NewLinkedInRepository(primaryDB), Credits: creditService,
 			Subscriptions: subscriptionRepository, Publisher: streamingPublisher, Contacts: contactService, Cipher: cipherService,
+			Replies: advancedService, Campaigns: campaignService, CampaignLogs: campaignLogRepository,
 		})
 		storeService.WireSocial(linkedInServiceForHandler)
+		// LinkedIn steps in campaigns: queued by the task handler, scheduled without a mailbox when a campaign has none.
+		if aware, ok := tasksService.(tasks.LinkedInAware); ok {
+			aware.WireLinkedIn(linkedInServiceForHandler)
+		}
+		if aware, ok := schedulerService.(scheduler.LinkedInAware); ok {
+			aware.WireLinkedIn(repository.NewLinkedInRepository(primaryDB))
+		}
 		delegationService.WirePurchasedTokens(storeService)
 		delegationService.WireConsentWaker(storeService.WakeMicrosoftConsent)
 		// A card saved after a refused store charge pays what is unpaid at once.
@@ -2700,6 +2708,10 @@ func main() {
 				},
 			})
 			go jobrun.Loop(ctx, "lead_enrichment_runs", time.Minute, true, leadFinderServiceForHandler.RunPendingEnrichment)
+			if linkedInServiceForHandler != nil {
+				// A LinkedIn import with find_emails looks addresses up through the lead finder.
+				linkedInServiceForHandler.WireFinder(leadFinderServiceForHandler)
+			}
 		}
 
 		// HubSpot as the workspace CRM: write-through for the CRM service, the

@@ -15,7 +15,32 @@ export type SequenceActionType =
     | "run_automation"
     | "fire_event"
     | "switch"
-    | "ai_step";
+    | "ai_step"
+    // LinkedIn steps, run through one of the campaign's LinkedIn accounts.
+    | "linkedin_invite"
+    | "linkedin_message"
+    | "linkedin_inmail"
+    | "linkedin_visit"
+    | "linkedin_follow"
+    | "linkedin_like"
+    | "linkedin_withdraw";
+
+export const LINKEDIN_ACTION_TYPES: SequenceActionType[] = [
+    "linkedin_invite",
+    "linkedin_message",
+    "linkedin_inmail",
+    "linkedin_visit",
+    "linkedin_follow",
+    "linkedin_like",
+    "linkedin_withdraw",
+];
+
+export function isLinkedInAction(type: string | undefined | null): boolean {
+    return !!type && type.startsWith("linkedin_");
+}
+
+// LinkedIn caps an invitation note at 300 characters, counted after the variables are filled in.
+export const LINKEDIN_NOTE_MAX = 300;
 
 // One templated input passed to a launched automation (value supports the same
 // {{.FirstName}}/{{.Company}} contact templating campaign copy uses).
@@ -101,6 +126,12 @@ export interface SequenceAction {
     ai_remove_tags?: AITagRef[];
     ai_labels?: AITagRef[];
     ai_allow_create_tags?: boolean;
+    // linkedin_invite: optional note, at most 300 characters once rendered.
+    note?: string;
+    // linkedin_message and linkedin_inmail: the message, personalized like an email body.
+    body?: string;
+    // linkedin_inmail: the InMail subject.
+    subject?: string;
 }
 
 export interface AITagRef {
