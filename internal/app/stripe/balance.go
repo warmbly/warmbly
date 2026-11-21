@@ -143,6 +143,15 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 			return nil, fmt.Errorf("load charge invoice: %w", err)
 		}
 	} else {
+		meta := map[string]string{
+			"purpose": purposeBalanceCharge, "org_id": c.OrgID.String(), "charge_id": c.ID.String(),
+			"kind": c.Kind, "amount_micro": strconv.FormatInt(int64(c.Amount), 10),
+		}
+		// Only fee-bearing charges name the fee: a retry of a charge the previous release started must
+		// send the same invoice parameters under its idempotency key.
+		if fee := c.AmountCents - c.Amount.Cents(); fee > 0 {
+			meta["fee_cents"] = strconv.FormatInt(fee, 10)
+		}
 		params := &stripe.InvoiceParams{
 			Params:                      stripe.Params{Context: ctx},
 			Customer:                    stripe.String(c.CustomerID),
@@ -150,11 +159,7 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 			AutoAdvance:                 stripe.Bool(false),
 			PendingInvoiceItemsBehavior: stripe.String("exclude"),
 			Description:                 stripe.String(chargeDescription(c)),
-			Metadata: map[string]string{
-				"purpose": purposeBalanceCharge, "org_id": c.OrgID.String(), "charge_id": c.ID.String(),
-				"kind": c.Kind, "amount_micro": strconv.FormatInt(int64(c.Amount), 10),
-				"fee_cents": strconv.FormatInt(max(c.AmountCents-c.Amount.Cents(), 0), 10),
-			},
+			Metadata:                    meta,
 		}
 		params.SetIdempotencyKey(key + "-invoice")
 		if inv, err = invoice.New(params); err != nil {

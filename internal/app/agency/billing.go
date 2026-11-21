@@ -641,12 +641,7 @@ func (s *Service) refundTopup(ctx context.Context, ch *stripe.Charge) (bool, *er
 	if ch.PaymentIntent == nil || ch.PaymentIntent.ID == "" {
 		return isTopup, nil
 	}
-	// The processing fee on an AI top-up is not refunded, so a refund of the amount added counts as full.
-	due := ch.Amount
-	if added, err := strconv.ParseInt(ch.Metadata["amount_cents"], 10, 64); err == nil && purpose != purposeAgencyTopup && added > 0 && added < due {
-		due = added
-	}
-	if !ch.Refunded && (ch.Amount == 0 || ch.AmountRefunded < due) {
+	if !ch.Refunded && (ch.Amount == 0 || ch.AmountRefunded < ch.Amount) {
 		return isTopup, nil
 	}
 	agencyID, found, err := s.repo.RefundTopup(ctx, ch.PaymentIntent.ID)
