@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -140,6 +141,48 @@ func (h *Handler) PatchSequenceLayout(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// ReorderSteps rearranges the order of a campaign's steps. It repositions the
+// steps and reconnects the catch-all chain so it follows the new order, while
+// preserving every conditional branch. Unlike PATCH step-layout (which only
+// moves canvas x/y and is unaudited), this changes the contact's flow — the
+// entry step and, for a linear chain, which email comes next — so it is audited.
+// The body is the full ordered list of step ids (atomic, idempotent, last-write-
+// wins), which is what a drag-and-drop or up/down reorder emits.
+func (h *Handler) ReorderSteps(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	id := c.Param("id")
+
+	var body struct {
+		StepIDs []string `json:"stepIds"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errx.Handle(c, errx.InvalidBody(err))
+		return
+	}
+	if len(body.StepIDs) == 0 {
+		errx.Handle(c, errx.ErrSequenceOrder)
+		return
+	}
+
+	resp, err := h.SequenceService.ReorderSteps(c.Request.Context(), orgID.String(), id, body.StepIDs)
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntitySequence, &resp.ID, nil, map[string]string{
+		"campaign_id": id,
+		"order":       strings.Join(body.StepIDs, ","),
+	})
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) DeleteSequence(c *gin.Context) {

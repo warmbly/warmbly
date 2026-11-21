@@ -265,6 +265,14 @@ var (
 	ErrSequenceKind      = New(BadRequest, "Step kind must be email, action, or wait.")
 	ErrSequenceAction    = New(BadRequest, "Invalid action configuration for this step.")
 	ErrSequenceWaitAfter = New(BadRequest, fmt.Sprintf("Step wait must be between 0 and %d days.", config.SequenceWaitAfterMax))
+	// ErrSequenceOrder answers a reorder whose step list is not a permutation of
+	// the campaign's steps (a duplicate, a missing step, or an unknown id), and
+	// ErrSequenceCycle answers a reorder whose new order would loop the contact's
+	// flow.
+	ErrSequenceOrder = NewWithIdentifier(BadRequest, "invalid_step_order",
+		"The step order must include every step in the campaign exactly once.")
+	ErrSequenceCycle = NewWithIdentifier(BadRequest, "step_order_cycle",
+		"That order would loop the sequence. Reorder so no step routes back to one it already reaches.")
 
 	// Contact
 	ErrContactSerialize = New(BadRequest, "Failed to serialize contact.")
