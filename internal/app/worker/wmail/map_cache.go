@@ -89,11 +89,15 @@ func (c *cachedMessageMap) keep(gen uint64, ids []string, found map[string]*repo
 		}
 	}
 	for _, id := range ids {
+		k := c.key(id)
+		if _, held := c.entries[k]; !held && len(c.entries) >= mapCacheMax {
+			continue
+		}
 		a := mapAnswer{at: now}
 		if d := found[id]; d != nil {
 			a.known, a.id, a.threadID = true, d.ID, d.ThreadID
 		}
-		c.entries[c.key(id)] = a
+		c.entries[k] = a
 	}
 }
 
