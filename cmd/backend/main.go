@@ -2206,6 +2206,11 @@ func main() {
 		}
 		storeService = store.New(storeDeps)
 		storeService.WireConnectionSettings(repository.NewStoreConnectionRepository(primaryDB.Pool, credEncrypter), storeCfg)
+		if connectLinkService != nil {
+			// Purchased Google mailboxes connect by the mail vendor's sign-in through single-mailbox connect links.
+			storeService.WireSignIns(connectLinkService, repository.NewStoreSignInLinkRepository(primaryDB.Pool))
+			connectLinkService.WirePartnerLinks(storeService.SignInLinks())
+		}
 		delegationService.WirePurchasedTokens(storeService)
 		delegationService.WireConsentWaker(storeService.WakeMicrosoftConsent)
 		// A card saved after a refused store charge pays what is unpaid at once.
@@ -2532,7 +2537,8 @@ func main() {
 		}
 		if connectLinkService != nil {
 			partnerMailboxes.Links = connectLinkService
-			connectLinkService.WirePartnerLinks(partnerService)
+			// The store's sign-in links first, then the partner API's (each ignores the other's links).
+			connectLinkService.WirePartnerLinks(store.PartnerLinksChain{storeService.SignInLinks(), partnerService})
 		}
 		if customHosts != nil {
 			partnerMailboxes.Portals = customHosts

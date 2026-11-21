@@ -176,6 +176,9 @@ type Service struct {
 	// settings is the admin panel's stored connection, wired after construction.
 	settings ConnectionSettings
 	envCfg   config.GraphKit
+	// links and signIns mint and remember purchased mailboxes' sign-in links (signin.go), wired after construction.
+	links   ConnectLinks
+	signIns repository.StoreSignInLinkRepository
 }
 
 // WireManaged attaches the partner core's check, built after the store.
