@@ -34,6 +34,7 @@ var curatedOrder = []models.IntegrationProvider{
 	models.IntegrationCleanMyList,
 	models.IntegrationGooglePlaces,
 	models.IntegrationOutscraper,
+	models.IntegrationScavio,
 	models.IntegrationFoursquare,
 	models.IntegrationJina,
 }
