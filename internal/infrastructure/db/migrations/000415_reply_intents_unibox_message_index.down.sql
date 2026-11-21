@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_reply_intents_org_unibox_message;
