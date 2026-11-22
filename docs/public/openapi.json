@@ -32659,7 +32659,7 @@
       "delete": {
         "operationId": "api_keys_revoke_own_a_p_i_key",
         "summary": "Revoke own API key",
-        "description": "Revoke own API key. Requires a signed-in user or a key with access to the workspace.",
+        "description": "Revoke own API key. Revokes the API key the request is made with; it takes an API key with access to the workspace, and a request from a signed-in session answers 400 bad_request.",
         "tags": [
           "api-keys"
         ],
