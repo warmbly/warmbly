@@ -132,6 +132,10 @@
     {
       "name": "agency",
       "description": "Agencies: staff, client workspaces, the shared send pool, the cross-client inbox and the brand. Reached with a signed-in agency staff session or an agency API key."
+    },
+    {
+      "name": "store",
+      "description": "Store: buy and renew domains and Google Workspace or Microsoft 365 mailboxes, connect domains registered elsewhere, and manage their DNS."
     }
   ],
   "paths": {
@@ -2426,6 +2430,74 @@
         }
       }
     },
+    "/emails/partner": {
+      "get": {
+        "operationId": "emails_list_partner_mailboxes",
+        "summary": "List partner mailbox enablement",
+        "description": "In a workspace a partner manages, each mailbox's enablement and whether the partner holds it. The partner sets both; in any other workspace data is empty. Scope READ_EMAILS, org permission view_campaigns.",
+        "tags": [
+          "mailboxes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkspacePartnerMailbox"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/emails/{id}": {
       "get": {
         "operationId": "mailboxes_get",
@@ -2666,7 +2738,7 @@
             }
           },
           "403": {
-            "description": "Insufficient scope, permission, or mailbox not allowed for this key.",
+            "description": "Insufficient scope, permission, or mailbox not allowed for this key; purchased_mailbox while a mailbox bought in the store is live (cancel it with DELETE /store/mailboxes/{id}), or partner_managed_mailbox for a mailbox the workspace's partner attached.",
             "content": {
               "application/json": {
                 "schema": {
@@ -26760,7 +26832,7 @@
             }
           },
           "403": {
-            "description": "Missing manage_emails permission, or called with an API key.",
+            "description": "Missing manage_emails permission, or called with an API key; purchased_mailbox while a mailbox bought in the store is live (cancel it with DELETE /store/mailboxes/{id}), or partner_managed_mailbox for a mailbox the workspace's partner attached.",
             "content": {
               "application/json": {
                 "schema": {
@@ -32985,6 +33057,15 @@
                       "type": "string",
                       "format": "uuid"
                     }
+                  },
+                  "segment_ids": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "description": "Up to 20 segments each submitted contact is pinned into, replacing the stored list. Ids not in the workspace are dropped."
                   },
                   "allowed_domains": {
                     "type": "array",
@@ -55649,6 +55730,2875 @@
           }
         }
       }
+    },
+    "/store/status": {
+      "get": {
+        "operationId": "store_get_status",
+        "summary": "Get the store status",
+        "description": "What the workspace can buy and how it pays: whether the store is enabled and why not, prices, limits, balance and card, the saved registrant or a prefill, and the next monthly mailbox charge. Answers even when the instance has no GraphKit API key (enabled false, reason not_configured). Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/search": {
+      "get": {
+        "operationId": "store_search_domains",
+        "summary": "Search domains",
+        "description": "Availability and retail prices for a word or a domain name. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tlds",
+            "in": "query",
+            "required": false,
+            "description": "Extensions to try, comma separated or repeated.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suggestions",
+            "in": "query",
+            "required": false,
+            "description": "false answers only the exact matches, much sooner.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomainSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_query: q is not a word or a domain name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/registrant": {
+      "put": {
+        "operationId": "store_put_registrant",
+        "summary": "Save the registrant",
+        "description": "Saves who domains are registered to and answers with it. Scope MANAGE_STORE, org permission manage_emails and manage_billing.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreRegistrant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreRegistrant"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "contact_invalid, with details.fields naming the refused fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/quotes": {
+      "post": {
+        "operationId": "store_create_quote",
+        "summary": "Price an order",
+        "description": "Prices domain and mailbox lines at retail and says how they would be paid. A mailboxes line with no domain line adds mailboxes to a domain the workspace already has (bought, or connected and active). Prices hold until expires_at. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreQuote"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "store_items_invalid, invalid_name or photo_not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "plan_required: buying needs an active paid plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain_not_ready or dns_record_conflict on a connected domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "registrant_required: a quote with a domain needs a saved registrant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/orders": {
+      "post": {
+        "operationId": "store_create_order",
+        "summary": "Place an order",
+        "description": "Pays the quote from the balance, charging the saved card for a shortfall, and answers with the order. A retry with the same Idempotency-Key never charges twice. An item the store cannot fulfil is refunded to the balance. Scope MANAGE_STORE, org permission manage_emails and manage_billing. A session needs a recent confirmation (POST /auth/reauth); API keys and OAuth tokens skip it.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_body: no quote_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "plan_required, payment_method_required (with setup_url, a card-setup page) or a card refusal; nothing is charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "price_changed, with details.quote, a fresh quote to confirm; nothing is charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "store_list_orders",
+        "summary": "List orders",
+        "description": "The workspace's orders, newest first. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreOrderList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_limit or invalid_cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/orders/{id}": {
+      "get": {
+        "operationId": "store_get_order",
+        "summary": "Get an order",
+        "description": "One order with its progress steps, domains and mailboxes. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains": {
+      "get": {
+        "operationId": "store_list_domains",
+        "summary": "List domains",
+        "description": "Domains bought here or connected, newest first. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomainList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_limit or invalid_cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}": {
+      "get": {
+        "operationId": "store_get_domain",
+        "summary": "Get a domain",
+        "description": "One domain with its DNS records in dns. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "store_patch_domain",
+        "summary": "Update a domain",
+        "description": "Changes forwarding_url, auto_renew, or both. A body with auto_renew also needs manage_billing and, from a session, a recent confirmation (403 reauth_required). Scope MANAGE_STORE, org permission manage_emails (with auto_renew also manage_billing).",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "auto_renew": {
+                    "type": "boolean"
+                  },
+                  "forwarding_url": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "forwarding_url_invalid, or id is not a UUID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain_registered_elsewhere: auto_renew on a connected domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "store_remove_domain",
+        "summary": "Remove a connected domain",
+        "description": "Removes a domain registered elsewhere. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain_in_use (it still has mailboxes) or domain_registered_here (a purchased domain leaves by transfer-out).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/renew": {
+      "post": {
+        "operationId": "store_renew_domain",
+        "summary": "Renew a domain now",
+        "description": "Charges and renews the domain for a year. Applies only when renewable is true. Scope MANAGE_STORE, org permission manage_emails and manage_billing. A session needs a recent confirmation (POST /auth/reauth); API keys and OAuth tokens skip it.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomain"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "A card refusal or a shortfall with no saved card.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain_registered_elsewhere, domain_not_renewable, renewal_not_due, renewal_window_closed or renewal_in_progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/transfer-out": {
+      "post": {
+        "operationId": "store_transfer_out_domain",
+        "summary": "Get a transfer code",
+        "description": "Unlocks the domain and returns its auth_code. The answer is a secret shown once: no copy is stored, an Idempotency-Key is ignored, and repeating the call returns the code again and charges nothing. Scope MANAGE_STORE, org permission manage_emails and manage_billing. A session needs a recent confirmation (POST /auth/reauth); API keys and OAuth tokens skip it.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK. Sent with Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "auth_code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "auth_code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain_registered_elsewhere or transfer_locked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/connect": {
+      "post": {
+        "operationId": "store_connect_domain",
+        "summary": "Connect a domain",
+        "description": "Adds a domain registered elsewhere and answers with it, dns included. Nothing is charged. nameservers (recommended) copies the records the domain serves today; manual has the customer add the records in dns at the current DNS provider, starting with the ownership one. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "domain": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "nameservers",
+                      "manual"
+                    ]
+                  }
+                },
+                "required": [
+                  "domain",
+                  "method"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "store_items_invalid: not a domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "plan_required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain_unavailable, with a top-level reason.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/connection/check": {
+      "post": {
+        "operationId": "store_check_domain_connection",
+        "summary": "Check a connection now",
+        "description": "Looks for the nameservers or records now and answers with the domain. Warmbly also checks on its own. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomain"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/connection/regenerate": {
+      "post": {
+        "operationId": "store_regenerate_domain_connection",
+        "summary": "Restart an expired connection",
+        "description": "Issues a new pair of nameservers or a new ownership record after the connection reached expired, and answers with the domain, dns included. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDomain"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/dns": {
+      "post": {
+        "operationId": "store_add_dns_record",
+        "summary": "Add a DNS record",
+        "description": "Adds a record to the domain's zone. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreDNSRecordInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDNSRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "dns_record_invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "dns_record_managed, dns_record_conflict, or dns_not_hosted on a domain connected with manual.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/dns/{record_id}": {
+      "patch": {
+        "operationId": "store_update_dns_record",
+        "summary": "Update a DNS record",
+        "description": "Changes a record's name, content, ttl or priority. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreDNSRecordPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDNSRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "dns_record_invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "dns_record_managed, dns_record_conflict, or dns_not_hosted on a domain connected with manual.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "store_delete_dns_record",
+        "summary": "Delete a DNS record",
+        "description": "Deletes a record from the domain's zone. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "dns_record_managed or dns_not_hosted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/dns/check": {
+      "post": {
+        "operationId": "store_check_dns",
+        "summary": "Check DNS",
+        "description": "Looks every record up in public DNS. It changes nothing. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDNSCheck"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/domains/{id}/microsoft-consent": {
+      "post": {
+        "operationId": "store_start_microsoft_consent",
+        "summary": "Get a Microsoft 365 approval link",
+        "description": "A single-use page where the domain's Microsoft 365 administrator approves Warmbly for the mailboxes waiting with action_required microsoft_consent. The browser returns to this dashboard. When the approval already works it answers url null and consented true. Nothing changes until the administrator approves. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "order_id": {
+                    "type": "string",
+                    "description": "The order to land on afterwards, when it is the workspace's."
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreMicrosoftConsentLink"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "mailbox_grant_not_configured: the instance has no Microsoft app.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/mailboxes": {
+      "get": {
+        "operationId": "store_list_mailboxes",
+        "summary": "List purchased mailboxes",
+        "description": "Purchased mailboxes, newest first. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreMailboxList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_limit or invalid_cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/mailboxes/{id}": {
+      "patch": {
+        "operationId": "store_rename_mailbox",
+        "summary": "Rename a mailbox",
+        "description": "Changes the mailbox's sender name. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "first_name": {
+                    "type": "string"
+                  },
+                  "last_name": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreMailbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "store_cancel_mailbox",
+        "summary": "Cancel a mailbox",
+        "description": "Cancels the mailbox at the end of the paid month (cancels_at) and answers with it. Scope MANAGE_STORE, org permission manage_emails and manage_billing. A session needs a recent confirmation (POST /auth/reauth); API keys and OAuth tokens skip it.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreMailbox"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "mailbox_not_cancellable or store_state_conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/mailboxes/{id}/resume": {
+      "post": {
+        "operationId": "store_resume_mailbox",
+        "summary": "Resume a mailbox",
+        "description": "Withdraws a pending cancellation and answers with the mailbox. Scope MANAGE_STORE, org permission manage_emails and manage_billing. A session needs a recent confirmation (POST /auth/reauth); API keys and OAuth tokens skip it.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreMailbox"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "store_state_conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/mailboxes/{id}/photo": {
+      "put": {
+        "operationId": "store_set_mailbox_photo",
+        "summary": "Set a mailbox photo",
+        "description": "Makes an uploaded photo the mailbox's Google or Microsoft profile picture, retried in the background until the provider takes it. A photo can be replaced, not removed. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "photo_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "photo_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreMailbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_body or photo_not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "store_state_conflict: the mailbox has ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/mailboxes/{id}/sign-in": {
+      "post": {
+        "operationId": "store_mailbox_sign_in",
+        "summary": "Show a mailbox sign-in",
+        "description": "Reveals the mailbox's username and password; for the admin mailbox it opens the whole Workspace or tenant. The answer is a secret shown once: no copy is stored, an Idempotency-Key is ignored, and each call answers a fresh sign-in, sent with Cache-Control: no-store. Each call is audited. Scope MANAGE_STORE, org permission manage_emails. A session needs a recent confirmation (POST /auth/reauth); API keys and OAuth tokens skip it.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreMailboxSignIn"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "sign_in_unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/photos": {
+      "post": {
+        "operationId": "store_upload_photo",
+        "summary": "Upload a mailbox photo",
+        "description": "Uploads a profile photo for purchased mailboxes, as the multipart field file (PNG or JPG, up to 2 MB and 2048 px a side, stored as JPEG) or {\"from\": \"profile\"} to copy the caller's own profile photo. A photo nothing uses is deleted after 24 hours. Scope MANAGE_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "enum": [
+                      "profile"
+                    ]
+                  }
+                },
+                "required": [
+                  "from"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorePhoto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_body, image_unreadable, image_format_not_allowed, image_too_large, image_dimensions_too_large or photo_invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "profile_photo_missing, or store_disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "photo_limit_reached (more than 200 uploads in a day), or rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "photo_storage_unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/store/photos/{id}": {
+      "get": {
+        "operationId": "store_get_photo",
+        "summary": "Get a mailbox photo",
+        "description": "The uploaded JPEG itself, for a preview. Scope READ_STORE, org permission manage_emails.",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing scope or member permission, or partner-managed workspace (store_managed_by_partner on writes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -56577,6 +59527,14 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "contact_email": {
+            "type": "string",
+            "description": "The address a partner gave for a person it signs in. Never a sign-in or a mail destination. Absent when empty."
+          },
+          "partner_account": {
+            "type": "boolean",
+            "description": "An account that signs in only through the partner managing its workspace. Absent when false."
           }
         }
       },
@@ -56819,6 +59777,15 @@
           "avatar_url": {
             "type": "string",
             "description": "The mailbox's own profile photo, read from a Microsoft connect, an administrator grant, or the inbox vendor it was imported from. Empty when none can be read, which includes every Google mailbox signed in on its own and every SMTP mailbox."
+          },
+          "purchased": {
+            "type": "boolean",
+            "description": "A mailbox bought in the store. Absent when false."
+          },
+          "purchase_cancelled_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When a purchased mailbox's subscription ended. Absent while it is live."
           }
         },
         "required": [
@@ -70392,6 +73359,10 @@
           },
           "mailboxes": {
             "type": "integer"
+          },
+          "purchased": {
+            "type": "boolean",
+            "description": "A grant made for a domain bought in the store; admin_email then names one of its mailboxes."
           }
         }
       },
@@ -72621,6 +75592,15 @@
               "format": "uuid"
             }
           },
+          "segment_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Segments every imported contact is pinned into."
+          },
           "recurring": {
             "type": "boolean"
           },
@@ -72679,7 +75659,8 @@
           "status",
           "total_imported",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "segment_ids"
         ]
       },
       "SalesforceImportPreviewRequest": {
@@ -72746,6 +75727,15 @@
               "format": "uuid"
             }
           },
+          "segment_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Up to 20 segments every imported contact is pinned into."
+          },
           "recurring": {
             "type": "boolean"
           }
@@ -72780,6 +75770,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "segment_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Up to 20 segments every imported contact is pinned into. Replaces the stored list when sent."
           },
           "recurring": {
             "type": "boolean"
@@ -73180,6 +76179,15 @@
               "format": "uuid"
             }
           },
+          "segment_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Segments every imported contact is pinned into."
+          },
           "verified_only": {
             "type": "boolean"
           },
@@ -73240,7 +76248,8 @@
           "status",
           "total_imported",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "segment_ids"
         ]
       },
       "ApolloPreview": {
@@ -73656,6 +76665,15 @@
               "format": "uuid"
             }
           },
+          "segment_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Up to 20 segments every imported contact is pinned into. Replaces the stored list when sent."
+          },
           "verified_only": {
             "type": "boolean"
           },
@@ -73699,6 +76717,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "segment_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Up to 20 segments every imported contact is pinned into."
           },
           "verified_only": {
             "type": "boolean",
@@ -78402,6 +81429,1379 @@
           "written",
           "failed",
           "remaining"
+        ]
+      },
+      "StoreCard": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "The saved card, or null.",
+        "properties": {
+          "brand": {
+            "type": "string"
+          },
+          "last4": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "last4"
+        ]
+      },
+      "StoreAutoReload": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "threshold_micros": {
+            "type": "integer"
+          },
+          "amount_micros": {
+            "type": "integer"
+          },
+          "store_managed": {
+            "type": "boolean",
+            "description": "A reload the store turned on and keeps sized to the mailboxes until it is changed by hand."
+          }
+        },
+        "required": [
+          "enabled",
+          "threshold_micros",
+          "amount_micros",
+          "store_managed"
+        ],
+        "description": "The workspace's automatic reload as it will be after the order."
+      },
+      "StoreRegistrant": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "organization": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "+CC.NUMBER"
+          },
+          "address1": {
+            "type": "string"
+          },
+          "address2": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2."
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name",
+          "organization",
+          "email",
+          "phone",
+          "address1",
+          "address2",
+          "city",
+          "state",
+          "postal_code",
+          "country"
+        ],
+        "description": "Who a domain is registered to. phone is +CC.NUMBER; country is ISO 3166-1 alpha-2."
+      },
+      "StoreStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Whether the instance has a GraphKit API key at all."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_configured",
+              "partner_managed"
+            ],
+            "description": "Why enabled is false. Absent when enabled."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "With not_configured: true only on a self-hosted instance, which shows buying as a feature to set up."
+          },
+          "can_configure": {
+            "type": "boolean",
+            "description": "With locked: true for a session whose user is an instance admin holding manage_settings, never for an API key or OAuth token."
+          },
+          "configure_url": {
+            "type": "string",
+            "description": "With can_configure, the admin panel page that takes the key, when its address is known."
+          },
+          "disconnected": {
+            "type": "object",
+            "properties": {
+              "mailboxes": {
+                "type": "integer"
+              },
+              "domains": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "mailboxes",
+              "domains"
+            ],
+            "description": "With not_configured, this workspace's live purchases, whose renewals, billing and Google connections are paused."
+          },
+          "metered": {
+            "type": "boolean",
+            "description": "False on an instance that does not bill."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "mailbox_monthly_micros": {
+            "type": "integer"
+          },
+          "domain_markup": {
+            "type": "string",
+            "enum": [
+              "at_cost",
+              "markup"
+            ]
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "mailboxes_per_domain_max": {
+                "type": "integer"
+              },
+              "mailboxes_per_domain_recommended": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "mailboxes_per_domain_max",
+              "mailboxes_per_domain_recommended"
+            ]
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "google",
+                "microsoft"
+              ]
+            }
+          },
+          "balance": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "balance_micros": {
+                "type": "integer"
+              },
+              "card": {
+                "$ref": "#/components/schemas/StoreCard"
+              }
+            },
+            "required": [
+              "balance_micros",
+              "card"
+            ]
+          },
+          "plan_active": {
+            "type": "boolean",
+            "description": "Whether the workspace has the paid plan buying needs; always true on an instance that does not bill."
+          },
+          "registrant": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StoreRegistrant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "registrant_prefill": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StoreRegistrant"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A draft from the billing details and the owner while no registrant is saved."
+          },
+          "stripe_publishable_key": {
+            "type": "string",
+            "description": "On a metered instance, for saving a card in the page."
+          },
+          "min_card_charge_micros": {
+            "type": "integer",
+            "description": "The least a store charge puts on the card."
+          },
+          "billing_day": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 28,
+            "description": "The day of the month every mailbox is billed; null before the first mailbox."
+          },
+          "next_bundle": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "charge_on": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "mailboxes": {
+                "type": "integer"
+              },
+              "amount_micros": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "charge_on",
+              "mailboxes",
+              "amount_micros"
+            ],
+            "description": "The next monthly mailbox charge, or null when nothing is due."
+          },
+          "default_forwarding_url": {
+            "type": "string",
+            "description": "Where new domains forward unless the buyer changes it; empty for none."
+          },
+          "photos": {
+            "type": "boolean",
+            "description": "Whether mailbox photos can be uploaded on this instance."
+          }
+        },
+        "required": [
+          "enabled",
+          "configured",
+          "locked",
+          "can_configure",
+          "metered",
+          "currency",
+          "mailbox_monthly_micros",
+          "domain_markup",
+          "limits",
+          "providers",
+          "balance",
+          "plan_active",
+          "registrant",
+          "registrant_prefill",
+          "min_card_charge_micros",
+          "billing_day",
+          "next_bundle",
+          "default_forwarding_url",
+          "photos"
+        ]
+      },
+      "StoreDomainOffer": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "tld": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "exact": {
+            "type": "boolean"
+          },
+          "years": {
+            "type": "integer",
+            "description": "The extension's minimum registration term, which price_micros covers."
+          },
+          "price_micros": {
+            "type": "integer"
+          },
+          "renew_micros": {
+            "type": "integer",
+            "description": "Per year."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why an unavailable result cannot be bought: registered, premium, reserved or tld_unsupported."
+          }
+        },
+        "required": [
+          "domain",
+          "display_name",
+          "tld",
+          "available",
+          "exact",
+          "years",
+          "price_micros",
+          "renew_micros",
+          "reason"
+        ]
+      },
+      "StoreDomainSearchResult": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreDomainOffer"
+            }
+          }
+        },
+        "required": [
+          "query",
+          "data"
+        ]
+      },
+      "StoreNewMailbox": {
+        "type": "object",
+        "properties": {
+          "local_part": {
+            "type": "string"
+          },
+          "first_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "last_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "admin": {
+            "type": "boolean",
+            "description": "Marks at most one mailbox per line as the domain's admin; without one the first mailbox is. Leave it out for a domain that already has an admin."
+          },
+          "photo_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An uploaded photo for this mailbox; wins over the line's photo_id."
+          },
+          "signature": {
+            "type": "object",
+            "properties": {
+              "html": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "plain": {
+                "type": "string",
+                "maxLength": 10000
+              }
+            },
+            "required": [
+              "html",
+              "plain"
+            ],
+            "description": "The finished signature set on the mailbox when it connects. Nothing is filled in on the server."
+          }
+        },
+        "required": [
+          "local_part",
+          "first_name",
+          "last_name"
+        ]
+      },
+      "StoreQuoteItem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "mailboxes"
+            ]
+          },
+          "domain": {
+            "type": "string"
+          },
+          "years": {
+            "type": "integer",
+            "description": "domain lines: the search result's years."
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "google",
+              "microsoft"
+            ],
+            "description": "mailboxes lines."
+          },
+          "photo_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "mailboxes lines: an uploaded photo for every mailbox on the domain."
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreNewMailbox"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "domain"
+        ]
+      },
+      "StoreQuoteRequest": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreQuoteItem"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "StoreQuoteLine": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "mailboxes"
+            ]
+          },
+          "domain": {
+            "type": "string"
+          },
+          "years": {
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "amount_micros": {
+            "type": "integer"
+          },
+          "renew_micros": {
+            "type": "integer"
+          },
+          "monthly_micros": {
+            "type": "integer"
+          },
+          "admin_email": {
+            "type": "string",
+            "description": "mailboxes lines: the admin mailbox's address, absent when the domain already has one."
+          },
+          "nameservers_change": {
+            "type": "boolean",
+            "description": "The domain is a connected one whose nameservers have to change after the order."
+          }
+        },
+        "required": [
+          "type",
+          "domain",
+          "amount_micros"
+        ]
+      },
+      "StorePayment": {
+        "type": "object",
+        "properties": {
+          "balance_micros": {
+            "type": "integer"
+          },
+          "from_balance_micros": {
+            "type": "integer"
+          },
+          "card_charge_micros": {
+            "type": "integer",
+            "description": "0 when the balance covers the order; otherwise at least the minimum card charge, or the automatic reload amount when larger."
+          },
+          "balance_after_micros": {
+            "type": "integer"
+          },
+          "card": {
+            "$ref": "#/components/schemas/StoreCard"
+          },
+          "needs_payment_method": {
+            "type": "boolean"
+          },
+          "auto_reload": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StoreAutoReload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "balance_micros",
+          "from_balance_micros",
+          "card_charge_micros",
+          "balance_after_micros",
+          "card",
+          "needs_payment_method",
+          "auto_reload"
+        ]
+      },
+      "StoreQuote": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Prices hold for 15 minutes."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreQuoteLine"
+            }
+          },
+          "due_now_micros": {
+            "type": "integer"
+          },
+          "recurring_monthly_micros": {
+            "type": "integer"
+          },
+          "yearly_domain_renewal_micros": {
+            "type": "integer"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/StorePayment"
+          }
+        },
+        "required": [
+          "id",
+          "expires_at",
+          "lines",
+          "due_now_micros",
+          "recurring_monthly_micros",
+          "yearly_domain_renewal_micros",
+          "payment"
+        ]
+      },
+      "StoreOrderRequest": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expected_due_now_micros": {
+            "type": "integer",
+            "description": "The total the buyer was shown; a different total after repricing answers 409 price_changed and charges nothing."
+          },
+          "forwarding_url": {
+            "type": "string"
+          },
+          "enable_auto_reload": {
+            "type": "boolean",
+            "description": "Defaults to true when the workspace never set automatic reload up."
+          }
+        },
+        "required": [
+          "quote_id"
+        ]
+      },
+      "StoreDNSRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "description": "A, AAAA, CNAME, MX, TXT, SRV, CAA or another."
+          },
+          "name": {
+            "type": "string",
+            "description": "Relative; @ is the apex."
+          },
+          "content": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "integer"
+          },
+          "priority": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "MX and SRV only."
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "Kept by Warmbly for mail and forwarding, so locked."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "mx, spf, dkim, dmarc, verification, forwarding, ownership, imported or custom. Treat an unknown value as custom."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing"
+            ],
+            "description": "Only in a DNS check."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name",
+          "content",
+          "ttl",
+          "priority",
+          "managed",
+          "purpose"
+        ]
+      },
+      "StoreDNSRecordInput": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "integer"
+          },
+          "priority": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "content"
+        ]
+      },
+      "StoreDNSRecordPatch": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "integer"
+          },
+          "priority": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "description": "Any of these; the type is fixed."
+      },
+      "StoreDNSCheck": {
+        "type": "object",
+        "properties": {
+          "nameservers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreDNSRecord"
+            }
+          }
+        },
+        "required": [
+          "nameservers",
+          "records"
+        ]
+      },
+      "StoreDomain": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "registering, active, expired, redemption, transferring_out, failed, connecting or removed; treat an unknown value as not ready."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "purchased",
+              "connected"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "renewable": {
+            "type": "boolean",
+            "description": "A purchased domain that renewal, auto_renew and transfer-out apply to."
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "auto_renew": {
+            "type": "boolean"
+          },
+          "renew_micros": {
+            "type": "integer"
+          },
+          "forwarding_url": {
+            "type": "string"
+          },
+          "forwarding_status": {
+            "type": "string",
+            "description": "none when the domain does not forward."
+          },
+          "mail_auth": {
+            "type": "object",
+            "properties": {
+              "mx": {
+                "type": "string"
+              },
+              "spf": {
+                "type": "string"
+              },
+              "dkim": {
+                "type": "string"
+              },
+              "dmarc": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "mx",
+              "spf",
+              "dkim",
+              "dmarc"
+            ]
+          },
+          "mailbox_count": {
+            "type": "integer"
+          },
+          "nameservers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "connection": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "A domain registered elsewhere: how far it is connected.",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "nameservers",
+                  "manual"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "description": "pending, active or expired, among others."
+              },
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "checked_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "current_nameservers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "method",
+              "status",
+              "expires_at",
+              "checked_at",
+              "current_nameservers"
+            ]
+          },
+          "dns_conflicts": {
+            "type": "array",
+            "description": "Records that block mail. Mailboxes cannot be bought on the domain while this is not empty.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "record_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Set when DELETE /store/domains/{id}/dns/{record_id} can remove it; null when it has to be removed at the domain's DNS provider."
+                },
+                "type": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "record_id",
+                "type",
+                "name",
+                "content"
+              ]
+            }
+          },
+          "owner_verification": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "deadline": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "status",
+              "email",
+              "deadline"
+            ]
+          },
+          "transfer": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Another registrar asking for the domain.",
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "requested_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "auto_approve_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "status",
+              "requested_at",
+              "auto_approve_at"
+            ]
+          },
+          "tracking_host": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreDNSRecord"
+            },
+            "description": "The domain's records, on a single domain's answers."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "source",
+          "provider",
+          "renewable",
+          "expires_at",
+          "auto_renew",
+          "renew_micros",
+          "forwarding_url",
+          "forwarding_status",
+          "mail_auth",
+          "mailbox_count",
+          "nameservers",
+          "connection",
+          "dns_conflicts",
+          "owner_verification",
+          "transfer",
+          "tracking_host",
+          "created_at"
+        ]
+      },
+      "StoreMailbox": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "domain_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "provisioning, active, suspended, cancelling, cancelled or failed."
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Campaign sending and warmup stopped because the workspace has no plan; the mailbox still bills."
+          },
+          "monthly_micros": {
+            "type": "integer"
+          },
+          "paid_through": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancels_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cancelled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "email_account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "connect_state": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "connecting",
+              "connected",
+              "failed"
+            ]
+          },
+          "action_required": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "microsoft_consent",
+              null
+            ],
+            "description": "microsoft_consent while the domain's Microsoft 365 administrator has not approved Warmbly. Treat an unknown value as a step to show."
+          },
+          "action_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "With action_required, why the background approval stopped: mfa_required, wrong_password, not_admin, wrong_tenant, sign_in_blocked, no_admin_sign_in or failed. Treat an unknown value as failed."
+          },
+          "photo": {
+            "type": "string",
+            "enum": [
+              "none",
+              "pending",
+              "set"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "domain_id",
+          "provider",
+          "status",
+          "first_name",
+          "last_name",
+          "is_admin",
+          "paused",
+          "monthly_micros",
+          "paid_through",
+          "cancels_at",
+          "cancelled_at",
+          "email_account_id",
+          "connect_state",
+          "action_required",
+          "action_reason",
+          "photo",
+          "created_at"
+        ]
+      },
+      "StoreOrder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "charging",
+              "processing",
+              "completed",
+              "partially_failed",
+              "failed"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "due_now_micros": {
+            "type": "integer"
+          },
+          "charged_micros": {
+            "type": "integer"
+          },
+          "refunded_micros": {
+            "type": "integer"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "key",
+                "status",
+                "at"
+              ]
+            }
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreDomain"
+            }
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreMailbox"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "created_at",
+          "completed_at",
+          "due_now_micros",
+          "charged_micros",
+          "refunded_micros",
+          "steps",
+          "domains",
+          "mailboxes"
+        ]
+      },
+      "StoreOrderList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreOrder"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ]
+      },
+      "StoreDomainList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreDomain"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ]
+      },
+      "StoreMailboxList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoreMailbox"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ]
+      },
+      "StorePhoto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "created_at"
+        ]
+      },
+      "StoreMailboxSignIn": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "login_url": {
+            "type": "string"
+          },
+          "admin_console_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set for the domain's admin mailbox."
+          }
+        },
+        "required": [
+          "email",
+          "username",
+          "password",
+          "login_url",
+          "admin_console_url"
+        ],
+        "description": "Show it once and do not keep it."
+      },
+      "StoreMicrosoftConsentLink": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A single-use approval page, valid for an hour; null when the approval already works."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consented": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "url",
+          "consented"
+        ]
+      },
+      "WorkspacePartnerMailbox": {
+        "type": "object",
+        "properties": {
+          "email_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enablement": {
+            "type": "string",
+            "enum": [
+              "sending_warmup",
+              "warmup_only",
+              "off"
+            ]
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "Whether the partner holds the mailbox."
+          }
+        },
+        "required": [
+          "email_account_id",
+          "enablement",
+          "managed"
         ]
       }
     }
