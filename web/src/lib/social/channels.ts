@@ -36,6 +36,8 @@ export interface ActionMeta {
     /** One line for a picker or a summary. */
     hint: string;
     description: string;
+    /** Added to the description only on LinkedIn. */
+    linkedin?: string;
     keywords: string;
 }
 
@@ -49,7 +51,8 @@ export const ACTION_META: Record<SocialActionType, ActionMeta> = {
     message: {
         label: "Message",
         hint: "A direct message",
-        description: "Send a direct message. On LinkedIn it reaches 1st-degree connections only.",
+        description: "Send a direct message.",
+        linkedin: "On LinkedIn it reaches 1st-degree connections only.",
         keywords: "message dm chat direct follow up",
     },
     inmail: {

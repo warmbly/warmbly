@@ -31,6 +31,7 @@ export default function SocialStepEditor({ campaignId, action, setAction }: { ca
     const spec = specs.find((s) => s.channel === cfg?.channel);
     const issues = socialIssues(cfg, spec);
     const issueFor = (field: string) => issues.find((i) => i.field === field)?.message;
+    const meta = cfg ? ACTION_META[cfg.action as keyof typeof ACTION_META] : undefined;
 
     const update = (patch: Partial<SocialStepConfig>) => setAction((a) => ({ ...a, social: { ...(a.social as SocialStepConfig), ...patch } }));
     const pick = (channel: SocialChannel, act: string) =>
@@ -85,7 +86,8 @@ export default function SocialStepEditor({ campaignId, action, setAction }: { ca
             </div>
 
             <p className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] leading-relaxed text-slate-600">
-                {ACTION_META[cfg.action as keyof typeof ACTION_META]?.description ?? ""} It runs from one of the campaign&apos;s {channelLabel(cfg.channel, specs)} accounts, within that account&apos;s
+                {meta?.description ?? ""}
+                {cfg.channel === "linkedin" && meta?.linkedin ? ` ${meta.linkedin}` : ""} It runs from one of the campaign&apos;s {channelLabel(cfg.channel, specs)} accounts, within that account&apos;s
                 daily limits and working hours; once it has talked to a contact, the same account keeps them.
             </p>
 
