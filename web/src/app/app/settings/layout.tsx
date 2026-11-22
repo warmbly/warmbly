@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { UnsavedProvider, useUnsavedRegistry } from "@/hooks/context/unsaved";
 import { useAccessRestricted, usePermission, type PermissionKey } from "@/hooks/usePermission";
+import useWorkspaceWritable from "@/hooks/useWorkspaceWritable";
 import { Page, PageTopbar } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
@@ -140,6 +141,7 @@ function SettingsLayoutInner() {
     const canManageBilling = usePermission("MANAGE_BILLING");
     const canManageContacts = usePermission("MANAGE_CONTACTS");
     const restricted = useAccessRestricted();
+    const workspace = useWorkspaceWritable();
     const navRef = React.useRef<HTMLElement>(null);
     const unsaved = useUnsavedRegistry();
     const [savingLeave, setSavingLeave] = React.useState(false);
@@ -224,6 +226,9 @@ function SettingsLayoutInner() {
         allItems.find((s) => s.path === currentPath || currentPath.startsWith(`${s.path}/`)) ??
         allItems[0];
 
+    // Account sections are the signed-in person's own and stay writable; the workspace's are held while it is paused.
+    const held = !workspace.writable && !current?.scoped;
+
     return (
         <Page className="h-full min-h-0">
             <PageTopbar
@@ -260,7 +265,19 @@ function SettingsLayoutInner() {
                             exit={{ opacity: 0, y: -4 }}
                             transition={{ duration: 0.16, ease: "easeOut" }}
                         >
-                            <Outlet />
+                            {held ? (
+                                // A paused workspace takes no writes: its sections stay readable with every control off.
+                                <>
+                                    <p role="status" className="mx-4 md:mx-6 mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900">
+                                        Workspace settings are read-only while the workspace is paused.
+                                    </p>
+                                    <fieldset disabled title={workspace.reason} className="min-w-0">
+                                        <Outlet />
+                                    </fieldset>
+                                </>
+                            ) : (
+                                <Outlet />
+                            )}
                         </motion.div>
                     </AnimatePresence>
                 </div>

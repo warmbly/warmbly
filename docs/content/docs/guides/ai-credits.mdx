@@ -11,28 +11,31 @@ AI and other metered features are paid from the workspace balance, in US dollars
 
 <Step>
 
-Open the **Balance** tab of **Settings > Billing** (it needs the **Manage billing** permission).
+Open the **Balance** tab of **Settings > Billing** (it needs the **Manage billing** permission) and select **Add funds**.
 
 </Step>
 
 <Step>
 
-Pick an amount: **$10**, **$25**, **$50**, **$100**, **$250**, or any other amount from $5 to $5,000.
+On **One-time**, pick **$10**, **$25**, **$50**, **$100** or **$250** ($25 is picked first), or enter another amount from $5 to $5,000; the arrows step by $10. Where [buying domains and mailboxes](/guides/buy-mailboxes/) is on, the amounts are **$100**, **$250**, **$500**, **$1,000**, **$2,500** and **$5,000** ($100 first), and the least is the store's minimum card charge, $10 unless it sets another. The dialog shows how long the balance would last with it.
 
 </Step>
 
 <Step>
 
-With a saved card, confirm **Pay** and the money is added at once. Without one, or to use another card, choose **Pay another way** to finish in Stripe Checkout, which saves the card for next time.
+Below the amount, the dialog shows the 3% processing fee and the total, and **Pay** names the total: adding $25 charges $25.75. Select **Pay**. The saved card is charged and the money is added at once. With no saved card, or after **Change**, enter a card right in the dialog; it is saved for next time and becomes the card charged from then on, before anything is charged, with any check your bank asks for shown there. **Pay another way** finishes in Stripe Checkout instead.
 
 </Step>
 
 </Steps>
 
+The top of the Balance tab shows the balance and about how many days it lasts at what it pays for each day: a month of [bought mailboxes](/guides/buy-mailboxes/) spread over 30 days, domain renewals due in the next 60 days spread over the days until each is charged, and your average daily AI spend over the last 30 days. Where the store is on, **Your rates** beside it lists the mailbox and domain prices and the day of the month mailboxes are billed.
+
 ## Good to know
 
 - The balance is in US dollars. A charge is the provider's price for what a call used plus a markup (25% by default).
-- Spending draws the monthly allowance first, then money you added.
+- Spending draws the monthly allowance first, then money you added, unless you keep AI to the allowance (see [after the included usage](#after-the-included-usage)).
+- Domains and mailboxes are paid only from money you added or your card, never from the monthly allowance.
 - Unused allowance does not roll over. Money you add never expires.
 - Before work starts, Warmbly checks the balance covers a typical call. Running out stops work before it starts, and a result you already received never fails.
 - Automatic reload adds money on your saved card when the balance runs low, up to a monthly limit you set.
@@ -72,6 +75,17 @@ The allowance resets to the plan amount at the start of each billing cycle, and 
 | **Money you added** | Added by you or by automatic reload | Yes, it never expires and survives every reset |
 
 Spending draws the allowance first and only touches money you added once the allowance is used up, so what you added is held back for heavy months.
+
+### After the included usage
+
+**Let AI use my balance after the included $X runs out**, in the AI spend section of the Balance tab, decides what happens once the month's allowance is spent. It is on unless you turn it off, which is how every workspace worked before the setting existed.
+
+- **On**: AI keeps working and is paid from money you added. Tick **Use at most** to cap what AI takes from it each calendar month (UTC); at the cap, AI stops with `ai_overage_limit_reached` until the next month. Domain and mailbox charges never count toward the cap.
+- **Off**: AI stops for the rest of the month once the allowance is spent, with `ai_allowance_used`, and money you added is kept for [domains and mailboxes](/guides/buy-mailboxes/) and other charges. A client workspace in an agency still draws on the agency's [shared AI balance](/guides/agencies/#the-shared-ai-balance).
+
+The setting covers everything the allowance pays for: AI features, the web searches they make and paid placement tests. The AI spend section shows both halves for the month: **Included AI: $X of $Y used** and **From your balance: $Z this month**.
+
+Domains and mailboxes are the other way round: they are paid only from money you added (or your card), never from the allowance or an agency's shared AI balance.
 
 A balance held in credits before Warmbly switched to dollars was converted to dollars, and purchased credits carry over as money you added, so they still never expire.
 
@@ -137,11 +151,15 @@ The usage card above it shows spend today, this week and this month, a graph ove
 
 ## Adding money and your saved card
 
-You can add any amount from **$5 to $5,000**, in whole cents. Adding money needs an active paid plan.
+You can add any amount from **$5 to $5,000** ($10 or the store's minimum card charge where the store is on), in whole cents. Adding money needs an active paid plan.
+
+Every card payment into the balance adds a **3% processing fee** on top of the amount you add, rounded to the nearest cent, so the balance always grows by exactly the amount you chose: adding $100 charges $103.00. This covers one-click payments, Stripe Checkout and automatic reload. The fee is its own line on the invoice and receipt. It is not refunded, so a refund returns at most the amount that was added to the balance. [Store charges](/guides/buy-mailboxes/#paying) that pay an order carry no fee.
 
 - **One click on the saved card.** The card is charged at once and the money is added as soon as the payment goes through. If the payment is still going through when the page answers, the Balance tab says so and updates when it lands; Warmbly finishes it in the background, and another payment cannot start until it does. Each charge is billed as a Stripe invoice, so it has its own invoice and receipt.
-- **Pay another way.** Opens Stripe Checkout for the amount. Use it when there is no saved card, when you want another card, or when the saved card is declined or your bank asks to confirm the payment. Checkout saves the card for next time. Money arrives only after Stripe confirms the payment, so closing the checkout tab charges nothing, and a completed payment is added exactly once even if Stripe retries.
-- **Change the card.** Opens Stripe Checkout to save a new card, without charging anything.
+- **A new card in the dialog.** With no saved card, or after **Change**, the card is entered in the dialog, saved and made the workspace's card before it is charged, so a replaced card is never the one billed. If your bank asks to confirm, the check opens in the page.
+- **Pay another way.** With a saved card, opens Stripe Checkout for the amount, to pay with another card or method.
+- **Stripe Checkout as a fallback.** When the saved card is declined or your bank asks to confirm a one-click payment, or when the card field cannot load, the payment carries on in Stripe Checkout, which saves the card for next time. Money arrives only after Stripe confirms the payment, so closing the checkout tab charges nothing, and a completed payment is added exactly once even if Stripe retries.
+- **Payment method.** Saves a new card in place, without charging anything.
 
 The card shown is the one on the workspace's Stripe billing account (brand and last four digits). Card details are held by Stripe and never touch Warmbly.
 
@@ -151,7 +169,7 @@ The card shown is the one on the workspace's Stripe billing account (brand and l
 
 ## Automatic reload
 
-Automatic reload adds money on the saved card when the balance falls below a threshold, so AI never pauses for an empty balance. It needs a saved card and an active paid plan.
+Automatic reload adds money on the saved card when the balance falls below a threshold, so AI never pauses for an empty balance. Each reload is charged with the 3% processing fee on top, so a $25 reload charges $25.75; the dialog shows both. Turning it on needs a saved card and an active paid plan; turning it off never does, so a workspace whose plan lapsed can still switch it off. Set it on the **Auto top-up** tab of **Add funds**, which starts from the values below.
 
 | Setting | Default | Range |
 |---------|---------|-------|
@@ -159,7 +177,9 @@ Automatic reload adds money on the saved card when the balance falls below a thr
 | **Add** | $25 | $5 to $5,000, and more than the threshold |
 | **Monthly limit** | $250 | at least one reload, up to $50,000 |
 
-The monthly limit counts every automatic reload in the calendar month. When less than a full reload is left under it, Warmbly adds what is left if that is at least $5, and otherwise waits for next month.
+Where the store is on, a first setup starts at next month's mailbox charge (at least $10) for the threshold, $100 for each reload and $500 a month, and each reload adds at least the store's minimum card charge.
+
+The monthly limit counts what automatic reload added to the balance in the calendar month, not the fee. When less than a full reload is left under it, Warmbly adds what is left if that is at least $5, and otherwise waits for next month.
 
 When a reload is declined:
 
@@ -169,7 +189,11 @@ When a reload is declined:
 
 A reload waiting for a retry is canceled, never charged, when you turn automatic reload off or the balance is back above the threshold by the time it is due.
 
-The Balance tab shows the last reload, how much has been reloaded this month, and a pending retry with its time.
+If you [buy mailboxes](/guides/buy-mailboxes/#automatic-top-ups), Warmbly turns automatic reload on with your first purchase, unless you set it up yourself or untick it at checkout, and keeps it sized to your mailboxes: below what the next monthly mailbox charge needs, it adds at least $10. Once you change those amounts here, Warmbly leaves them as you set them. Store charges also put at least $10 on the card when the balance falls short, and what the charge does not use stays on the balance.
+
+Domains and mailboxes are paid only from money you added (or your card), never from the monthly allowance or an agency's shared AI balance: those pay for AI usage alone.
+
+The Balance tab shows the last reload, how much has been reloaded this month, a pending retry with its time and an **Update card** button, and a warning when the saved card expires within about a month.
 
 </Fold>
 
@@ -187,7 +211,7 @@ Everyone with **Manage billing** gets an in-app notice when the balance falls be
 
 | Control | Behavior |
 |---------|----------|
-| **Spend limits** | Optional caps in dollars per calendar day, ISO week and calendar month. At the limit, AI pauses with a clear message until the window rolls over |
+| **Spend limits** | Optional caps in dollars per calendar day, ISO week and calendar month. At the limit, AI pauses with a clear message until the window rolls over. Domain and mailbox charges never count toward them |
 | **Per-member limits** | The same three windows per teammate, in dollars, counting only charges they triggered. Workspace-level work (automations, the inbox agent) is attributed to nobody |
 
 Each limit shows current spend against it, and changes collect into a save bar. Who can use AI at all is separate: the **Use AI** role permission (see [Team and roles](/guides/team-roles/)).

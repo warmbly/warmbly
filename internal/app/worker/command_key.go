@@ -12,11 +12,12 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+// CommandConcurrency is how many mailboxes' commands run at once; each waits mostly on its provider, not the CPU.
 func CommandConcurrency() int {
 	if n, err := strconv.Atoi(os.Getenv("WORKER_COMMAND_CONCURRENCY")); err == nil && n >= 1 && n <= 64 {
 		return n
 	}
-	return 8
+	return 32
 }
 
 // ResolveCommandKey uses the payload so old task-keyed sends share their mailbox's lane too.

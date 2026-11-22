@@ -23,12 +23,16 @@ import { useConfirm } from "@/hooks/context/confirm";
 import LaunchCampaignDialog from "@/components/app/campaigns/LaunchCampaignDialog";
 import CampaignActionsMenu from "@/components/app/campaigns/CampaignActionsMenu";
 import UndeliverableBanner from "@/components/app/campaigns/UndeliverableBanner";
+import ReviewWaitingBanner from "@/components/app/campaigns/review/ReviewWaitingBanner";
+import { useQuery } from "@tanstack/react-query";
+import { sequencesQuery } from "@/lib/api/hooks/app/campaigns/sequences/useSequences";
 import { canStartCampaign } from "@/components/app/campaigns/useCampaignActions";
 import toast from "react-hot-toast/headless";
 import { CAMPAIGN_DELETED_EVENT, type CampaignDeletedDetail } from "@/lib/realtime/campaignDeleted";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { useAccessRestricted, usePermission } from "@/hooks/usePermission";
+import useWorkspaceWritable from "@/hooks/useWorkspaceWritable";
 
 // `scoped` tabs read only the campaign's own data, so a restricted member sees them.
 const TABS = [
@@ -59,7 +63,11 @@ export default function CampaignLayout() {
     const [launchOpen, setLaunchOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const canSend = usePermission("SEND_CAMPAIGNS");
+    const { writable } = useWorkspaceWritable();
     const restricted = useAccessRestricted();
+    const onSteps = pathname.replace(/\/$/, "").endsWith("/steps");
+    const { data: steps } = useQuery({ ...sequencesQuery(id), enabled: onSteps });
+    const hasEmailStep = (steps ?? []).some((s) => s.kind === "email");
     const launchRequested = searchParams.get("launch") === "1";
     const loadedStatus = campaignData.data?.status;
 
@@ -67,7 +75,7 @@ export default function CampaignLayout() {
     // the launch dialog once the campaign has loaded, then leaves the URL clean.
     useEffect(() => {
         if (!launchRequested || !loadedStatus) return;
-        if (canSend && canStartCampaign(loadedStatus)) setLaunchOpen(true);
+        if (canSend && writable && canStartCampaign(loadedStatus)) setLaunchOpen(true);
         setSearchParams(
             (prev) => {
                 const next = new URLSearchParams(prev);
@@ -76,7 +84,7 @@ export default function CampaignLayout() {
             },
             { replace: true },
         );
-    }, [launchRequested, loadedStatus, canSend, setSearchParams]);
+    }, [launchRequested, loadedStatus, canSend, writable, setSearchParams]);
 
     // Collaboration: claim this campaign while it's open so teammates see
     // who's already in here (header pill + the org-wide presence stack).
@@ -205,6 +213,11 @@ export default function CampaignLayout() {
                 </div>
 
                 <UndeliverableBanner campaignId={campaign.id} status={status} />
+                <ReviewWaitingBanner
+                    campaignId={campaign.id}
+                    // On Steps, each email step's Review tab already lists who waits, when there is one.
+                    enabled={!!campaign.review_leads && !restricted && !(onSteps && hasEmailStep)}
+                />
 
                 <div className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200 overflow-x-auto no-scrollbar">
                     {TABS.filter((t) => t.scoped || !restricted).map(({ label, to, Icon }) => (

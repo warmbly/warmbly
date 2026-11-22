@@ -632,12 +632,17 @@ func (r *crmProviderRepository) CampaignOptions(ctx context.Context, orgID uuid.
 }
 
 // ResumeHeldEverywhere lifts every hold on a contact's leads in the workspace.
+// Waiting for review is not a hold it lifts: only an approval does, so a waiting
+// lead gets its 'review' hold back for releases that read only the hold slot.
 func (r *crmProviderRepository) ResumeHeldEverywhere(ctx context.Context, orgID, contactID uuid.UUID) (int64, error) {
 	tag, err := r.db.Exec(ctx, `
 		UPDATE campaign_leads cl
-		SET paused_at = NULL, paused_until = NULL, pause_reason = NULL, pause_source = NULL
+		SET paused_at = CASE WHEN cl.review_pending_at IS NOT NULL THEN NOW() END,
+		    paused_until = NULL, pause_reason = NULL,
+		    pause_source = CASE WHEN cl.review_pending_at IS NOT NULL THEN 'review' END
 		FROM campaigns c
-		WHERE cl.contact_id = $2 AND c.id = cl.campaign_id AND c.organization_id = $1 AND cl.paused_at IS NOT NULL`,
+		WHERE cl.contact_id = $2 AND c.id = cl.campaign_id AND c.organization_id = $1 AND cl.paused_at IS NOT NULL
+		  AND cl.pause_source IS DISTINCT FROM 'review'`,
 		orgID, contactID)
 	if err != nil {
 		return 0, err

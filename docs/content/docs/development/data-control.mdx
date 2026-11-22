@@ -71,6 +71,8 @@ Every window below lives in the database, not the environment, and is edited und
 | `sync.backfill_messages` | 5,000 | 1 to 100,000 | The most messages that import stores per mailbox |
 | `sync.daily_messages_per_mailbox` | 2,000 | 1 to 100,000 | New mail one mailbox may store per UTC day |
 | `sync.daily_messages_per_org` | 25,000 | 1 to 2,000,000 | New plus imported mail across one workspace per UTC day |
+| `sync.full_check_min_minutes` | 15 | 5 to 180 | How often a workspace with room left under its plan has every folder of its mailboxes checked |
+| `sync.full_check_max_minutes` | 60 | 5 to 180 | How often a workspace using its whole mailbox allowance has every folder checked |
 
 Mail over a daily budget is deferred, never dropped: the provider cursor is held and the mail is re-offered on the next pass. Replies to the mailbox's own outreach ride a separate budget of the same size and keep landing regardless.
 
@@ -190,6 +192,42 @@ A mailbox records which vendor account or grant it came from, and for a grant th
 Vendor connections and redirects travel in a [workspace export](/guides/workspace-export-import/); a redirect Warmbly Cloud served arrives served by the destination. Grants do not: a grant is recorded only after the workspace proves the domain (Google) or completes the administrator's consent (Microsoft) on the instance that holds it, and a row from an archive proves neither. The mailboxes a grant connected travel without it. On the destination the workspace makes the grant again and connects the same users, which relinks those mailboxes instead of adding new ones.
 
 Forwarding a domain through an inbox vendor, and a tracking `CNAME` written through one, are stored at the vendor, not here. Warmbly keeps only the vendor's domain list, in memory for five minutes.
+
+### Purchased domains and mailboxes
+
+Only an instance with the [domain and mailbox store](/development/configuration/#domain-and-mailbox-store) configured writes these. Each row is kept until the workspace is deleted, except quotes, which are cleared a day after they expire unless an order was paid from them, and applied webhook event ids, which are kept 31 days.
+
+| Table | Holds | Secrets |
+|---|---|---|
+| `store_accounts` | The workspace's account id at GraphKit and the registrant its domains are registered to (name, organization, email, phone and postal address) | None |
+| `store_quotes` | Each quote's retail prices as shown to the buyer, so an order charges exactly what was on screen | None |
+| `store_orders` | Each order: the quote it was paid from, its setup steps, what was charged and refunded, and who placed it | None |
+| `store_domains` | Each purchased domain: its status, expiry, auto-renew, renewal price, forwarding URL and mail record checks | None |
+| `store_mailboxes` | Each purchased mailbox: its address, names, provider, monthly price, the date it is paid through, any pending cancellation, and the Warmbly mailbox it connected | None. A mailbox that connects over IMAP and SMTP stores its password on the connected mailbox, sealed like any other |
+| `store_webhook_events` | The id and arrival time of each GraphKit event already applied, so a redelivery is applied once | None |
+| `store_graphkit_connection` | The GraphKit API URL, API key and webhook secrets an operator added under **Setup and health > Integrations**, and who saved them last. At most one row, kept until **Disconnect** removes it; unused while `GRAPHKIT_API_KEY` is set | The API key and both webhook secrets, sealed under `CREDENTIALS_ENCRYPTION_KEY` |
+
+The registrant also lives at GraphKit, which registers domains with it and keeps WHOIS privacy on wherever the extension allows. None of these tables travel in a [workspace export](/guides/workspace-export-import/), because what they describe is bought and billed through this instance's partner account. The mailboxes they connected do travel, and a domain leaves through transfer-out.
+
+### Partners
+
+Only an instance where an operator added a [partner](/development/partners/) writes these.
+
+| Table | Holds | Kept | Secrets |
+|---|---|---|---|
+| `partners` | Each partner's names, status, allowed hosts, webhook and token callback addresses, wholesale prices and rate limit | Until removed | The webhook signing secrets and the token callback key, sealed with `CREDENTIALS_ENCRYPTION_KEY` |
+| `partner_api_keys` | Each partner key's mode, name and display ends | Until the partner is removed | Only a SHA-256 hash of the key |
+| `partner_organizations` | Which workspace a partner manages under which of its ids, its state, per-mailbox send limit and group | Until the workspace is deleted, then until the partner is told | None |
+| `partner_identities` | Which account a partner signs a person in as, with the address and name the partner gave | Until the account is deleted | None |
+| `partner_idempotency_keys` | The answer to each partner write, for a retry with the same key | 24 hours | The whole answer, sealed with `CREDENTIALS_ENCRYPTION_KEY`, since some carry an API key |
+| `partner_events` | Events for the partner and how their delivery went | 30 days | None |
+| `partner_mailboxes` | Each mailbox of a managed workspace: the partner's id for it, its source, enablement, how it connects and whether it was detached | Until the partner is removed, so billed days stay reportable after the mailbox or workspace is gone | None; a password a partner sends is sealed on the mailbox like any other and never stored here |
+| `partner_mailbox_enablements` | When each mailbox was enabled for sending and warmup or warmup only, the history mailbox-days are counted from | As long as its mailbox row | None |
+| `partner_connect_links` | Which mailbox a partner's connect link connects, as what, and where it returns | Until the workspace is deleted | None; the link's secret is a hash on `client_connect_links` |
+| `partner_groups` | Each partner group's brand (name, logo URL, accent colour, website, "Powered by"), its portal domain and whether it resolved | Until the partner is removed | None |
+| `partner_statements`, `partner_statement_lines` | Each closed month of a partner's enabled mailbox-days, per workspace, at the wholesale prices in force when it closed | Until the partner is removed | None |
+
+None of these travel in a [workspace export](/guides/workspace-export-import/). A cancelled workspace is deleted 30 days after the partner cancels it, through the same delayed deletion an owner schedules.
 
 ### Disconnecting a mailbox
 
@@ -375,6 +413,10 @@ These are made only when a workspace uses the feature behind them, so an instanc
 | Business mail servers | The lead finder works out a person's address: each candidate is checked with the business domain's mail server the same way a contact's address is, a few per person and at most fifteen per business in a run, and nothing is sent |
 
 Everything else is you: mail through the mailboxes you connect, DNS lookups for the domains you check, and whatever integrations you configure. There is no telemetry, no phone-home, and no license check.
+
+### Domain and mailbox store
+
+With `GRAPHKIT_API_KEY` unset, the default, the backend never contacts GraphKit. With it set, the backend calls the GraphKit API it is pointed at to search domains, quote and place orders, renew, cancel and transfer out, sending the workspace id, its name, the registrant and the names and addresses of the mailboxes ordered. No mail content and no mailbox credential is sent. The backend also tells GraphKit, at boot and daily, which Gmail scopes and which Microsoft application id and permissions purchased mailboxes should grant, and asks it for short-lived access tokens for purchased Google mailboxes. GraphKit calls back on `/v1/webhooks/graphkit`, once the operator registers that endpoint, with the current state of orders, domains and mailboxes.
 
 ### Error reporting
 

@@ -111,6 +111,15 @@ func (w *WMail) graphRecoveryCheckpoint(ctx context.Context, folder, link string
 }
 
 func (w *WMail) graphMessageMap(ctx context.Context, providerID string) (*repository.EmailMessageData, error) {
+	if known, ok := w.mapPage.known[providerID]; ok {
+		if known != nil || !w.GraphData.Client.ImmutableIDMode() {
+			return known, nil
+		}
+		if regular := w.mapPage.regular[providerID]; regular != nil {
+			return w.graphAliasOf(ctx, providerID, regular)
+		}
+		return nil, nil
+	}
 	known, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, providerID)
 	if err != nil || known != nil || !w.GraphData.Client.ImmutableIDMode() {
 		return known, err
@@ -123,7 +132,12 @@ func (w *WMail) graphMessageMap(ctx context.Context, providerID string) (*reposi
 	if err != nil || known == nil {
 		return known, err
 	}
-	alias := *known
+	return w.graphAliasOf(ctx, providerID, known)
+}
+
+// graphAliasOf keys a mapping held under a regular id by the immutable id delta reports.
+func (w *WMail) graphAliasOf(ctx context.Context, providerID string, regular *repository.EmailMessageData) (*repository.EmailMessageData, error) {
+	alias := *regular
 	alias.MessageID = providerID
 	if err := w.graphAddAlias(ctx, alias); err != nil {
 		return nil, err
@@ -132,6 +146,7 @@ func (w *WMail) graphMessageMap(ctx context.Context, providerID string) (*reposi
 }
 
 func (w *WMail) graphAddAlias(ctx context.Context, alias repository.EmailMessageData) error {
+	w.forgetMap(alias.MessageID)
 	existing, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, alias.MessageID)
 	if err != nil {
 		return err

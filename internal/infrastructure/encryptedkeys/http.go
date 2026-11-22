@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
+	"github.com/warmbly/warmbly/internal/pkg/nodebackend"
 )
 
 // HTTPStore is the worker-side adapter. Workers cannot connect to Postgres
@@ -43,6 +44,16 @@ type HTTPOption func(*HTTPStore)
 // for callers that need custom transports such as netbind.Dialer).
 func WithHTTPClient(c *http.Client) HTTPOption {
 	return func(s *HTTPStore) { s.client = c }
+}
+
+// WithControlPlane sends the store to the node's private control-plane address when it chose one.
+func WithControlPlane(node nodebackend.Backend) HTTPOption {
+	return func(s *HTTPStore) {
+		if node.Private() {
+			s.baseURL = node.BaseURL(s.baseURL)
+			s.client.Transport = node.Transport()
+		}
+	}
 }
 
 func NewHTTP(baseURL, token string, opts ...HTTPOption) (*HTTPStore, error) {

@@ -164,6 +164,7 @@ token parameter, the cap's ceiling, the metric contract and `nat_ipv4_addresses`
 | `nat_instance_type` | `t4g.micro` | Graviton type for each zone's NAT instance |
 | `nat_conntrack_max` | `524288` | Connection-tracking entries per NAT instance |
 | `nats_security_group_id` | `null` | NATS broker security group the fleet may reach on 4222 |
+| `backend_internal_port` | `null` | The runtime root's `target_tls_port`. Set, fleet workers and fixed worker hosts may reach the backend's private TLS listener on it; see [Keep fleet traffic inside the VPC](/development/aws-fargate/#keep-fleet-traffic-inside-the-vpc) |
 
 ## How the fleet scales
 

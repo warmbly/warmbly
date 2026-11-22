@@ -41,6 +41,7 @@ import { StackedBars } from "./Sparkline";
 import { useConfirm } from "@/hooks/context/confirm";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import { anyBits } from "@/lib/bitmask";
 
 export default function KeyDetailDrawer({
     apiKey,
@@ -156,7 +157,7 @@ function Inner({ apiKey, onClose }: { apiKey: APIKey; onClose: () => void }) {
 
     const grantedPermissions = React.useMemo(() => {
         if (!perms.data) return [];
-        return perms.data.permissions.filter((p) => (apiKey.permissions & p.value) !== 0);
+        return perms.data.permissions.filter((p) => anyBits(apiKey.permissions, p.value));
     }, [perms.data, apiKey.permissions]);
 
     return (

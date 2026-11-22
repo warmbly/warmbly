@@ -19,8 +19,8 @@ struct MoreCard<Content: View>: View {
                 }
             }
         }
-        .background(WTheme.groupedCard)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 

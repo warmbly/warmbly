@@ -39,7 +39,7 @@ func (w *WMail) onGraphMessageRemove(ctx context.Context, providerID string) err
 // we map to the \Seen flag add/remove the unibox already understands. No-op when
 // the message isn't tracked yet (the add path sets the initial flags).
 func (w *WMail) onGraphFlagsChange(ctx context.Context, providerID string, seen bool) error {
-	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, providerID)
+	internalMessage, err := w.lookupMap(ctx, providerID)
 	if err != nil {
 		return err
 	}

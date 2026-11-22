@@ -43,6 +43,8 @@ Other CI-touching rules:
 - the frontend trees (`admin/`, `web/`, `site/`, `qa/`) each have their own CI jobs; run `pnpm typecheck` in any tree you touched and `pnpm lint` when the rules are non-trivial
 - never push without first re-running the relevant `*build*` / `*typecheck*` / `*lint*` step on the affected tree
 - a `make lint` (or `gofmt -l`) failure is always a real CI failure; do not push hoping it will pass
+- keep CI fast and minimal. Do not add a job, a matrix entry or a step for a feature. Touch `.github/` only to fix CI itself
+- CI has no database. The only Postgres in it is the Migrations job, which applies every migration to an empty database
 
 Migrations are numbered against `main`, not against your branch:
 
@@ -50,6 +52,15 @@ Migrations are numbered against `main`, not against your branch:
 - two branches that each pick "the next number" independently are both green alone and collide once both merge; golang-migrate then refuses to build its source driver and the backend restart-loops at boot, so nothing deploys
 - run `make check-migrations` (also a prerequisite of `make lint`, and its own CI job) before pushing anything that adds a migration
 - if a duplicate does reach `main`, renumber the migration that has NOT been released yet. The other one is already recorded in deployments' `schema_migrations`, and renumbering it makes them re-apply it
+
+### Tests are opt-in
+
+Do not write tests by default. A change is done when it is formatted, lints and typechecks, not when it has a test.
+
+- add a test only when the user asks for one
+- never add a test that needs Postgres, Redis or any other running service (no `WARMBLY_TEST_DB`-style env-gated tests, no `TestLive*`); CI cannot run them
+- when a change breaks an existing test, fix or delete that test; do not add new ones around it
+- do not add test fixtures, golden files, mutation checks or "regression" cases to a fix that was not asked for them
 
 ### Deployment and rollback compatibility is required
 
@@ -79,10 +90,10 @@ and credentials. State the supported version window when it changes.
   migration version, clear a dirty flag or run a down migration automatically.
   Self-host startup migrations remain supported by default.
 - Review schema-lock duration and backfill cost. Keep large backfills out of the
-  deployment transaction. Validate old-code/new-schema behavior, new-code/old-data
-  behavior and rollback with representative fixtures when a change touches a
-  shared contract. Document any intentional breaking change and its transition
-  plan before deploying it.
+  deployment transaction. Think through old-code/new-schema behavior,
+  new-code/old-data behavior and rollback when a change touches a shared
+  contract. Document any intentional breaking change and its transition plan
+  before deploying it.
 
 ### Self-hosting remains a first-class deployment
 
@@ -237,6 +248,7 @@ Do not:
 - do not run `go build ./...`, `pnpm build`, or docker image builds as a "did it work" check. They are slow and are not what CI gates on. `go run` (via the make dev targets) already compiles; `make fmt` + `make lint` + `pnpm typecheck` are the real signals.
 - do not write Python or ad-hoc browser scripts, and do not drive the app step by step from screenshots or accessibility snapshots. Browser automation lives in `qa/` and only records proof for a PR (below); it is not a test gate, and manual verification against the native dev stack stays the user's job.
 - do not run the Go test suite as a default gate unless the task is specifically about those tests.
+- do not write new tests unless the user asks (see "Tests are opt-in").
 - do not push hoping CI passes; a `gofmt -l` / `make lint` / `pnpm typecheck` failure is always a real CI failure.
 
 ### Visual proof on pull requests
@@ -252,6 +264,17 @@ Record proof only for a UI change a reviewer should actually see; most changes n
 - publish with `pnpm share` once the PR exists. The first publish goes into the PR description; every later one is a comment showing before/after of only the stills that changed. Record follow-ups with `pnpm proof:fresh` so the comparison starts from fresh seed data. Media reaches GitHub only through `gh --attach`, never an image host, a commit or another repository
 - keep shot names stable across commits, because follow-up comments diff stills by name
 - the machine is shared: record from the main agent, never from fanned-out subagents (a machine-wide lock runs one recording at a time, so they would only queue while each holds a context), and `pnpm stack down` once the proof is published
+
+### Blog covers share one format
+
+Every post under `site/src/content/blog/` sets `cover: '/blog/<slug>.webp'`, and every cover follows the same recipe so the blog reads as one series. The masters live in the Branding Figma file, section "Blog covers · v3 glass graphics (1600 × 1000)"; start a new cover by duplicating one of those frames, not from scratch.
+
+- **Size.** 1600 × 1000 (16:10, the blog grid's aspect), exported as WebP to `site/public/blog/<slug>.webp`. Keep labels inside the central 2:1 band so the social crop does not cut them
+- **Background.** A soft generated photograph, new for each post: sheer fabric, frosted or fluted glass, mist, long-exposure water, in pale blue, lavender, aqua or peach, with no objects, people, text or logos. Never reuse `src/assets/textures/` (those belong to the landing page) or another post's background
+- **One graphic.** A single large shape that states the post's idea (a ramp of bars, a pool with one member pulled out, two domains that never overlap, rows of evenly spaced sends), drawn directly on the photo in frosted glass: white fill at roughly 35 to 80% opacity, a 2px white outline, background blur and a soft shadow. At most one accent colour, on the focal element. The photo must stay visible around and through it; fade it out at the edges rather than filling the frame
+- **Labels.** Two to four glass pill chips (white at about 78%, Inter Semi Bold 24 in slate-900, an optional Regular part in slate-600, an optional status dot) carrying the post's real numbers. Those numbers must agree with the post and with the product policy in this file
+- **Never.** No app windows or dashboard screenshots, no opaque white cards, no 3D icons, envelopes, shields or stock clouds, no post title on the cover (the page already shows it)
+- **The fallback is not a cover.** `BlogCover.astro` falls back to a landing-page texture when `cover` is missing; a published post does not rely on it
 
 ## Security And Compliance Invariants
 
@@ -560,7 +583,7 @@ Migration 000156 guarantees exactly one pool per type on every instance, under `
 
 Crossing tiers is an exchange and lives in one place: `WarmupPartnerCandidates` in `pg_warmup.go` returns a sender's own tier plus, when the sender has fewer recipients outside its own workspace than `max(WarmupPoolTierFallbackFloor, warmup_max)`, that many proven free mailboxes from other workspaces (healthy, never blocked, members for `WarmupPoolFallbackMinAgeDays`, workspace not restricted or suspended), best first (Google or Microsoft, then members for `WarmupPoolBorrowSeasonedDays`, then actively sending; random within a rank), and for a free sender that meets the same bar, the premium mailboxes that verifiably wrote to it within `WarmupPoolReturnVisitDays`. Siblings never count toward the floor: a customer with many mailboxes and few premium peers otherwise never borrows and warms against itself. `models.WarmupPoolBorrowsFrom` and `models.WarmupPoolReturnsTo` are the two directions and mirror each other, so nothing unsolicited from the free tier reaches a paying inbox: the paying side always opens the exchange. Before this half existed a thin premium tier sent into the free tier and received almost nothing (#633). Every candidate carries the pool it was drawn from (`PoolType`) and how it got there (`Origin`); the selector and the scheduler both read that one method, so they cannot disagree about who is reachable. A routing rule of weight 0 is an exclusion, not a weight: the candidate is dropped before the draw (and refused on the reply-back path), so a pool of one cannot smuggle it back, and a tick with nothing left ends in `errAllPartnersExcluded` rather than mailing an excluded address (#501). The selector draws its own tier's fresh partners before a borrowed one, but a return visit ranks with the own tier, or a free mailbox with a hundred fresh siblings would never pay a paying inbox back. Every candidate is gated with `CanParticipate` pinned to the pool it was drawn from; gating a borrowed recipient against the sender's pool is what made borrowing dead for months (#495). The reply-back (`directedWarmupPartner`) crosses tiers on the same terms (a free mailbox answers a paid one only while healthy, the bar the return cohort holds it to) and is refused when the free workspace is restricted. It crosses on `CanParticipate`'s `not_in_pool`, so that reason must stay distinct from an ineligible member, or every cross-tier reply is closed unsent.
 
-Reciprocity is a weight and a cap, both read off the candidate. Each carries its verified sends and arrivals over seven days; `Starvation` (how far behind an inbox is on what it sent) multiplies its draw weight by up to `1 + reciprocityBoostK`, fading to nothing at parity, so the pool's traffic flows to whoever is owed the most and settles there instead of overshooting. `InboundDailyCap` (`WarmupInboundDailyMultiple` times daily sends, between `WarmupInboundDailyFloor` and `WarmupInboundDailyCeiling`) is applied inside `WarmupPartnerCandidates`, and a free sender sees every inbox as full at `WarmupFreeInboundSharePercent` of it, so the rest of each inbox's day is kept for premium senders. The cap counts new threads only: a reply answers mail its recipient sent, so it is neither refused by the cap nor counted against it (`newThreadSQL`), and a reply to a full inbox is sent, not closed. A recipient at its cap is offered to nobody for the rest of the day and the scheduler's per-day volume cap (`min(target, len(candidates))`) sees the same set. A sender with nobody left to write to sends nothing that tick and rechecks later; do not add a fallback that mails somebody anyway.
+Reciprocity is a weight and a cap, both read off the candidate. Each carries its verified sends and arrivals over seven days; `Starvation` (how far behind an inbox is on what it sent) multiplies its draw weight by up to `1 + reciprocityBoostK`, fading to nothing at parity, so the pool's traffic flows to whoever is owed the most and settles there instead of overshooting. `InboundDailyCap` (`WarmupInboundDailyMultiple` times daily sends, between `WarmupInboundDailyFloor` and `WarmupInboundDailyCeiling`) is applied inside `WarmupPartnerCandidates` from a per-process pool snapshot refreshed every `partnerDayTTL` (20 s; an expired or failed refresh keeps serving the last one), with send admission re-checking it live, and a free sender sees every inbox as full at `WarmupFreeInboundSharePercent` of it, so the rest of each inbox's day is kept for premium senders. The cap counts new threads only: a reply answers mail its recipient sent, so it is neither refused by the cap nor counted against it (`newThreadSQL`), and a reply to a full inbox is sent, not closed. A recipient at its cap is offered to nobody for the rest of the day and the scheduler's per-day volume cap (`min(target, len(candidates))`) sees the same set. A sender with nobody left to write to sends nothing that tick and rechecks later; do not add a fallback that mails somebody anyway.
 
 Reachability is read off the same candidate: `Delivered7d` is the pool's handed-off warmup mail to it (past `config.WarmupRecipientArrivalGraceHours`) and `Arrived7d` what its own sync verified (`warmup_tokens.consumed_at`). The draw multiplies by `ArrivalRate`, and `models.WarmupRecipientUnreachable` (none arrived, at least `WarmupRecipientUnreachableMinDelivered` from at least `WarmupRecipientUnreachableMinSenderOrgs` workspaces) drops the candidate in `capPartnerCandidates`, so the selector, the scheduler and the counts agree, and the Advisor's `warmup_mail_not_arriving` reads the same rule. A send the sender's provider accepted and later bounced looks like success to the worker, so arrival, not the send result, is the evidence. Keep the two-workspace floor: without it one broken sender takes its recipients out of the pool. A permanent unknown-address DSN for a warmup send stamps `warmup_tokens.bounced_at` (`recordWarmupBounce` in the consumer, gated on `dsn.Blame`); `bouncedRecipients` reads it, and an address that bounced a workspace's warmup leaves that workspace's draw and reply path (`BouncedFrom`), and everyone's from two workspaces (`WarmupRecipientBouncedOut`), until warmup mail arrives at it again.
 
@@ -596,7 +619,7 @@ Rules:
 - **ask in the form the most clients exercise.** A server's mainstream path is the one Thunderbird, Apple Mail and Outlook hit every minute; its rarely used corners are where the bugs are. The CONDSTORE incremental set is `UID FETCH 1:* (UID) (CHANGEDSINCE n)` for that reason, not `SEARCH MODSEQ`: Dovecot answers the ESEARCH form with a parenthesised `(MODSEQ n)` go-imap cannot read, and Zoho answers an empty plain one with a double space
 - **an optional capability degrades, it never fails the mailbox.** When a server's answer to one form cannot be read, the client steps down to the next form for good and says so once (`changedSinceMode` in `client.go`; `sinceRefused` is the same pattern for dated SEARCH). The state lives on the `Client`, so it outlives a reconnect, and the last rung is the plain UIDNEXT path every server supports. Step down only on evidence about the dialect: an unreadable reply, or a refusal of the form against a folder that stayed selected, which leaves the session usable so the next form is asked in the same pass. Never on a network error or a transient NO (`UNAVAILABLE`, `INUSE`, `SERVERBUG`, a bare `UID FETCH failed`)
 - **read capabilities while the session is healthy.** A session the server's reply just closed reports none, so anything the ladder needs (`eSearch`, `condStore`) is recorded at connect
-- **a fix for one provider must not move the others.** #858 fixed Zoho by moving every server onto ESEARCH, which stalled every OVH mailbox for days. Add the provider's real reply to the dialect table in `search_modseq_test.go` (or its equivalent for the command you touch) and keep the whole table green, rather than writing a test that only knows the one server
+- **a fix for one provider must not move the others.** #858 fixed Zoho by moving every server onto ESEARCH, which stalled every OVH mailbox for days. Keep the existing dialect table in `search_modseq_test.go` green: it holds the real replies of the servers already fixed
 - **check a change to what the sync sends against real servers before it ships.** The cheap version: one login per distinct host, from the worker each mailbox already sits on (a new client IP can earn a provider security challenge), running the changed command and reporting only per-host results. Never print a credential or message content while doing it
 - **a message the server describes unreadably costs that message, never the folder.** go-imap reads `message/global` in a BODYSTRUCTURE as `message/rfc822`, so one RFC 6533 bounce dropped the session on every pass. `envelopeRung` in `envelope_ladder.go` steps the batch's UIDs down on an unreadable envelope answer (structure, then bare with the body parsed locally by go-message, then one at a time, then left unsynced), remembered on the `Client` per folder generation
 - **keep the server's words.** An `[ALERT]` reaches the owner verbatim through `imapErrDetail` (Zoho's `The server details you are using seems incorrect` is how they learn the account lives in another Zoho region). Map one in `classifyAlert` only when it is a known throttle or credentials case

@@ -47,6 +47,12 @@ type EmailPreview struct {
 	TemplatePreview
 	From        *EmailPreviewFrom        `json:"from,omitempty"`
 	Attachments []EmailPreviewAttachment `json:"attachments,omitempty"`
+	// AIBlocks lists the copy's AI blocks and whether this contact's is written.
+	AIBlocks []models.LeadEmailAIBlock `json:"ai_blocks,omitempty"`
+	// Lead reports the contact is a lead of the campaign, so its AI copy can be written ahead.
+	Lead bool `json:"lead,omitempty"`
+	// Personalized reports the lead has their own copy of this step, which they get instead.
+	Personalized bool `json:"personalized,omitempty"`
 }
 
 // PreviewEmail renders a step the way the send path assembles it for one
@@ -72,6 +78,13 @@ func (s *tasksService) PreviewEmail(ctx context.Context, orgID uuid.UUID, in Ema
 
 	context := templateContext(in.Account, unsubURL)
 	out := &EmailPreview{TemplatePreview: previewTemplatesWith(in.Subject, in.BodyHTML, in.BodyPlain, in.Contact, context)}
+	resolved := s.previewLead(ctx, out, in)
+	blocks := s.AIBlockIDs(in.BodyHTML)
+	for _, b := range blocks {
+		_, ok := resolved[b.ID]
+		out.AIBlocks = append(out.AIBlocks, models.LeadEmailAIBlock{ID: b.ID, Name: b.Name, Written: ok})
+	}
+	out.Subject, out.BodyHTML, out.BodyPlain = previewAIVariables(out.Subject, out.BodyHTML, out.BodyPlain, resolved, blocks)
 	out.BodyHTML, out.BodyPlain = finishBody(out.BodyHTML, out.BodyPlain, textOnly, in.Account, optOut, unsubURL)
 	// Linted on what the author wrote, sized on what ships: the findings have
 	// to name the markup they can go and fix, but Gmail measures the wire. A
@@ -94,6 +107,27 @@ func (s *tasksService) PreviewEmail(ctx context.Context, orgID uuid.UUID, in Ema
 		}
 	}
 	return out
+}
+
+// previewLead reads what a real lead of the campaign has for the step: whether
+// they have their own copy, and the AI copy already written for them.
+func (s *tasksService) previewLead(ctx context.Context, out *EmailPreview, in EmailPreviewInput) map[string]string {
+	if in.Campaign == nil || in.Contact.ID == uuid.Nil || in.SequenceID == uuid.Nil || s.leadReview == nil {
+		return nil
+	}
+	if _, err := s.leadReview.GetLead(ctx, in.Campaign.ID, in.Contact.ID); err != nil {
+		return nil
+	}
+	out.Lead = true
+	if o, err := s.leadOverride(ctx, in.Campaign.ID, in.Contact.ID, in.SequenceID); err == nil && o != nil {
+		out.Personalized = true
+	}
+	resolved, err := s.campaignProgressRepo.GetResolvedAIVariables(ctx, in.Campaign.ID, in.Contact.ID, in.SequenceID)
+	if err != nil {
+		log.Warn().Err(err).Str("campaign_id", in.Campaign.ID.String()).Msg("preview: read written AI copy failed")
+		return nil
+	}
+	return resolved
 }
 
 // dropBlankHTMLPart removes an HTML alternative that would render nothing.

@@ -32,6 +32,7 @@ export interface ApolloImportSource {
     list_name: string;
     campaign_id?: string | null;
     category_ids: string[];
+    segment_ids: string[];
     verified_only: boolean;
     recurring: boolean;
     enabled: boolean;
@@ -50,6 +51,7 @@ export interface CreateApolloImportSourceInput {
     list_name: string;
     campaign_id?: string;
     category_ids?: string[];
+    segment_ids?: string[];
     verified_only?: boolean;
     recurring?: boolean;
 }
@@ -58,6 +60,7 @@ export interface UpdateApolloImportSourceInput {
     name?: string;
     campaign_id?: string | null;
     category_ids?: string[];
+    segment_ids?: string[];
     verified_only?: boolean;
     recurring?: boolean;
     enabled?: boolean;

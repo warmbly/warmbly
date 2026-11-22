@@ -1,31 +1,24 @@
-// Billing > Balance: what is left, adding money, automatic reload, the saved
-// card, spend controls, activity and invoices. Returning from Stripe Checkout
-// lands here (?top_up=, ?payment_method=) and is confirmed when the balance moves.
+// Billing > Balance: the balance and how long it lasts, adding funds (one-time or automatic) in one dialog,
+// the store's rates, spend controls, activity and invoices. Returning from Stripe Checkout lands here
+// (?top_up=, ?payment_method=) and is confirmed when the balance moves.
 
 import React from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { AlertTriangleIcon, CreditCardIcon, Loader2Icon } from "lucide-react";
+import { useLocation, useRouter } from "@tanstack/react-router";
+import { Loader2Icon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import { useSearchParams } from "@/hooks/useSearchParams";
-import { DitherMeter } from "@/components/ui/dither";
-import AnimatedNumber from "@/components/ui/AnimatedNumber";
-import TopUpPanel from "@/components/app/billing/TopUpPanel";
-import { balanceAlert, expiresSoon, fmtDay, paymentMethodExpiry, paymentMethodLabel, reloadCovers } from "@/components/app/billing/balanceModel";
-import { updateAutoReload } from "@/lib/api/client/app/subscription/balance";
+import AddFundsDialog, { type FundsMode, type FundsTab } from "@/components/app/billing/AddFundsDialog";
+import BalanceOverview from "@/components/app/billing/BalanceOverview";
+import { fundsPolicy } from "@/components/app/billing/funds";
 import type { AppError } from "@/lib/api/client/normalizeError";
-import {
-    RESUME_AUTO_RELOAD_KEY,
-    balanceInvoicesQuery,
-    balanceQuery,
-    useAddPaymentMethod,
-    useBalance,
-} from "@/lib/api/hooks/app/subscription/useBalance";
+import { adoptCardSetup, updateAutoReload } from "@/lib/api/client/app/subscription/balance";
+import { useStoreEnabled } from "@/lib/api/hooks/app/store/useStore";
+import { RESUME_AUTO_RELOAD_KEY, balanceInvoicesQuery, balanceQuery, useBalance, useBalanceBurn } from "@/lib/api/hooks/app/subscription/useBalance";
 import type { AutoReloadPatch, Balance } from "@/lib/api/models/app/subscription/Credits";
 import buildError from "@/lib/helper/buildError";
 import { fmtUsd } from "@/lib/money";
-import { cn } from "@/lib/utils";
-import { Row, Section } from "../_components/SectionShell";
-import AutoReloadSection from "./AutoReloadSection";
+import { Section } from "../_components/SectionShell";
 import AIUsageCard from "./AIUsageCard";
 import BalanceActivity from "./BalanceActivity";
 import InvoicesSection from "./InvoicesSection";
@@ -33,22 +26,46 @@ import InvoicesSection from "./InvoicesSection";
 export default function BalanceTab({ isPaid }: { isPaid: boolean }) {
     const balance = useBalance();
     const confirming = useCheckoutReturn(balance.data);
-    const b = balance.data;
-    const ready = !!b && !b.unlimited;
+    const ready = !!balance.data && !balance.data.unlimited;
+    const burn = useBalanceBurn(ready);
+    // The daily draw is its own read, so the balance every page shows stays cheap.
+    const b = React.useMemo(() => (balance.data && burn.data ? { ...balance.data, burn: burn.data } : balance.data), [balance.data, burn.data]);
+    const store = useStoreEnabled(ready);
+    const [dialog, setDialog] = React.useState<{ mode: FundsMode; tab: FundsTab } | null>(null);
+    const openFunds = (tab: FundsTab) => setDialog({ mode: "funds", tab });
 
-    // The banner and header link to #auto-reload and #ai-spend; scroll once the sections exist.
+    // The banner and notices link to #add-funds, #auto-reload and #ai-spend: open the dialog, or scroll to the section.
+    // The hash is dropped once the dialog opens, so the same link works again and a reload does not reopen it.
+    const router = useRouter();
+    const hash = useLocation({ select: (l) => l.hash });
     React.useEffect(() => {
         if (!ready) return;
-        const id = window.location.hash.slice(1);
+        const id = hash.replace(/^#/, "");
         if (!id) return;
+        if (id === "add-funds" || id === "auto-reload") {
+            setDialog({ mode: "funds", tab: id === "auto-reload" ? "auto" : "once" });
+            void router.navigate({ to: ".", search: true, replace: true, resetScroll: false });
+            return;
+        }
         const t = setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
         return () => clearTimeout(t);
-    }, [ready]);
+    }, [ready, hash, router]);
+
+    // A failed-payment notice links here with ?update_card=1: the card opens at once. Saving it charges what is unpaid.
+    const [params, setParams] = useSearchParams();
+    const wantsCard = params.get("update_card") === "1";
+    React.useEffect(() => {
+        if (!wantsCard || !ready) return;
+        const next = new URLSearchParams(params);
+        next.delete("update_card");
+        setParams(next, { replace: true });
+        setDialog({ mode: "card", tab: "once" });
+    }, [wantsCard, ready, params, setParams]);
 
     if (balance.isPending) {
         return (
             <Section eyebrow="Balance">
-                <div className="h-32 rounded bg-slate-100 animate-pulse" />
+                <div className="h-32 rounded-2xl skeleton-shimmer" />
             </Section>
         );
     }
@@ -67,140 +84,35 @@ export default function BalanceTab({ isPaid }: { isPaid: boolean }) {
         );
     }
 
+    const canBuy = b.can_add_money ?? isPaid;
     return (
         <>
-            <div id="balance" className="scroll-mt-14">
-                <Section
-                    eyebrow="Balance"
-                    description="AI features are charged from this balance at what each call actually uses. Your plan's included usage is spent first and resets each cycle; money you add never expires."
-                >
-                    {confirming && (
-                        <div role="status" className="flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-800">
-                            <Loader2Icon className="w-3.5 h-3.5 animate-spin shrink-0" />
-                            Payment received. Adding it to the balance, this usually takes a few seconds.
-                        </div>
-                    )}
-                    <BalanceSummary b={b} />
-                    <TopUpPanel balance={b} canBuy={b.can_add_money ?? isPaid} />
-                </Section>
+            <div id="balance" className="scroll-mt-14 px-4 py-5 md:px-8 md:py-6 space-y-3 border-b border-slate-200/70">
+                {confirming && (
+                    <div role="status" className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-800">
+                        <Loader2Icon className="w-3.5 h-3.5 animate-spin shrink-0" />
+                        Payment received. Adding it to the balance, this usually takes a few seconds.
+                    </div>
+                )}
+                <BalanceOverview b={b} canBuy={canBuy} onAddFunds={openFunds} onPaymentMethod={() => setDialog({ mode: "card", tab: "once" })} />
             </div>
-            <AutoReloadSection balance={b} />
-            <PaymentMethodSection b={b} />
+            <AddFundsDialog
+                open={!!dialog}
+                mode={dialog?.mode ?? "funds"}
+                tab={dialog?.tab ?? "once"}
+                onTab={(tab) => setDialog((d) => (d ? { ...d, tab } : d))}
+                onCard={() => setDialog({ mode: "card", tab: "once" })}
+                onClose={() => setDialog(null)}
+                balance={b}
+                policy={fundsPolicy(b.top_up, { enabled: store.enabled, minCardChargeMicros: store.status?.min_card_charge_micros })}
+                canBuy={canBuy}
+            />
             <div id="ai-spend" className="scroll-mt-14">
                 <AIUsageCard />
             </div>
             <BalanceActivity />
             <InvoicesSection />
         </>
-    );
-}
-
-function BalanceSummary({ b }: { b: Balance }) {
-    const alert = balanceAlert(b);
-    const covered = reloadCovers(b);
-    const allowance = b.monthly_allowance_usd;
-    const frac = allowance > 0 ? Math.max(0, Math.min(1, b.monthly_usd / allowance)) : 0;
-    return (
-        <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-8">
-            <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Available</span>
-                    {alert && (
-                        <span
-                            className={cn(
-                                "inline-flex items-center gap-1 text-[10.5px] font-medium",
-                                alert === "out" ? "text-red-600" : "text-amber-600",
-                            )}
-                        >
-                            <span className={cn("size-1.5 rounded-full", alert === "out" ? "bg-red-500" : "bg-amber-500")} />
-                            {alert === "out" ? "Used up, AI is paused" : covered ? "Low, reloads automatically" : "Running low"}
-                        </span>
-                    )}
-                </div>
-                <AnimatedNumber
-                    value={b.balance_usd}
-                    format={(n) => fmtUsd(n)}
-                    className={cn(
-                        "mt-1 block text-[28px] leading-none font-semibold tracking-tight tabular-nums",
-                        alert === "out" ? "text-red-600" : "text-slate-900",
-                    )}
-                />
-            </div>
-            <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 text-[11.5px]">
-                <div>
-                    <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-slate-500">Included this cycle</span>
-                        <span className="font-mono tabular-nums text-slate-700">
-                            {fmtUsd(b.monthly_usd)}
-                            <span className="text-slate-400"> of {fmtUsd(allowance)}</span>
-                        </span>
-                    </div>
-                    <DitherMeter frac={frac} tone={frac <= 0.15 ? "amber" : "sky"} height={4} className="mt-1.5" />
-                    <div className="mt-1 text-[10.5px] text-slate-400">
-                        {fmtUsd(b.monthly_used_usd)} used{b.next_reset_at ? `, resets ${fmtDay(b.next_reset_at)}` : ""}
-                    </div>
-                </div>
-                <div>
-                    <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-slate-500">Added money</span>
-                        <span className="font-mono tabular-nums text-slate-700">{fmtUsd(b.purchased_usd)}</span>
-                    </div>
-                    <div className="mt-1 text-[10.5px] text-slate-400">Never expires. Spent after the included usage.</div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function PaymentMethodSection({ b }: { b: Balance }) {
-    const addCard = useAddPaymentMethod();
-    const pm = b.payment_method ?? null;
-    const exp = pm ? paymentMethodExpiry(pm) : null;
-    const soon = pm ? expiresSoon(pm) : false;
-    return (
-        <Section eyebrow="Card" description="Used for one-click payments and automatic reload. Stripe keeps the card; Warmbly never sees the number.">
-            <Row
-                label={
-                    pm ? (
-                        <span className="inline-flex items-center gap-2">
-                            <CreditCardIcon className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="font-mono">{paymentMethodLabel(pm)}</span>
-                        </span>
-                    ) : (
-                        "No card saved"
-                    )
-                }
-                description={
-                    pm ? (
-                        soon ? (
-                            <span className="inline-flex items-center gap-1 text-amber-700">
-                                <AlertTriangleIcon className="w-3 h-3" />
-                                Expires {exp}. Replace it before a reload fails.
-                            </span>
-                        ) : exp ? (
-                            `Expires ${exp}`
-                        ) : undefined
-                    ) : (
-                        "Add one to pay in one click and to turn on automatic reload."
-                    )
-                }
-            >
-                <button
-                    type="button"
-                    onClick={() => addCard.mutate()}
-                    disabled={addCard.isPending}
-                    className={cn(
-                        "h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60",
-                        pm
-                            ? "border border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:text-slate-900"
-                            : "bg-sky-600 hover:bg-sky-700 text-white",
-                    )}
-                >
-                    {addCard.isPending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CreditCardIcon className="w-3 h-3" />}
-                    {pm ? "Replace card" : "Add a card"}
-                </button>
-            </Row>
-        </Section>
     );
 }
 
@@ -223,10 +135,19 @@ function useCheckoutReturn(b: Balance | undefined): boolean {
         } else if (topUp === "canceled") {
             toast("Checkout canceled. Nothing was charged.");
         }
-        if (pmParam) resumeAutoReload(pmParam === "success", qc);
+        if (pmParam) {
+            const saved = pmParam === "success" && (params.get("redirect_status") ?? "succeeded") === "succeeded";
+            // A bank that redirected skipped the in-page default; the card it saved becomes the default first.
+            const setupIntent = params.get("setup_intent");
+            const adopted = saved && setupIntent ? adoptCardSetup(setupIntent).catch(() => undefined) : Promise.resolve();
+            void adopted.then(() => resumeAutoReload(saved, qc));
+        }
         const next = new URLSearchParams(params);
         next.delete("top_up");
         next.delete("payment_method");
+        next.delete("setup_intent");
+        next.delete("setup_intent_client_secret");
+        next.delete("redirect_status");
         setParams(next, { replace: true });
     }, [topUp, pmParam, params, setParams, qc]);
 

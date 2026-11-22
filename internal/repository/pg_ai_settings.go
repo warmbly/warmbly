@@ -22,6 +22,9 @@ type AISettingsRepository interface {
 	// leaving automatic reload and the notice stamps as they are.
 	UpsertLimits(ctx context.Context, s *models.AISpendSettings) (*models.AISpendSettings, error)
 
+	// UpsertOverage writes whether AI may spend added money past the allowance, and its monthly cap (nil: none).
+	UpsertOverage(ctx context.Context, orgID uuid.UUID, enabled bool, monthlyLimit *models.Micro) (*models.AISpendSettings, error)
+
 	// UpsertAutoReload writes automatic reload. Turning it on clears a
 	// recorded failure.
 	UpsertAutoReload(ctx context.Context, orgID uuid.UUID, enabled bool, threshold, amount, monthlyLimit models.Micro) (*models.AISpendSettings, error)
@@ -54,7 +57,8 @@ const aiSettingsCols = `org_id, spend_limit_daily_micro, spend_limit_weekly_micr
 	member_limit_daily_micro, member_limit_weekly_micro, member_limit_monthly_micro,
 	low_balance_threshold_micro, low_balance_notified_at, balance_out_notified_at,
 	auto_reload_enabled, auto_reload_threshold_micro, auto_reload_amount_micro, auto_reload_monthly_limit_micro,
-	COALESCE(auto_reload_failure_code, ''), auto_reload_failed_at, created_at, updated_at`
+	COALESCE(auto_reload_failure_code, ''), auto_reload_failed_at, ai_overage_enabled, ai_overage_monthly_limit_micro,
+	created_at, updated_at`
 
 func scanAISettings(row pgx.Row, s *models.AISpendSettings) error {
 	return row.Scan(
@@ -62,7 +66,8 @@ func scanAISettings(row pgx.Row, s *models.AISpendSettings) error {
 		&s.MemberLimitDaily, &s.MemberLimitWeekly, &s.MemberLimitMonthly,
 		&s.LowBalanceThreshold, &s.LowBalanceNotifiedAt, &s.BalanceOutNotifiedAt,
 		&s.AutoReloadEnabled, &s.AutoReloadThreshold, &s.AutoReloadAmount, &s.AutoReloadMonthlyMax,
-		&s.AutoReloadFailureCode, &s.AutoReloadFailedAt, &s.CreatedAt, &s.UpdatedAt,
+		&s.AutoReloadFailureCode, &s.AutoReloadFailedAt, &s.AIOverageEnabled, &s.AIOverageMonthlyLimit,
+		&s.CreatedAt, &s.UpdatedAt,
 	)
 }
 
@@ -99,6 +104,18 @@ func (r *aiSettingsRepository) UpsertLimits(ctx context.Context, in *models.AISp
 		RETURNING `+aiSettingsCols,
 		in.OrgID, in.SpendLimitDaily, in.SpendLimitWeekly, in.SpendLimitMonthly,
 		in.MemberLimitDaily, in.MemberLimitWeekly, in.MemberLimitMonthly, in.LowBalanceThreshold)
+}
+
+func (r *aiSettingsRepository) UpsertOverage(ctx context.Context, orgID uuid.UUID, enabled bool, monthlyLimit *models.Micro) (*models.AISpendSettings, error) {
+	return r.one(ctx, `
+		INSERT INTO org_ai_settings (org_id, ai_overage_enabled, ai_overage_monthly_limit_micro)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (org_id) DO UPDATE SET
+			ai_overage_enabled = EXCLUDED.ai_overage_enabled,
+			ai_overage_monthly_limit_micro = EXCLUDED.ai_overage_monthly_limit_micro,
+			updated_at = now()
+		RETURNING `+aiSettingsCols,
+		orgID, enabled, monthlyLimit)
 }
 
 func (r *aiSettingsRepository) UpsertAutoReload(ctx context.Context, orgID uuid.UUID, enabled bool, threshold, amount, monthlyLimit models.Micro) (*models.AISpendSettings, error) {

@@ -42,7 +42,7 @@ Admission denial before dispatch releases the send reservation without spending 
 |------|-------|-------------|
 | 400 | Bad Request | Invalid request syntax or parameters, or a quota that would be passed (`storage_limit_reached`) |
 | 401 | Unauthorized | Missing or invalid authentication |
-| 402 | Payment Required | The workspace balance is too low (`insufficient_credits`), a card was not charged when adding money (`card_declined`, `authentication_required`, `payment_failed`), or no free placement tests left this month (`placement_quota_exceeded`, `placement_not_entitled`) |
+| 402 | Payment Required | The workspace balance is too low (`insufficient_credits`), the plan's included AI usage is used up and the workspace keeps its balance for other charges (`ai_allowance_used`) or AI reached the workspace's monthly limit on using the balance (`ai_overage_limit_reached`), a card was not charged when adding money (`card_declined`, `authentication_required`, `payment_failed`), or no free placement tests left this month (`placement_quota_exceeded`, `placement_not_entitled`) |
 | 403 | Forbidden | Authenticated but lacks permission, the workspace's mailbox allowance is full (`mailbox_allowance_reached`), or new contacts would pass its contact limit (`contact_limit_reached`) |
 | 404 | Not Found | Resource doesn't exist |
 | 409 | Conflict | Resource already exists |
@@ -785,6 +785,80 @@ A session signed in on an agency's [portal domain](/guides/white-label/#where-cl
 |--------|--------|---------|
 | `action_provider_mismatch` | 400 | `POST /automations`, `PATCH /automations/:id` or `POST /integrations/connections/:id/events` paired an action with a connection whose provider does not run it, such as a Slack message on a HubSpot connection. Each action runs only on the integration it belongs to; the provider's actions are listed under `capability.actions` in `GET /integrations/catalog` |
 
+#### Domain and mailbox store refusals
+
+The [Buy mailboxes](/guides/buy-mailboxes/) routes (`/store/*`, see [domains and mailboxes](/api/endpoints/#domains-and-mailboxes)) answer these codes, in the usual `{error, message, code, request_id}` shape. Nothing is charged when one of them comes back from `POST /store/quotes` or `POST /store/orders`, except where a row says so, and nothing changes when one comes back from any other store route.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `contact_invalid` | 400 | The registrant is incomplete or a field is malformed: `phone` must be `+CC.NUMBER` and `country` an ISO 3166-1 alpha-2 code. `details.fields` names the refused fields |
+| `store_items_invalid` | 400 | The quote's `items` are empty, too many, or malformed: an unknown `type` or `provider`, a domain name that is not one, mailbox names that cannot be used, more than one `admin` mailbox on a line, `admin` on a domain that already has an admin, or a mailbox `signature` with an unknown `template`, a phone or website that cannot be used, or an address the quote does not buy. `POST /store/domains/connect` answers it for a `domain` that is not a domain name. The `message` says which |
+| `invalid_query` | 400 | `GET /store/domains/search` with a `q` that is not a word or a domain name |
+| `invalid_cursor` | 400 | A store list route was sent a `cursor` it did not issue |
+| `invalid_limit` | 400 | A store list route was sent a `limit` outside 1 to 100 |
+| `forwarding_url_invalid` | 400 | `forwarding_url` is not a full `https://` address |
+| `local_part_invalid` | 400 | A mailbox address (the part before `@`) is empty, too long, or uses characters an address cannot hold. Use letters, digits, dots, dashes or underscores |
+| `invalid_name` | 400 | A mailbox's first or last name broke the naming rules, or one of them is empty: every mailbox needs both. See [name refusals](#name-refusals) |
+| `dns_record_invalid` | 400 | `POST /store/domains/:id/dns` or `PATCH .../dns/:record_id` with a record that cannot be published: check its `type`, `name`, `content`, `ttl` and, for MX and SRV, `priority` |
+| `payment_method_required` | 402 | `POST /store/orders` when the balance does not cover the order and the workspace has no saved card. The body carries `setup_url`, a card-setup page that returns to the dashboard's buy page (an empty string when one could not be made); order again from a fresh quote afterwards |
+| `card_declined` | 402 | The saved card was refused while covering the order's shortfall. Nothing is charged |
+| `authentication_required` | 402 | The card's bank asked to confirm the payment, which cannot happen on a saved card. Nothing is charged |
+| `payment_failed` | 402 | The saved card could not be charged for another reason. Nothing is charged |
+| `insufficient_balance` | 402 | The balance cannot cover the order or a renewal and no card could cover the rest |
+| `plan_required` | 402 | `POST /store/quotes`, `POST /store/orders` or `POST /store/domains/connect` from a workspace without an active paid plan, which buying needs. `GET /store/status` shows it in advance as `plan_active: false`. Choose a plan under **Settings > Billing** and try again. An instance that does not bill its users, the self-host default, never answers it |
+| `reauth_required` | 403 | The change needs a recent confirmation: paying, renewing, transferring out, cancelling or resuming a mailbox, showing a mailbox's sign-in, or changing a domain's `auto_renew`. Confirm with `POST /auth/reauth` and retry. Only a dashboard session gets it; an API key or OAuth token passes this check |
+| `store_managed_by_partner` | 403 | A write to the store from a workspace a partner manages. Its domains and mailboxes are bought through the partner, and `GET /store/status` answers `enabled: false` |
+| `store_disabled` | 404 | The instance has no GraphKit API key configured, so nothing can be bought or changed. The message says an instance admin adds the key under **Setup and health > Integrations** in the admin panel. `GET /store/status` answers `enabled: false` with `reason: not_configured` instead, and the list reads keep answering |
+| `store_configured_by_environment` | 409 | `PUT`, `DELETE /admin/store/connection` or `POST /admin/store/connection/test` while `GRAPHKIT_API_KEY` (or `GRAPHKIT_API_URL=fake`) is set. The environment takes precedence; change it there |
+| `store_sealing_unavailable` | 409 | `PUT /admin/store/connection` on an instance without `CREDENTIALS_ENCRYPTION_KEY`. The GraphKit API key is stored sealed under it, so set it first |
+| `graphkit_url_invalid` | 400 | The GraphKit API URL given to `/admin/store/connection` is not an `https` address |
+| `graphkit_key_required` | 400 | `PUT` or `POST /admin/store/connection/test` with no API key, and none stored |
+| `graphkit_key_reentry_required` | 400 | `PUT` or `POST /admin/store/connection/test` with a different API URL from the stored one and no API key. The stored key is only sent to the URL it was saved with; enter it again |
+| `graphkit_key_rejected` | 400 | GraphKit refused the API key when it was tested or saved. Nothing was stored |
+| `graphkit_unreachable` | 503 | GraphKit could not be reached at the API URL when the key was tested or saved. Nothing was stored |
+| `quote_not_found` | 404 | `POST /store/orders` with a `quote_id` this workspace does not hold: never issued to it, or expired long enough ago to be cleared. Request a new quote |
+| `price_changed` | 409 | `POST /store/orders` when the total, priced again for an expired quote, differs from `expected_due_now_micros`. Nothing is charged. `details.quote` is a fresh quote at the current prices: show its total and, once the person confirms, order again with its `id` |
+| `payment_processing` | 409 | The card payment for the shortfall has not settled yet. Nothing was ordered; try again in a minute |
+| `charge_in_progress` | 409 | Another payment for this workspace is still going through, or `POST /store/mailboxes/:id/resume` while the mailbox's own monthly payment is. Try again in a minute |
+| `store_purchases_active` | 409 | Deleting a workspace, or an account that owns one, while it still has purchased mailboxes that are not cancelled, purchased domains set to renew, or an order in progress. Cancel them first |
+| `domain_unavailable` | 409 | The domain was registered by someone else after the search, or cannot be registered. Pick another. From `POST /store/domains/connect`, the body carries a top-level `reason` when one is known: `already_added` (the domain is already in this workspace), `registered` (another workspace bought it here) or `connected_elsewhere` (another workspace is connecting it) |
+| `domain_registered_elsewhere` | 409 | Renewing, transferring out or changing `auto_renew` on a domain the workspace connected. It is registered elsewhere, so renew or transfer it at its registrar |
+| `domain_registered_here` | 409 | `DELETE /store/domains/:id` on a domain bought here. A purchased domain leaves by `POST /store/domains/:id/transfer-out` |
+| `domain_in_use` | 409 | `DELETE /store/domains/:id` on a connected domain that still has mailboxes. Cancel them first |
+| `dns_record_conflict` | 409 | From a DNS write: the record clashes with one Warmbly keeps for mail, so change its name or type. From a quote or order: the domain has records in the way of mail, listed in its `dns_conflicts`; remove them first |
+| `dns_record_managed` | 409 | Editing or deleting a `managed` DNS record, which Warmbly keeps for mail delivery and forwarding |
+| `dns_not_hosted` | 409 | A DNS write on a domain connected with `method` `manual`. Its DNS provider holds the records, so change them there |
+| `sign_in_unavailable` | 409 | `POST /store/mailboxes/:id/sign-in` for a mailbox that has no sign-in to show |
+| `photo_invalid` | 400 | `POST /store/photos`: the upload is not a PNG or JPG photo the store can use (up to 2 MB and 2048 px on each side) |
+| `photo_not_found` | 400 | A quote's `photo_id`, or `PUT /store/mailboxes/:id/photo`, names a photo this workspace does not have, or one deleted because nothing used it for 24 hours. Upload it again |
+| `profile_photo_missing` | 404 | `POST /store/photos` with `{"from": "profile"}` when the caller has no uploaded profile photo |
+| `photo_limit_reached` | 429 | More than 200 photos uploaded in a day |
+| `photo_storage_unavailable` | 503 | The instance has no file storage, so it cannot keep photos |
+| `store_state_conflict` | 409 | The domain or mailbox is not in a state that allows the change right now. Refresh it and try again |
+| `mailbox_exists` | 409 | An address in the order already exists on that domain |
+| `domain_not_ready` | 409 | Mailboxes were added to a purchased domain that is still being set up, or to a connected domain whose `connection.status` is not `active` yet, or a change was asked of a domain in a state that does not allow it. Try again once it is active |
+| `domain_not_renewable` | 409 | `POST /store/domains/:id/renew` for a domain in a state that cannot be renewed, such as one transferred out |
+| `renewal_in_progress` | 409 | The domain is already being renewed |
+| `transfer_locked` | 409 | The domain cannot be transferred out yet, typically because it was registered or transferred within the last 60 days |
+| `mailbox_not_cancellable` | 409 | `DELETE /store/mailboxes/:id` for a mailbox that cannot be cancelled now, or `POST .../resume` for one that is not set to cancel |
+| `purchased_mailbox` | 403 | Removing a mailbox bought in the store (`DELETE /emails/:id`, a row of `POST /emails/bulk/delete`) or signing it in again (`/emails/onboarding/oauth/reauth/:id`, `/emails/onboarding/smtp-imap/:id`, `/emails/onboarding/app-password/:id`) while it is still live. Removing it would not stop its billing: cancel it with `DELETE /store/mailboxes/:id`, which ends it at the end of the paid month, or switch it off to pause it. Once it is cancelled it can be removed. While the instance has no GraphKit API key it cannot be cancelled either, and the message says so |
+| `registrant_required` | 422 | `POST /store/quotes` with a domain in it before a registrant is saved. Save one with `PUT /store/registrant` |
+| `domain_premium` | 422 | The domain is a premium name, priced by its registry above the standard rate. Premium names are not sold |
+| `tld_unsupported` | 422 | The store does not sell that domain extension |
+| `provider_mixed` | 422 | A domain's mailboxes must all use one provider, Google or Microsoft |
+| `provider_unavailable` | 422 | Mailboxes from a provider that is not offered right now. Only the providers `GET /store/status` lists in `providers` can be ordered. Nothing is charged |
+| `mailbox_limit` | 422 | The order would put more mailboxes on one domain than `limits.mailboxes_per_domain_max` |
+| `renewal_not_due` | 422 | `POST /store/domains/:id/renew` before the domain's renewal window opens |
+| `renewal_window_closed` | 422 | The domain can no longer be renewed. Any charge for the attempt was refunded to the balance |
+| `rate_limited` | 429 | The store is taking too many requests. Wait for `Retry-After` and try again |
+| `store_unavailable` | 503 | The store could not complete the request right now. Nothing changed; retry in a few minutes, with the same `Idempotency-Key` where the route takes one |
+
+`payment_method_required` from the store is a `402`, while the same code from `POST /subscription/balance/top-up` is a `409` (see [409 Conflict](#409-conflict)). Both mean save a card first.
+
+Store charges and refunds also appear on the balance ledger, and `GET /subscription/credits/transactions?category=store` lists only those. A `category` other than `store` answers `400` `invalid_category`.
+
+A key or OAuth token whose member lacks `manage_billing` gets `403` `forbidden` on the routes that charge, the same answer the member gets in the dashboard.
+
 #### `google_personal_app_password`
 
 A `400` with `code: "google_personal_app_password"` comes from `POST /emails/onboarding/oauth/start` with `provider: "gmail"` and a `login_hint` on `gmail.com` or `googlemail.com`. Personal Gmail connects with an app password, not with Google sign-in. Nothing was started and nothing was stored.
@@ -856,9 +930,29 @@ Returned when an AI action, or a placement test paid from the balance, is reques
 - Add money to the balance, turn on automatic reload, or wait for the monthly allowance to reset (see [Balance and usage](/guides/ai-credits/))
 - Related: a `429` with code `usage_cap_exceeded` means a spend limit or a short-term AI usage cap was hit; retry when the window rolls over
 
+Two more `402` codes come from the workspace's own choice about AI spending money it added, not from an empty balance. Nothing is charged for either.
+
+| Code | Meaning | How to fix |
+|------|---------|------------|
+| `ai_allowance_used` | This month's included AI usage is spent and **Let AI use my balance** is off, so AI does not touch money the workspace added | Turn **Let AI use my balance** on under **Settings > Billing > Balance** (`PATCH /subscription/credits/settings` with `ai_overage_enabled: true`), or wait for the allowance to reset |
+| `ai_overage_limit_reached` | AI took the workspace's monthly limit from money it added (`ai_overage_monthly_limit_usd`) | Raise or remove the limit, or wait for the next calendar month (UTC) |
+
+```json
+{
+  "error": "Payment Required",
+  "message": "This month's included AI usage is used up. To keep using AI, let it use your balance under Settings > Billing > Balance.",
+  "code": "ai_allowance_used",
+  "request_id": "req_..."
+}
+```
+
+The same two codes reach Remie's stream as an `error` event and MCP tool calls as an `isError` result carrying the message.
+
 `POST /subscription/balance/top-up` answers `402` when the saved card was not charged: `card_declined` (the card was refused), `authentication_required` (the bank asked to confirm the payment) or `payment_failed`. Nothing was added. Offer Stripe Checkout instead with `POST /subscription/balance/checkout`. See [balance and usage](/api/endpoints/#balance-and-usage).
 
 Placement tests answer `402` too, with `placement_not_entitled` or `placement_quota_exceeded`; see [placement test refusals](#placement-test-refusals). A paid placement test past the balance answers `insufficient_credits`, and one past a spend limit answers `429` with `usage_cap_exceeded`; neither charges anything.
+
+Writing a lead's AI copy ahead ([write one lead's AI copy now](/api/reference/campaigns/#write-one-leads-ai-copy-now)) checks the balance before each AI block, so its `insufficient_credits` can follow blocks of the same email already written and charged. Those stay saved, and a retry after a top-up writes only the rest.
 
 ### 403 Forbidden
 
@@ -953,6 +1047,19 @@ Signup and invitation refusals carry their own `code`, so a client can branch on
 ```
 
 **How to fix:** on a self-hosted deployment these are configuration, not faults. See [accounts and access](/development/accounts-and-access/#registration-modes).
+
+#### Workspaces a partner manages
+
+A workspace a [partner](/development/partners/) manages and bills has its own refusals. They answer dashboard sessions and API keys alike.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `organization_suspended` | 403 | The partner paused the workspace. It is read-only until the partner resumes it: reads work, changes and sending wait |
+| `organization_cancelled` | 403 | The partner cancelled the workspace. It is read-only and is deleted after 30 days unless the partner restores it |
+| `partner_managed` | 403 | A billing change (checkout, plan change, cancellation, top-up) in a workspace the partner bills. It is made with the partner |
+| `partner_account` | 403 | An account the partner signs in tried to set a password or add a passkey or second factor. It signs in only through the partner |
+| `partner_login_invalid` | 400 | `POST /auth/partner/exchange` with a sign-in link that expired, was already used, or is not one. Open it again from the partner |
+| `partner_managed_mailbox` | 403 | Removing a mailbox (`DELETE /emails/:id`, `POST /emails/bulk/delete`) or signing it in again (`/emails/onboarding/oauth/reauth/:id`, `/emails/onboarding/smtp-imap/:id`, `/emails/onboarding/app-password/:id`) while the partner holds it. It is removed or reconnected through the partner |
 
 #### Account and workspace standing
 
@@ -1128,6 +1235,7 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `contact_email_taken` | 409 | The address given to [update a contact](/api/reference/contacts/#update-a-contact) already belongs to another contact |
 | `lead_cc_lead_is_copied` | 409 | [Set a lead's CC](/api/reference/campaigns/#set-a-leads-cc) on a lead that is itself copied on another lead in the campaign, so it sends nothing of its own to copy anyone on |
 | `lead_cc_has_copies` | 409 | [Set a lead's CC](/api/reference/campaigns/#set-a-leads-cc) names a contact that has copies of their own in the campaign |
+| `lead_step_sent` | 409 | [Personalize](/api/reference/campaigns/#personalize-one-email-for-one-lead), [reset](/api/reference/campaigns/#reset-one-leads-email) or [rewrite the AI copy of](/api/reference/campaigns/#write-one-leads-ai-copy-now) one lead's email after the lead already received it. Nothing changed |
 | `mailbox_is_seed` | 409 | Warmup was started or resumed on a placement seed inbox. See [placement test refusals](#placement-test-refusals) |
 | `mailbox_not_google_signin` | 409 | `POST /emails/onboarding/app-password/:id` on a mailbox that is not a Google mailbox on its own sign-in or an admin grant. See [app password switch refusals](#app-password-switch-refusals) |
 | `scheduled_send_not_pending` | 409 | [Cancel a scheduled send](/api/reference/unibox/#cancel-a-scheduled-send) named a send that is no longer pending: it has started sending, was sent, failed, or was already cancelled. Nothing changed |
@@ -1216,6 +1324,8 @@ Every endpoint that checks a password, an emailed or two-factor code, or a sign-
   "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
 }
 ```
+
+Writing one lead's AI copy ahead ([write one lead's AI copy now](/api/reference/campaigns/#write-one-leads-ai-copy-now)) answers `ai_unavailable` on an instance with no AI provider, which charges nothing, and `ai_generation_failed` when the provider did not answer. A step's blocks are written one at a time, so after `ai_generation_failed` the blocks written before the failure stay written and charged, as can a web lookup the failed block already made. A retry writes only the blocks still missing.
 
 Other temporary failures answer the generic form:
 

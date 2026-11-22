@@ -61,6 +61,7 @@ struct TeamMembersView: View {
     @State private var memberPendingRemoval: TeamMember?
     @State private var memberAwaitingReauth: TeamMember?
     @State private var actionError: String?
+    @State private var wide = false
 
     private var canManage: Bool { env.session.can(.manageTeam) }
 
@@ -86,9 +87,10 @@ struct TeamMembersView: View {
     var body: some View {
         content
             .navigationTitle("Members")
-            .navigationBarTitleDisplayMode(.inline)
+            .surfaceTitleDisplayMode()
             .toolbar {
-                if canManage {
+                // The wide grid carries its own invite button.
+                if canManage, !wide {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             showInvite = true
@@ -99,6 +101,7 @@ struct TeamMembersView: View {
                     }
                 }
             }
+            .onGeometryChange(for: Bool.self) { $0.size.width >= SplitMetrics.detailMinContentWidth } action: { wide = $0 }
             .task { await store.load(env.api, canManage: canManage) }
             .onChange(of: env.realtime.pulse(for: .team)) {
                 Task { await store.load(env.api, canManage: canManage) }
@@ -153,6 +156,22 @@ struct TeamMembersView: View {
             } else {
                 SkeletonRows()
             }
+        } else if wide {
+            TeamMembersGrid(
+                members: filteredMembers,
+                totalMembers: store.members.count,
+                invitations: store.invitations,
+                onlineIDs: onlineIDs,
+                onlineCount: env.realtime.presence.onlineCount,
+                meID: env.session.user?.id,
+                canManage: canManage,
+                search: $search,
+                canRemove: canRemove,
+                onInvite: { showInvite = true },
+                onRemove: { memberPendingRemoval = $0 },
+                onRevoke: { invitation in Task { await revoke(invitation) } }
+            )
+            .refreshable { await store.load(env.api, canManage: canManage) }
         } else {
             SettingsPage(title: "Members", spacing: 22) {
                 stats
@@ -179,7 +198,7 @@ struct TeamMembersView: View {
             }
         }
         .padding(.vertical, 16)
-        .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func stat(value: Int, label: String, color: Color, live: Bool = false) -> some View {
@@ -225,7 +244,7 @@ struct TeamMembersView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 40)
-        .background(WTheme.groupedCard, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: Members
@@ -293,7 +312,7 @@ struct TeamMembersView: View {
                         Circle()
                             .fill(WTheme.positive)
                             .frame(width: 12, height: 12)
-                            .overlay(Circle().strokeBorder(WTheme.groupedCard, lineWidth: 2.5))
+                            .overlay(Circle().strokeBorder(GroupedSurface.card, lineWidth: 2.5))
                             .offset(x: 1, y: 1)
                             .transition(.scale.combined(with: .opacity))
                     }
@@ -319,40 +338,12 @@ struct TeamMembersView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            roleChips(member)
+            TeamMemberRoleChips(member: member)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
         .animation(.snappy, value: online)
-    }
-
-    @ViewBuilder
-    private func roleChips(_ member: TeamMember) -> some View {
-        HStack(spacing: 4) {
-            if member.isOwner {
-                HStack(spacing: 4) {
-                    Image(systemName: "crown.fill").font(.system(size: 9))
-                    Text("Owner")
-                }
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(Tone.amber.color)
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(Tone.amber.background, in: Capsule())
-            } else if let roles = member.roles, !roles.isEmpty {
-                ForEach(roles.prefix(2)) { chip in
-                    MoreRoleChipView(name: chip.name ?? "Role", color: MoreStyle.color(hex: chip.color) ?? WTheme.paused)
-                }
-                if roles.count > 2 {
-                    Text("+\(roles.count - 2)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(WTheme.inkTertiary)
-                }
-            } else if let role = member.role, !role.isEmpty {
-                MoreRoleChipView(name: role.capitalized, color: WTheme.paused)
-            }
-        }
     }
 
     // MARK: Invitations
@@ -387,9 +378,9 @@ struct TeamMembersView: View {
                     .font(.system(size: 16))
                     .foregroundStyle(WTheme.ink)
                     .lineLimit(1)
-                Text(expiryText(invitation))
+                Text(invitation.expiryText)
                     .font(.system(size: 13))
-                    .foregroundStyle(isExpired(invitation) ? WTheme.negative : WTheme.inkSecondary)
+                    .foregroundStyle(invitation.isExpired ? WTheme.negative : WTheme.inkSecondary)
             }
             Spacer(minLength: 8)
             HStack(spacing: 4) {
@@ -401,16 +392,6 @@ struct TeamMembersView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-    }
-
-    private func isExpired(_ invitation: TeamInvitation) -> Bool {
-        (invitation.expiresAt ?? .distantFuture) < Date()
-    }
-
-    private func expiryText(_ invitation: TeamInvitation) -> String {
-        guard let expires = invitation.expiresAt else { return "Waiting to accept" }
-        if expires < Date() { return "Expired" }
-        return "Expires \(WFormat.relative(expires))"
     }
 
     private func remove(_ member: TeamMember) async {
@@ -498,10 +479,10 @@ struct MoreInviteMemberSheet: View {
                 .padding(.top, 8)
                 .padding(.bottom, 32)
             }
-            .background(WTheme.groupedPage)
+            .background(GroupedSurface.page)
             .navigationTitle("Invite a teammate")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(WTheme.groupedPage, for: .navigationBar)
+            .toolbarBackground(GroupedSurface.page, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -530,7 +511,7 @@ struct MoreInviteMemberSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .presentationBackground(WTheme.groupedPage)
+        .presentationBackground(GroupedSurface.page)
         .onAppear { emailFocused = true }
     }
 

@@ -147,6 +147,9 @@ const (
 	// LeadHoldSourceCRM is a hold a CRM rule wrote: a lead status, a
 	// conversion or an open opportunity in Salesforce.
 	LeadHoldSourceCRM = "crm"
+	// LeadHoldSourceReview is a lead in a review campaign that a member has
+	// not approved yet. Only an approval or turning review off lifts it.
+	LeadHoldSourceReview = "review"
 )
 
 // Lead status constants for ContactCampaignProgress.Status.

@@ -90,6 +90,30 @@ var table = []Entry{
 		Resolve:    func(*Runtime) string { return config.BillingProvider() },
 	},
 	{
+		Key: "GRAPHKIT_API_URL", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The GraphKit partner API the store buys domains and mailboxes through. fake runs an in-process simulator, refused outside development.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_API_URL"),
+	},
+	{
+		Key: "GRAPHKIT_API_KEY", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The GraphKit partner key. Unset turns the store off and hides it from every workspace.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_API_KEY"),
+	},
+	{
+		Key: "GRAPHKIT_WEBHOOK_SECRET", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Verifies GraphKit's signed webhooks at /v1/webhooks/graphkit. Without it purchases still sync through the minute-by-minute reconciler.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_WEBHOOK_SECRET"),
+	},
+	{
+		Key: "GRAPHKIT_WEBHOOK_SECRET_PREVIOUS", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The secret before a rotation, still accepted until GraphKit stops signing with it.",
+		DocsAnchor: docsDeployment,
+		Resolve:    envValue("GRAPHKIT_WEBHOOK_SECRET_PREVIOUS"),
+	},
+	{
 		Key: "TASKS_PROVIDER", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
 		Effect:     "local runs an in-process Postgres poller for campaign ticks and scheduled sends, with no external service.",
 		DocsAnchor: docsDeployment,
@@ -839,6 +863,12 @@ var table = []Entry{
 		Resolve:    envValue("ENCRYPTED_KEYS_BACKEND_URL"),
 	},
 	{
+		Key: "NODE_BACKEND_INTERNAL_URL", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "A private backend address offered to nodes beside ENCRYPTED_KEYS_BACKEND_URL. A node that reaches it at startup calls it instead; unset, nodes use the public address.",
+		DocsAnchor: docsWorkers,
+		Resolve:    envValue("NODE_BACKEND_INTERNAL_URL"),
+	},
+	{
 		Key: "ENCRYPTED_KEYS_WORKER_TOKEN", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
 		Effect:     "The worker's copy of the node token (NODE_BROKER_TOKEN, else INTERNAL_API_TOKEN). It must match the backend's value exactly.",
 		DocsAnchor: docsWorkers,
@@ -852,15 +882,9 @@ var table = []Entry{
 	},
 	{
 		Key: "IMAP_IDLE", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "Workers hold each IMAP INBOX open in IDLE on a second connection, so new mail syncs within seconds. false keeps IMAP polling once a minute.",
+		Effect:     "Workers hold each IMAP INBOX open in IDLE on a second connection, so new mail in INBOX and junk syncs within seconds. false checks INBOX and junk about every 5 minutes instead; other folders are checked every 15 to 60 minutes either way.",
 		DocsAnchor: docsMailboxSync,
 		Resolve:    envOr("IMAP_IDLE", "true"),
-	},
-	{
-		Key: "SYNC_PUSH_FALLBACK_INTERVAL", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "How often a mailbox whose provider pushes its changes is still polled, because notifications can be delayed or lost.",
-		DocsAnchor: docsMailboxSync,
-		Resolve:    envOr("SYNC_PUSH_FALLBACK_INTERVAL", "10m"),
 	},
 	{
 		Key: "GRAPH_PUSH", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,

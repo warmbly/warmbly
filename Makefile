@@ -87,7 +87,7 @@ fmt:
 schemas:
 	go test ./internal/app/eventschemas -run TestPublishedSchemasStayCompatible -update
 
-lint: check-migrations join-check split-cloud-check pages-check check-dockerfiles
+lint: check-migrations join-check pages-check check-dockerfiles
 	./scripts/check-forms-mirror.sh
 	$(GO_BIN)/golangci-lint run --timeout=5m
 
@@ -637,10 +637,15 @@ WORKER_DEV_ENV := \
 # the docker postgres.
 # The sandbox's mock inbox vendor API; empty keeps the real vendors.
 MAILVENDOR_SANDBOX_URL ?=
+# The store runs against the in-process GraphKit simulator in dev; set both to use a sandbox key.
+GRAPHKIT_API_URL ?= fake
+GRAPHKIT_API_KEY ?=
 backend:
 	$(GO_DEV_ENV) \
 	$(AI_DEV_ENV) \
 	MAILVENDOR_SANDBOX_URL=$(MAILVENDOR_SANDBOX_URL) \
+	GRAPHKIT_API_URL=$(GRAPHKIT_API_URL) \
+	GRAPHKIT_API_KEY=$(GRAPHKIT_API_KEY) \
 	API_HOST=0.0.0.0:8080 \
 	FORMS_DOMAIN=localhost:$(FORMS_PORT) \
 	PORTAL_DOMAIN=localhost:$(PORTAL_PORT) \

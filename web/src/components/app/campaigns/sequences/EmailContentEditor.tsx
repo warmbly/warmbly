@@ -24,7 +24,10 @@ import type { TemplatePreview } from "@/lib/api/client/app/campaigns/previewTemp
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import formatBytes from "@/lib/helper/formatBytes";
-import { PlacementTestButton, PreviewContactPicker, PreviewMailboxPicker, SendTestButton } from "./PreviewControls";
+import { PlacementTestButton, PreviewContactPicker, PreviewLeadStepper, PreviewMailboxPicker, SendTestButton } from "./PreviewControls";
+import PreviewLeadNotes from "./PreviewLeadNotes";
+import { usePreviewLeadAI } from "./usePreviewLeadAI";
+import { aiPreviewCss } from "../review/aiPreviewCss";
 import { SAMPLE_CONTACT_LABEL, contactLabel, useCampaignSenderInboxes } from "./previewContext";
 import { Label, TextInput } from "@/components/ui/field";
 import {
@@ -137,6 +140,8 @@ export default function EmailContentEditor({
     const [previewContact, setPreviewContact] = React.useState<Contact | null>(null);
     const [previewMailbox, setPreviewMailbox] = React.useState<Inbox | null>(null);
     const [serverPreview, setServerPreview] = React.useState<TemplatePreview | null>(null);
+    // Whose preview serverPreview is ("" for the sample), so the lead's notes and AI write never read another lead's.
+    const [serverPreviewFor, setServerPreviewFor] = React.useState("");
     const senders = useCampaignSenderInboxes(campaignId ?? "");
     // Both picks belong to one campaign, so drop them when this editor is
     // pointed at a different one, or at none, without remounting. The rendered
@@ -165,6 +170,8 @@ export default function EmailContentEditor({
     // must read. The step's own stored subject is not what gets sent.
     const shownSubject = subjectLocked ? subjectLocked.subject : subject;
 
+    // Bumped after AI copy is written, so the preview renders it.
+    const [rendered, setRendered] = React.useState(0);
     const previewMut = useTemplatePreview();
     const runPreview = previewMut.mutateAsync;
     React.useEffect(() => {
@@ -178,6 +185,7 @@ export default function EmailContentEditor({
         const settle = tab === "preview" ? 250 : 800;
         // Responses can land out of order; only the newest request may paint.
         let active = true;
+        const forContact = campaignId && previewContact ? previewContact.id : "";
         const t = setTimeout(() => {
             runPreview({
                 subject: shownSubject,
@@ -191,7 +199,9 @@ export default function EmailContentEditor({
                 ...(campaignId && stepId ? { step_id: stepId } : {}),
             })
                 .then((p) => {
-                    if (active) setServerPreview(p);
+                    if (!active) return;
+                    setServerPreview(p);
+                    setServerPreviewFor(forContact);
                 })
                 .catch(() => {
                     if (active) setServerPreview(null);
@@ -202,7 +212,26 @@ export default function EmailContentEditor({
             clearTimeout(t);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, code, shownSubject, bodyHtml, previewContact?.id, campaignId, previewMailbox?.id, stepId]);
+    }, [tab, code, shownSubject, bodyHtml, previewContact?.id, campaignId, previewMailbox?.id, stepId, rendered]);
+
+    // The preview sits low in a step's panel, so opening it brings the email into view.
+    const previewRef = React.useRef<HTMLDivElement>(null);
+    React.useEffect(() => {
+        if (tab === "preview") previewRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }, [tab]);
+
+    // Only the step's own copy previews lead by lead; an A/B arm or a lead's own copy is not what every lead gets.
+    const leadPreview = !!campaignId && !!stepId && !!canSendTest;
+    const leadServerPreview = serverPreviewFor === (campaignId && previewContact ? previewContact.id : "") ? serverPreview : null;
+    const rerender = React.useCallback(() => setRendered((n) => n + 1), []);
+    const leadAI = usePreviewLeadAI({
+        campaignId,
+        stepId,
+        contactId: previewContact?.id,
+        preview: leadServerPreview,
+        enabled: leadPreview && tab === "preview" && !dirty,
+        onWritten: rerender,
+    });
 
     const bodyPlain = htmlToPlain(bodyHtml);
     const aiContext = React.useMemo(
@@ -463,11 +492,12 @@ export default function EmailContentEditor({
                         <HtmlFindings findings={serverPreview?.html_findings ?? []} />
                     </>
                 ) : (
-                    <div className="rounded-md border border-slate-200 bg-white">
+                    <div ref={previewRef} className="scroll-mt-3 rounded-md border border-slate-200 bg-white">
                         {campaignId && (
                             <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200/70 px-2 py-1.5">
                                 <span className="px-1 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Preview as</span>
                                 <PreviewContactPicker campaignId={campaignId} value={previewContact} onChange={setPreviewContact} />
+                                {leadPreview && <PreviewLeadStepper campaignId={campaignId} value={previewContact} onChange={setPreviewContact} />}
                                 <PreviewMailboxPicker inboxes={senders.inboxes} value={previewMailbox} onChange={setPreviewMailbox} />
                                 {stepId && canSendTest && (
                                     <div className="ml-auto flex flex-wrap items-center gap-1.5">
@@ -482,6 +512,9 @@ export default function EmailContentEditor({
                                     </div>
                                 )}
                             </div>
+                        )}
+                        {leadPreview && (
+                            <PreviewLeadNotes campaignId={campaignId!} stepId={stepId!} contact={previewContact} preview={leadServerPreview} dirty={dirty} ai={leadAI} />
                         )}
                         {serverPreview?.from && (
                             <div className="border-b border-slate-200/70 px-3 py-2 text-[12.5px]">
@@ -507,6 +540,7 @@ export default function EmailContentEditor({
                             <EmailBody
                                 html={serverPreview?.body_html ?? linkifyUnsubscribe(renderPreview(bodyHtml))}
                                 plain={serverPreview?.body_plain}
+                                extraCss={aiPreviewCss({ writing: leadAI.state === "writing", justWritten: leadAI.fresh })}
                             />
                         </div>
                         {(serverPreview?.attachments?.length ?? 0) > 0 && (

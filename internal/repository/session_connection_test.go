@@ -1,18 +1,8 @@
 package repository
 
 import (
-	"context"
 	"testing"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func testSessionConnector(pool *pgxpool.Pool) SessionConnector {
-	return func(ctx context.Context) (*pgx.Conn, error) {
-		return pgx.ConnectConfig(ctx, pool.Config().ConnConfig)
-	}
-}
 
 func TestSessionConnectorIsRequired(t *testing.T) {
 	for _, tc := range []struct {

@@ -88,6 +88,16 @@ func (d *disabledService) CreateBalanceCheckout(_ context.Context, _, _ uuid.UUI
 	return nil, billingDisabled()
 }
 
+func (d *disabledService) CreateCardSetupIntent(_ context.Context, _, _ uuid.UUID) (*CardSetup, *errx.Error) {
+	return nil, billingDisabled()
+}
+
+func (d *disabledService) AdoptCardSetup(_ context.Context, _ uuid.UUID, _ string) *errx.Error {
+	return billingDisabled()
+}
+
+func (d *disabledService) PublishableKey() string { return "" }
+
 func (d *disabledService) CreateCardSetupCheckout(_ context.Context, _, _ uuid.UUID, _, _ string) (*stripe.CheckoutSession, *errx.Error) {
 	return nil, billingDisabled()
 }

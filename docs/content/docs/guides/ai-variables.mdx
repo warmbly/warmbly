@@ -21,11 +21,17 @@ The block always uses the model configured for your workspace; there is no separ
 
 Use the editor's preview to see the block written for a built-in sample contact, shown inside the whole message so you can check it reads naturally where it lands. A preview costs the same as a send-time resolution, because it runs the same generation, and the editor shows what that example actually cost.
 
+A step's **Preview** shows each AI block as a marked slot for the sample contact. Pick one of the campaign's leads, or step through them with the arrows, to see the copy AI wrote for that lead with a soft highlight. A saved step writes a lead's blocks as soon as you preview them, the same as opening them on the step's [Review tab](/guides/campaigns/#review-before-sending), and costs the same as writing them at send time. That needs the **Use AI** and **Manage campaigns** permissions; without them each block stays a marked slot until the email sends. A lead with their own copy of the step is marked, with a link that opens it on the Review tab.
+
 ## How it resolves at send time
 
 When the campaign sends to a contact, each AI variable in that email is generated for that contact just before tracking and signature are added, so the AI copy is tracked and styled like the rest of the email. The result is cached per contact and step: if a send is retried, the same snippet is reused instead of generating (and charging) again. Different contacts always get their own copy.
 
 A block whose instruction renders empty for a contact resolves to nothing and costs nothing. A block with a malformed configuration is skipped rather than blocking the send. If the AI provider fails, that recipient's send is retried later with the cached result, so you are never charged for output you did not receive.
+
+## Writing ahead to read first
+
+While a campaign runs, Warmbly works through the first email's AI blocks in the background for every lead not yet emailed, and for each lead added later, so the copy can be read on the step's [Review tab](/guides/campaigns/#review-before-sending) before it goes out. It is not a guarantee: background writing pauses while the balance is too low or a spend limit is reached and does nothing on an instance with no AI provider, and a lead whose email is due before it gets to them has the copy written when it sends. Only the first email is written in the background. A follow-up's blocks, and those in a lead's own copy of an email, are written when you open that email for the lead or when it sends. Before launch, the Review tab writes a lead's blocks as soon as you open them, and the next two leads' first email in the background. **Write all now** writes the first email for every lead a few at a time, and stops when the balance runs out or you press **Stop**, keeping what it wrote. **Rewrite** asks for another version of one. Writing ahead costs exactly what writing at send time does, and the send reuses the result, so a block is never charged twice; a rewrite is charged again. A lead whose email you edited on the Review tab keeps the AI blocks you left in it.
 
 ## Cost and safety
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,8 @@ const (
 	purposeBalanceCharge   = "balance_charge"
 	purposeBalanceCheckout = "balance_top_up"
 	purposeCardSetup       = "card_setup"
+	// purposeCardSetupInline marks a SetupIntent the dashboard confirms with Stripe.js, not through Checkout.
+	purposeCardSetupInline = "card_setup_inline"
 )
 
 // metaActor names who opened a balance Checkout; never user_id, which the previous release reads as a subscription checkout.
@@ -80,6 +83,12 @@ var softDeclines = map[stripe.DeclineCode]bool{
 }
 
 func (s *stripeService) WireBalance(b BalanceSettler) { s.balance = b }
+
+// WireCardSaved runs fn after a workspace saves a card, so what its old card
+// could not pay is charged at once rather than on the next attempt.
+func (s *stripeService) WireCardSaved(fn func(ctx context.Context, orgID uuid.UUID)) {
+	s.cardSaved = fn
+}
 
 func (s *stripeService) DefaultPaymentMethod(ctx context.Context, customerID string) (*PaymentMethodSummary, error) {
 	if customerID == "" {
@@ -134,6 +143,15 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 			return nil, fmt.Errorf("load charge invoice: %w", err)
 		}
 	} else {
+		meta := map[string]string{
+			"purpose": purposeBalanceCharge, "org_id": c.OrgID.String(), "charge_id": c.ID.String(),
+			"kind": c.Kind, "amount_micro": strconv.FormatInt(int64(c.Amount), 10),
+		}
+		// Only fee-bearing charges name the fee: a retry of a charge the previous release started must
+		// send the same invoice parameters under its idempotency key.
+		if fee := c.AmountCents - c.Amount.Cents(); fee > 0 {
+			meta["fee_cents"] = strconv.FormatInt(fee, 10)
+		}
 		params := &stripe.InvoiceParams{
 			Params:                      stripe.Params{Context: ctx},
 			Customer:                    stripe.String(c.CustomerID),
@@ -141,10 +159,7 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 			AutoAdvance:                 stripe.Bool(false),
 			PendingInvoiceItemsBehavior: stripe.String("exclude"),
 			Description:                 stripe.String(chargeDescription(c)),
-			Metadata: map[string]string{
-				"purpose": purposeBalanceCharge, "org_id": c.OrgID.String(), "charge_id": c.ID.String(),
-				"kind": c.Kind, "amount_micro": strconv.FormatInt(int64(c.Amount), 10),
-			},
+			Metadata:                    meta,
 		}
 		params.SetIdempotencyKey(key + "-invoice")
 		if inv, err = invoice.New(params); err != nil {
@@ -166,18 +181,18 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 		out.Declined = models.ReloadPaymentFailed
 		return out, nil
 	case stripe.InvoiceStatusDraft:
-		if inv.Total == 0 {
-			item := &stripe.InvoiceItemParams{
-				Params:      stripe.Params{Context: ctx},
-				Customer:    stripe.String(c.CustomerID),
-				Invoice:     stripe.String(inv.ID),
-				Amount:      stripe.Int64(c.AmountCents),
-				Currency:    stripe.String(c.Currency),
-				Description: stripe.String(chargeDescription(c)),
-			}
-			item.SetIdempotencyKey(key + "-item")
-			if _, err := invoiceitem.New(item); err != nil {
+		// The amount and the processing fee are separate lines; whichever a crash left out is added now.
+		fee := max(c.AmountCents-c.Amount.Cents(), 0)
+		total := inv.Total
+		if total == 0 {
+			if err := addChargeLine(ctx, c, inv.ID, c.AmountCents-fee, chargeDescription(c), key+"-item"); err != nil {
 				return nil, fmt.Errorf("add charge line: %w", err)
+			}
+			total = c.AmountCents - fee
+		}
+		if fee > 0 && total < c.AmountCents {
+			if err := addChargeLine(ctx, c, inv.ID, c.AmountCents-total, models.TopUpFeeLabel, key+"-fee"); err != nil {
+				return nil, fmt.Errorf("add fee line: %w", err)
 			}
 		}
 		fin := &stripe.InvoiceFinalizeInvoiceParams{Params: stripe.Params{Context: ctx}, AutoAdvance: stripe.Bool(false)}
@@ -209,7 +224,24 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 	return nil, fmt.Errorf("pay charge invoice: %w", err)
 }
 
+func addChargeLine(ctx context.Context, c *models.SavedCardCharge, invoiceID string, cents int64, description, key string) error {
+	item := &stripe.InvoiceItemParams{
+		Params:      stripe.Params{Context: ctx},
+		Customer:    stripe.String(c.CustomerID),
+		Invoice:     stripe.String(invoiceID),
+		Amount:      stripe.Int64(cents),
+		Currency:    stripe.String(c.Currency),
+		Description: stripe.String(description),
+	}
+	item.SetIdempotencyKey(key)
+	_, err := invoiceitem.New(item)
+	return err
+}
+
 func chargeDescription(c *models.SavedCardCharge) string {
+	if c.Kind == models.SavedCardStore && c.Description != "" {
+		return c.Description
+	}
 	if c.Kind == models.SavedCardAutoReload {
 		return fmt.Sprintf("Warmbly balance, automatic reload of $%.2f", c.Amount.USD())
 	}
@@ -264,21 +296,13 @@ func (s *stripeService) CreateBalanceCheckout(ctx context.Context, userID, orgID
 		"purpose": purposeBalanceCheckout, metaActor: userID.String(), "org_id": orgID.String(),
 		"amount_micro": strconv.FormatInt(int64(amount), 10),
 	}
+	fee, _ := models.TopUpCharge(amount.Cents())
+	meta["fee_cents"] = strconv.FormatInt(fee, 10)
 	params := &stripe.CheckoutSessionParams{
 		Params:          stripe.Params{Context: ctx},
 		Mode:            stripe.String(string(stripe.CheckoutSessionModePayment)),
 		InvoiceCreation: &stripe.CheckoutSessionInvoiceCreationParams{Enabled: stripe.Bool(true)},
-		LineItems: []*stripe.CheckoutSessionLineItemParams{{
-			Quantity: stripe.Int64(1),
-			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-				Currency:    stripe.String("usd"),
-				UnitAmount:  stripe.Int64(amount.Cents()),
-				TaxBehavior: stripe.String(businesscheckout.TaxExclusive),
-				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
-					Name: stripe.String("Warmbly balance"),
-				},
-			},
-		}},
+		LineItems:       businesscheckout.TopUpLineItems("Warmbly balance", amount.Cents()),
 		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
 			SetupFutureUsage: stripe.String("off_session"),
 			Metadata:         meta,
@@ -320,6 +344,136 @@ func (s *stripeService) CreateCardSetupCheckout(ctx context.Context, userID, org
 		return nil, errx.New(errx.Internal, "failed to open checkout")
 	}
 	return sess, nil
+}
+
+// CardSetup is what Stripe.js needs to save a card in the page: the SetupIntent's secret and the account's key.
+type CardSetup struct {
+	ClientSecret   string `json:"client_secret"`
+	PublishableKey string `json:"publishable_key"`
+}
+
+// CreateCardSetupIntent opens a SetupIntent on the workspace's customer for a card kept for off-session charges.
+func (s *stripeService) CreateCardSetupIntent(ctx context.Context, userID, orgID uuid.UUID) (*CardSetup, *errx.Error) {
+	customerID, xerr := s.workspaceCustomer(ctx, orgID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	meta := map[string]string{"purpose": purposeCardSetupInline, metaActor: userID.String(), "org_id": orgID.String()}
+	si, err := setupintent.New(&stripe.SetupIntentParams{
+		Params:                    stripe.Params{Context: ctx},
+		Metadata:                  meta,
+		Customer:                  stripe.String(customerID),
+		Usage:                     stripe.String(string(stripe.SetupIntentUsageOffSession)),
+		AllowedPaymentMethodTypes: stripe.StringSlice([]string{"card"}),
+	})
+	if err != nil {
+		errs.CaptureException(fmt.Errorf("stripe setup intent failed: %w", err))
+		return nil, errx.New(errx.Internal, "failed to start card setup")
+	}
+	return &CardSetup{ClientSecret: si.ClientSecret, PublishableKey: s.PublishableKey()}, nil
+}
+
+// AdoptCardSetup makes a succeeded in-page SetupIntent on the workspace's own customer its default card.
+func (s *stripeService) AdoptCardSetup(ctx context.Context, orgID uuid.UUID, setupIntentID string) *errx.Error {
+	if !strings.HasPrefix(setupIntentID, "seti_") {
+		return errx.New(errx.BadRequest, "invalid setup_intent_id")
+	}
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return errx.New(errx.Internal, "failed to get subscription")
+	}
+	notFound := errx.New(errx.NotFound, "That card setup was not found.")
+	if sub == nil || sub.StripeCustomerID == "" {
+		return notFound
+	}
+	si, err := setupintent.Get(setupIntentID, &stripe.SetupIntentParams{Params: stripe.Params{Context: ctx}})
+	if err != nil {
+		var se *stripe.Error
+		if errors.As(err, &se) && se.HTTPStatusCode == http.StatusNotFound {
+			return notFound
+		}
+		errs.CaptureException(fmt.Errorf("stripe setup intent lookup failed: %w", err))
+		return errx.New(errx.Internal, "failed to read the card setup")
+	}
+	if si.Customer == nil || si.Customer.ID != sub.StripeCustomerID {
+		return notFound
+	}
+	if si.Status != stripe.SetupIntentStatusSucceeded || si.PaymentMethod == nil || si.PaymentMethod.ID == "" {
+		return errx.New(errx.Conflict, "The card has not been confirmed yet.")
+	}
+	if _, err := customer.Update(sub.StripeCustomerID, &stripe.CustomerParams{
+		Params:          stripe.Params{Context: ctx},
+		InvoiceSettings: &stripe.CustomerInvoiceSettingsParams{DefaultPaymentMethod: stripe.String(si.PaymentMethod.ID)},
+	}); err != nil {
+		errs.CaptureException(fmt.Errorf("set default payment method: %w", err))
+		return errx.New(errx.Internal, "failed to make the card the default")
+	}
+	if s.cardSaved != nil {
+		go s.cardSaved(context.WithoutCancel(ctx), orgID)
+	}
+	return nil
+}
+
+// PublishableKey is the key Stripe.js loads with; "" when billing has none.
+func (s *stripeService) PublishableKey() string {
+	if s.cfg == nil {
+		return ""
+	}
+	return s.cfg.PublishableKey
+}
+
+// workspaceCustomer is the workspace's Stripe customer, created and recorded when it has none.
+func (s *stripeService) workspaceCustomer(ctx context.Context, orgID uuid.UUID) (string, *errx.Error) {
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return "", errx.New(errx.Internal, "failed to get subscription")
+	}
+	if sub == nil {
+		return "", errx.New(errx.Conflict, "This workspace has no billing account yet.")
+	}
+	if sub.StripeCustomerID != "" {
+		return sub.StripeCustomerID, nil
+	}
+	// Keyed on the workspace, so two setups at once end on one customer.
+	params := &stripe.CustomerParams{Params: stripe.Params{Context: ctx}, Metadata: map[string]string{"org_id": orgID.String()}}
+	params.SetIdempotencyKey("warmbly-customer-" + orgID.String())
+	cust, err := customer.New(params)
+	if err != nil {
+		errs.CaptureException(fmt.Errorf("stripe customer creation failed: %w", err))
+		return "", errx.New(errx.Internal, "failed to create billing account")
+	}
+	sub.StripeCustomerID = cust.ID
+	if err := s.subRepo.Update(ctx, sub); err != nil {
+		return "", errx.New(errx.Internal, "failed to save billing customer")
+	}
+	return cust.ID, nil
+}
+
+// fulfillInlineCardSetup makes a card saved in the page the default and retries what an old card could not pay.
+// The org's own customer must own the intent, so metadata alone cannot point a card at another workspace.
+func (s *stripeService) fulfillInlineCardSetup(ctx context.Context, si *stripe.SetupIntent) *errx.Error {
+	orgID, err := uuid.Parse(si.Metadata["org_id"])
+	if err != nil {
+		return errx.New(errx.BadRequest, "invalid org_id in card setup metadata")
+	}
+	sub, gerr := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if gerr != nil {
+		return errx.New(errx.Internal, "failed to get subscription for the card")
+	}
+	if sub == nil || si.Customer == nil || sub.StripeCustomerID != si.Customer.ID {
+		return nil
+	}
+	s.ensureDefaultPaymentMethod(ctx, si.Customer, si.PaymentMethod)
+	if s.cardSaved != nil {
+		go s.cardSaved(context.WithoutCancel(ctx), orgID)
+	}
+	if s.audit != nil {
+		actorID, _ := uuid.Parse(si.Metadata[metaActor])
+		s.audit.LogAction(ctx, orgID, actorID, models.AuditActionUpdate, models.AuditEntitySubscription, nil, "", "", nil, map[string]string{
+			"payment_method": "saved",
+		})
+	}
+	return nil
 }
 
 // attachCustomer bills the workspace's existing Stripe customer; a workspace
@@ -422,6 +576,10 @@ func (s *stripeService) fulfillCardSetup(ctx context.Context, sess *stripe.Check
 		if err == nil {
 			s.ensureDefaultPaymentMethod(ctx, sess.Customer, si.PaymentMethod)
 		}
+	}
+	if s.cardSaved != nil {
+		// Off the webhook: retrying charges talks to Stripe again.
+		go s.cardSaved(context.WithoutCancel(ctx), orgID)
 	}
 	if s.audit != nil {
 		actorID, _ := uuid.Parse(sess.Metadata[metaActor])

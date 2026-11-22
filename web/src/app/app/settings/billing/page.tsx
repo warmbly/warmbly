@@ -81,7 +81,9 @@ export default function BillingSettingsPage() {
     const access = useFeatureAccess();
     const canManageBilling = usePermission("MANAGE_BILLING");
     const currentOrg = useAppStore((s) => s.currentOrganization);
-    const agencyOf = useCurrentOrganization().data?.agency;
+    const currentOrgData = useCurrentOrganization().data;
+    const agencyOf = currentOrgData?.agency;
+    const partnerOf = currentOrgData?.partner;
     const validateCode = useValidateDiscountCode();
     // Checkout / plan change / portal live in useUpgradeFlow, shared with the
     // in-app upgrade dialog.
@@ -154,6 +156,28 @@ export default function BillingSettingsPage() {
     // No billing provider on this deployment: there is nothing to manage here.
     if (!access.billing) {
         return <Navigate to="/app/settings/workspace" replace />;
+    }
+
+    // A reseller bills this workspace: there is no plan, checkout, top-up or invoice here.
+    if (partnerOf) {
+        const paused = partnerOf.state !== "active";
+        return (
+            <SectionShell title="Billing" description={`Plan and payment for ${currentOrg?.name ?? "this workspace"}.`}>
+                <Section eyebrow="Billed through a partner">
+                    <div className="text-[13px] font-semibold text-slate-900">Billed through {partnerOf.display_name}</div>
+                    <p className="text-[12px] text-slate-500 leading-relaxed mt-1 max-w-md">
+                        {partnerOf.display_name} manages this workspace's plan, mailboxes, balance and invoices. Changes to
+                        any of them are made there, not here.
+                    </p>
+                    {paused && (
+                        <p className="text-[12px] text-amber-700 leading-relaxed mt-2 max-w-md">
+                            Paused by {partnerOf.display_name}. Sending and warmup are stopped and the workspace is
+                            read-only until it is resumed there.
+                        </p>
+                    )}
+                </Section>
+            </SectionShell>
+        );
     }
 
     // A billing manager who is not the owner runs the balance and nothing else.

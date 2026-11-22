@@ -25,6 +25,13 @@ const googleBackfillPage = 100
 // it, then moves the backfill along under its budget. Runs serially from
 // StartSyncWorker, so LastHistoryID needs no locking.
 func (w *WMail) SyncGoogle(ctx context.Context) *errx.MailError {
+	return w.syncGoogle(ctx, false)
+}
+
+// syncGoogle is the full pass, or with narrow a wake's check: the history feed
+// alone, leaving a missing baseline, a recovery, the backfill and the folder
+// reconciliation to the full pass.
+func (w *WMail) syncGoogle(ctx context.Context, narrow bool) *errx.MailError {
 	w.beginTick()
 	stats := &tickStats{}
 	w.googleTick = stats
@@ -34,14 +41,27 @@ func (w *WMail) SyncGoogle(ctx context.Context) *errx.MailError {
 	if !w.retryUnmap(ctx) {
 		return nil
 	}
+	w.GoogleData.Client.OnHistoryPage = w.prefetchMaps
 	if w.tracker.state.BackfillCursor.GoogleRecovery != nil {
+		if narrow {
+			w.narrowDeferred = true
+			return nil
+		}
 		if err := w.googleRecoverHistory(ctx, stats); err != nil {
 			return w.googleReconcileError(err)
 		}
 		return nil
 	}
+	if narrow && w.GoogleData.LastHistoryID == 0 {
+		w.narrowDeferred = true
+		return nil
+	}
 
 	newHistoryID, caughtUp, err := w.GoogleData.Client.FetchHistoryPass(ctx, w.GoogleData.LastHistoryID)
+	if narrow && errors.Is(err, goog.ErrHistoryExpired) {
+		w.narrowDeferred = true
+		return nil
+	}
 	if errors.Is(err, goog.ErrHistoryExpired) {
 		baseline, berr := w.GoogleData.Client.HistoryBaseline(ctx)
 		if berr != nil {
@@ -71,6 +91,9 @@ func (w *WMail) SyncGoogle(ctx context.Context) *errx.MailError {
 			return errMail
 		}
 		w.captureSyncError(err)
+		return nil
+	}
+	if narrow {
 		return nil
 	}
 
@@ -231,7 +254,7 @@ func (w *WMail) onGoogleMessageAdded(ctx context.Context, id, threadID string) (
 	if stats.aborted {
 		return false, goog.ErrStop
 	}
-	known, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, id)
+	known, err := w.lookupMap(ctx, id)
 	if err != nil {
 		w.controlPlaneError(err, stats)
 		return false, goog.ErrStop

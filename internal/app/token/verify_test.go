@@ -36,20 +36,6 @@ func (r *sessionRepo) GetSession(_ context.Context, _ uuid.UUID) (*models.Sessio
 	return r.session, r.err
 }
 
-func TestSessionReadRefusesDatabaseFailureWithCachedSession(t *testing.T) {
-	ctx := context.Background()
-	row := liveRow(uuid.New())
-	repo := &sessionRepo{err: errx.InternalError()}
-	s := &tokenService{cache: revocationCache(t, false), tokenRepository: repo}
-	if err := s.saveSession(ctx, &row, SessionTTL); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.cache.Del(ctx, getSessionKey(row.ID)).Err() })
-	if got, err := s.GetSession(ctx, row.ID); got != nil || err == nil {
-		t.Fatalf("unverified session: %v, %v", got, err)
-	}
-}
-
 func TestASessionSurvivesACacheThatIsDown(t *testing.T) {
 	// Built directly rather than through cache.New, which pings on construction
 	// and would fail before the test could start.

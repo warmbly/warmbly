@@ -118,8 +118,16 @@ type SendAdmission struct {
 	RetryAt      *time.Time
 	RecoveryHold bool
 	HoldReason   string
+	// HeldSince is when the send behind an in-flight ('unknown') hold was reserved.
+	HeldSince *time.Time
 	// PauseReason is why RetryAt was set, empty when an earlier release wrote it.
 	PauseReason string
+	// ColdHold is why a managing partner keeps campaigns off the mailbox (ColdHoldPartner*), empty when none.
+	ColdHold string
+	// ColdRoom is what the partner's daily cap leaves today, nil when no partner caps the mailbox.
+	ColdRoom *int
+	// ColdReopensAt is when a capped mailbox's UTC day turns over.
+	ColdReopensAt *time.Time
 }
 
 type SendRecoveryHold struct {
@@ -197,12 +205,17 @@ func (r *taskRepository) GetSendAdmission(ctx context.Context, orgID, mailboxID 
 	a := &SendAdmission{MailboxID: mailboxID, Provider: provider, Scope: "mailbox"}
 	var active bool
 	var current string
-	err := r.db.QueryRow(ctx, `SELECT status = 'active', provider::text, send_cooldown_until, send_recovery_hold, COALESCE(send_recovery_reason, ''), COALESCE(send_cooldown_reason, '')
-		FROM email_accounts WHERE id = $1 AND organization_id = $2`, mailboxID, orgID).Scan(&active, &current, &a.RetryAt, &a.RecoveryHold, &a.HoldReason, &a.PauseReason)
+	err := r.db.QueryRow(ctx, `SELECT ea.status = 'active', ea.provider::text, ea.send_cooldown_until, ea.send_recovery_hold, COALESCE(ea.send_recovery_reason, ''), COALESCE(ea.send_cooldown_reason, ''),
+		CASE WHEN ea.send_recovery_hold THEN COALESCE(t.send_reserved_at, t.completed_at) END
+		FROM email_accounts ea LEFT JOIN tasks t ON t.id = ea.send_recovery_task_id AND t.email_account_id = ea.id
+		WHERE ea.id = $1 AND ea.organization_id = $2`, mailboxID, orgID).Scan(&active, &current, &a.RetryAt, &a.RecoveryHold, &a.HoldReason, &a.PauseReason, &a.HeldSince)
 	if err != nil {
 		return nil, err
 	}
 	a.Allowed = active && current == string(provider) && !a.RecoveryHold && (a.RetryAt == nil || !a.RetryAt.After(now))
+	if err := r.partnerColdHold(ctx, a, orgID, mailboxID, now); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 

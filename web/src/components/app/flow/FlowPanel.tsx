@@ -18,6 +18,8 @@ export default function FlowPanel({
     tabs,
     footer,
     wide,
+    xwide,
+    fill,
     bare,
     readOnly,
     children,
@@ -31,6 +33,10 @@ export default function FlowPanel({
     tabs?: React.ReactNode;
     footer?: React.ReactNode;
     wide?: boolean;
+    // Wider still, for a list beside a preview.
+    xwide?: boolean;
+    // Children fill the body and scroll themselves; they handle their own permissions.
+    fill?: boolean;
     // Children bring their own header and scrolling.
     bare?: boolean;
     // Members who may not edit see every control in the panel disabled.
@@ -45,7 +51,7 @@ export default function FlowPanel({
             transition={{ duration: 0.12, ease: "easeOut" }}
             className={cn(
                 "absolute inset-0 z-20 flex min-h-0 flex-col bg-white md:static md:inset-auto md:z-auto md:shrink-0 md:border-l md:border-slate-200",
-                wide ? "md:w-[min(760px,62vw)]" : "md:w-[400px]",
+                xwide ? "md:w-[min(1120px,78vw)]" : wide ? "md:w-[min(760px,62vw)]" : "md:w-[400px]",
             )}
         >
             {bare ? (
@@ -76,11 +82,15 @@ export default function FlowPanel({
                         )}
                     </div>
                     {tabs}
-                    <div className="min-h-0 flex-1 overflow-y-auto">
-                        <fieldset disabled={readOnly} className="contents">
-                            {children}
-                        </fieldset>
-                    </div>
+                    {fill ? (
+                        <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+                    ) : (
+                        <div className="min-h-0 flex-1 overflow-y-auto">
+                            <fieldset disabled={readOnly} className="contents">
+                                {children}
+                            </fieldset>
+                        </div>
+                    )}
                     {footer && <div className="shrink-0 border-t border-slate-200 px-3 py-2">{footer}</div>}
                 </>
             )}

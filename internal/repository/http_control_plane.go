@@ -21,8 +21,24 @@ func newControlPlaneTransport() http.RoundTripper {
 	return drainingTransport{next: t}
 }
 
-func newControlPlaneClient(timeout time.Duration) *http.Client {
-	return &http.Client{Transport: controlPlaneTransport, Timeout: timeout}
+func newControlPlaneClient(timeout time.Duration, opts []ControlPlaneOption) *http.Client {
+	client := &http.Client{Transport: controlPlaneTransport, Timeout: timeout}
+	for _, o := range opts {
+		o(client)
+	}
+	return client
+}
+
+// ControlPlaneOption configures a node's internal API client at construction.
+type ControlPlaneOption func(*http.Client)
+
+// WithControlPlaneTransport sends the client through rt, still draining unread bodies; nil keeps the shared transport.
+func WithControlPlaneTransport(rt http.RoundTripper) ControlPlaneOption {
+	return func(c *http.Client) {
+		if rt != nil {
+			c.Transport = drainingTransport{next: rt}
+		}
+	}
 }
 
 // drainingTransport makes Close read what is left of a body (up to 64 KiB) so the connection is reused even when the caller never read it.

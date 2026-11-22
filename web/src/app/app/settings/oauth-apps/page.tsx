@@ -58,6 +58,7 @@ import { AvatarUploader } from "@/components/app/avatar/AvatarUploader";
 import AppListingPanel from "./AppListingPanel";
 import { AppLogo, CopyButton, EventPicker } from "./parts";
 import RegisterAppDialog from "./RegisterAppDialog";
+import { hasBits, toggleBits } from "@/lib/bitmask";
 
 function formatRelative(date: Date | string | undefined): string {
     if (!date) return "never";
@@ -91,12 +92,12 @@ function ScopePicker({ value, onChange }: { value: number; onChange: (v: number)
         const g: Record<string, APIPermission[]> = {};
         const appScopes = perms.data?.app_scopes ?? 0;
         for (const p of perms.data?.permissions ?? []) {
-            if ((appScopes & p.value) !== p.value) continue;
+            if (!hasBits(appScopes, p.value)) continue;
             (g[p.category] ??= []).push(p);
         }
         return g;
     }, [perms.data]);
-    const toggle = (bit: number) => onChange(value & bit ? value & ~bit : value | bit);
+    const toggle = (bit: number) => onChange(toggleBits(value, bit));
     return (
         <div className="space-y-3">
             {Object.entries(grouped).map(([cat, list]) => (
@@ -104,7 +105,7 @@ function ScopePicker({ value, onChange }: { value: number; onChange: (v: number)
                     <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-1">{cat}</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                         {list.map((p) => {
-                            const on = (value & p.value) === p.value;
+                            const on = hasBits(value, p.value);
                             return (
                                 <button
                                     key={p.name}

@@ -217,6 +217,8 @@ func (h *Handler) GetUser(c *gin.Context) {
 	if sess := middleware.GetSession(c); sess != nil {
 		u.SessionMFAVerified = sess.MFAVerified
 	}
+	// The response is read by the person: a partner-bound account shows its contact email, never its sign-in address.
+	u.ForDisplay()
 
 	u.Folders, u.Tags, u.Categories = []models.Group{}, []models.Group{}, []models.Group{}
 	if orgID := middleware.GetOrganizationID(c); orgID != nil {

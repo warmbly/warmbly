@@ -151,6 +151,9 @@ func (s *service) ScheduleOrganizationDeletion(ctx context.Context, orgID, reque
 		if errors.Is(err, repository.ErrOrganizationCloudLinked) {
 			return nil, errx.NewWithIdentifier(errx.Conflict, "organization_cloud_connected", "Disconnect owned workspaces from Warmbly Cloud before scheduling deletion.")
 		}
+		if errors.Is(err, repository.ErrStorePurchasesActive) {
+			return nil, errx.NewWithIdentifier(errx.Conflict, "store_purchases_active", "Cancel this workspace's purchased mailboxes and turn off renewal on its purchased domains before deleting it.")
+		}
 		if errors.Is(err, repository.ErrPendingDeletionExists) {
 			return nil, errx.New(errx.Conflict, "organization is already scheduled for deletion")
 		}
@@ -277,6 +280,9 @@ func (s *service) ScheduleUserDeletion(ctx context.Context, userID uuid.UUID, re
 		if errors.Is(err, repository.ErrOwnedAgencyBilled) {
 			return nil, errx.NewWithIdentifier(errx.Conflict, "agency_subscription_active", "Cancel the plan of every agency you own before deleting your account.")
 		}
+		if errors.Is(err, repository.ErrStorePurchasesActive) {
+			return nil, errx.NewWithIdentifier(errx.Conflict, "store_purchases_active", "Cancel the purchased mailboxes and turn off renewal on the purchased domains of every workspace you own before deleting your account.")
+		}
 		if errors.Is(err, repository.ErrPendingDeletionExists) {
 			return nil, errx.New(errx.Conflict, "account is already scheduled for deletion")
 		}
@@ -383,7 +389,7 @@ func (s *service) ExecuteDuePendingDeletions(ctx context.Context) (int, int, err
 
 		if err := s.runHardDelete(ctx, &d); err != nil {
 			// A refusal waits for the account to change, so it is recorded and rechecked daily, not reported.
-			if errors.Is(err, repository.ErrAccountHoldsSharedWork) || errors.Is(err, repository.ErrOwnedWorkspaceBilled) || errors.Is(err, repository.ErrOwnedAgencyBilled) {
+			if errors.Is(err, repository.ErrAccountHoldsSharedWork) || errors.Is(err, repository.ErrOwnedWorkspaceBilled) || errors.Is(err, repository.ErrOwnedAgencyBilled) || errors.Is(err, repository.ErrStorePurchasesActive) {
 				log.Info().Err(err).Str("deletion_id", d.ID.String()).Msg("scheduled account deletion is waiting")
 				if merr := s.repo.MarkWaiting(ctx, d.ID, err.Error(), time.Now().Add(24*time.Hour)); merr != nil {
 					errs.CaptureException(fmt.Errorf("record waiting deletion %s: %w", d.ID, merr))

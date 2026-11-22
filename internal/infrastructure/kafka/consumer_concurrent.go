@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"sync"
 	"time"
 
@@ -14,15 +13,29 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const laneBuffer = 32
+// Read-ahead bounds. A slow key holds back only its own messages, so these cap memory, not throughput.
+const (
+	readAheadPerHandler = 256
+	minReadAhead        = 4096
+	maxReadAheadBytes   = 64 << 20
+	maxUncommitted      = 100_000
+)
+
+func readAheadLimit(handlers int) int { return max(handlers*readAheadPerHandler, minReadAhead) }
 
 type partitionKey struct {
 	topic     string
 	partition int32
 }
 
+type keyedMessage struct {
+	msg  *ckf.Message
+	key  string
+	size int
+}
+
 type laneResult struct {
-	msg *ckf.Message
+	keyedMessage
 	err error
 }
 
@@ -52,10 +65,48 @@ func messagePartition(msg *ckf.Message) partitionKey {
 	return k
 }
 
-func messageLane(key string, lanes int) int {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	return int(h.Sum32() % uint32(lanes))
+// keyScheduler runs each key's messages in read order, one at a time, and hands the next ready key to any free handler.
+type keyScheduler struct {
+	waiting map[string][]keyedMessage
+	busy    map[string]bool
+	ready   []string
+}
+
+func newKeyScheduler() *keyScheduler {
+	return &keyScheduler{waiting: map[string][]keyedMessage{}, busy: map[string]bool{}}
+}
+
+func (s *keyScheduler) push(m keyedMessage) {
+	s.waiting[m.key] = append(s.waiting[m.key], m)
+	if !s.busy[m.key] && len(s.waiting[m.key]) == 1 {
+		s.ready = append(s.ready, m.key)
+	}
+}
+
+func (s *keyScheduler) next() (keyedMessage, bool) {
+	if len(s.ready) == 0 {
+		return keyedMessage{}, false
+	}
+	key := s.ready[0]
+	s.ready[0] = ""
+	s.ready = s.ready[1:]
+	queue := s.waiting[key]
+	m := queue[0]
+	queue[0] = keyedMessage{}
+	if len(queue) == 1 {
+		delete(s.waiting, key)
+	} else {
+		s.waiting[key] = queue[1:]
+	}
+	s.busy[key] = true
+	return m, true
+}
+
+func (s *keyScheduler) finish(key string) {
+	delete(s.busy, key)
+	if len(s.waiting[key]) > 0 {
+		s.ready = append(s.ready, key)
+	}
 }
 
 // ConsumeConcurrent preserves key order and stores only contiguous successful offsets.
@@ -66,54 +117,66 @@ func (cons *Consumer) ConsumeConcurrent(ctx context.Context, lanes int, key func
 	if lanes <= 1 {
 		return cons.Consume(ctx, handler)
 	}
-	results := make(chan laneResult, lanes*laneBuffer)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	epoch := cons.assignmentEpoch.Load()
-	queues := make([]chan *ckf.Message, lanes)
+	work := make(chan keyedMessage, lanes)
+	results := make(chan laneResult, lanes)
 	var wg sync.WaitGroup
-	for i := range queues {
-		queues[i] = make(chan *ckf.Message, laneBuffer)
+	for range lanes {
 		wg.Add(1)
-		go func(queue <-chan *ckf.Message) {
+		go func() {
 			defer wg.Done()
-			var failed bool
-			for msg := range queue {
-				if failed || runCtx.Err() != nil {
-					results <- laneResult{msg: msg, err: errLaneStopped}
+			for m := range work {
+				if runCtx.Err() != nil {
+					results <- laneResult{keyedMessage: m, err: errLaneStopped}
 					continue
 				}
-				err := cons.handleWithRetry(runCtx, msg, handler)
-				failed = err != nil
-				results <- laneResult{msg: msg, err: err}
+				results <- laneResult{keyedMessage: m, err: cons.handleWithRetry(runCtx, m.msg, handler)}
 			}
-		}(queues[i])
+		}()
 	}
 
+	sched := newKeyScheduler()
 	partitions := map[partitionKey]*partitionOffsets{}
-	pending := 0
+	limit := readAheadLimit(lanes)
+	inFlight, buffered, bufferedBytes, uncommitted := 0, 0, 0, 0
 	var stopErr error
 	settle := func(r laneResult) {
+		inFlight--
+		buffered--
+		bufferedBytes -= r.size
+		sched.finish(r.key)
 		if r.err != nil {
 			if stopErr == nil && !errors.Is(r.err, errLaneStopped) {
 				stopErr = r.err
 			}
 			return
 		}
+		// Only the offset is needed from here on.
+		r.msg.Value, r.msg.Key, r.msg.Headers = nil, nil, nil
 		if errors.Is(stopErr, ErrClientClosed) || errors.Is(stopErr, ErrAssignmentLost) {
 			return
 		}
-		// Contiguous successes are stored even after another lane failed.
+		// Contiguous successes are stored even after another key failed.
 		p := partitions[messagePartition(r.msg)]
 		before := len(p.pending)
 		cons.storeSettled(partitions, r.msg, epoch, &stopErr)
-		pending -= before - len(p.pending)
+		uncommitted -= before - len(p.pending)
+	}
+	dispatch := func() {
+		for stopErr == nil && inFlight < lanes {
+			m, ok := sched.next()
+			if !ok {
+				return
+			}
+			inFlight++
+			work <- m
+		}
 	}
 	shutdown := func() error {
 		cancel()
-		for _, q := range queues {
-			close(q)
-		}
+		close(work)
 		go func() { wg.Wait(); close(results) }()
 		for r := range results {
 			settle(r)
@@ -122,6 +185,7 @@ func (cons *Consumer) ConsumeConcurrent(ctx context.Context, lanes int, key func
 	}
 
 	for stopErr == nil {
+		dispatch()
 		select {
 		case r := <-results:
 			settle(r)
@@ -131,7 +195,7 @@ func (cons *Consumer) ConsumeConcurrent(ctx context.Context, lanes int, key func
 			continue
 		default:
 		}
-		if pending >= lanes*(laneBuffer+1) {
+		if buffered >= limit || bufferedBytes >= maxReadAheadBytes || uncommitted >= maxUncommitted {
 			select {
 			case r := <-results:
 				settle(r)
@@ -179,23 +243,11 @@ func (cons *Consumer) ConsumeConcurrent(ctx context.Context, lanes int, key func
 			partitions[pk] = p
 		}
 		p.pending = append(p.pending, msg)
-		pending++
-		queue := queues[messageLane(laneKey, lanes)]
-	dispatch:
-		for {
-			select {
-			case queue <- msg:
-				break dispatch
-			case r := <-results:
-				settle(r)
-				if stopErr != nil {
-					break dispatch
-				}
-			case <-ctx.Done():
-				stopErr = ctx.Err()
-				break dispatch
-			}
-		}
+		uncommitted++
+		size := len(msg.Value) + len(msg.Key)
+		buffered++
+		bufferedBytes += size
+		sched.push(keyedMessage{msg: msg, key: laneKey, size: size})
 	}
 	return shutdown()
 }

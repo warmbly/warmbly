@@ -17,7 +17,8 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { SearchInput } from "@/components/ui/field";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
-import { Page, PageBody } from "@/components/layout/Page";
+import { Page, PageBody, TopbarAction } from "@/components/layout/Page";
+import usePartnerManaged from "@/hooks/usePartnerManaged";
 import { LogoStack } from "@/components/app/emails/ProviderLogo";
 import SendingDomainDrawer, { type DomainTab } from "@/components/app/emails/domains/SendingDomainDrawer";
 import BulkSetupDialog, { type BulkSetupIntent } from "@/components/app/emails/domains/BulkSetupDialog";
@@ -39,13 +40,17 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { vendorLabel } from "@/lib/api/models/app/emails/MailboxSources";
 import { cn } from "@/lib/utils";
+import PurchasedDomains from "@/components/app/store/PurchasedDomains";
+import { storeDisconnected, storeListable, useStoreDomains, useStoreState } from "@/lib/api/hooks/app/store/useStore";
+import StorePaused from "@/components/app/store/StorePaused";
 
-type Filter = "all" | "attention" | "vendor";
+type Filter = "all" | "attention" | "vendor" | "purchased";
 
 const FILTERS: { key: Filter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "attention", label: "Needs attention" },
     { key: "vendor", label: "Vendor managed" },
+    { key: "purchased", label: "Purchased" },
 ];
 
 const ROW_GRID =
@@ -88,6 +93,14 @@ export default function SendingDomainsPage() {
     const [bulk, setBulk] = React.useState<BulkSetupIntent | null>(null);
     const [nudgeHidden, setNudgeHidden] = React.useState(() => localStorage.getItem(NUDGE_KEY) ?? "");
 
+    const store = useStoreState(canView);
+    const managed = usePartnerManaged() !== null;
+    // Purchases stay listable while GraphKit is disconnected, so a workspace holding some keeps seeing them.
+    const listable = storeListable(store);
+    const purchased = useStoreDomains(canView && listable);
+    const purchasedCount = purchased.data?.data.length ?? 0;
+    // The tab shows while the store is on or holds live purchases, and stays for a workspace that already owns domains from it; never in a managed one.
+    const showPurchased = !managed && (listable || purchasedCount > 0);
     const domains = list.data?.data;
     const all = React.useMemo(() => domains ?? [], [domains]);
     const stats = React.useMemo(() => domainStats(all), [all]);
@@ -99,8 +112,15 @@ export default function SendingDomainsPage() {
             return !q || d.domain.includes(q);
         });
     }, [all, query, filter]);
-    const counts: Record<Filter, number> = { all: stats.domains, attention: stats.attention, vendor: stats.vendor };
-    const todo = React.useMemo(() => setupTodo(all), [all]);
+    const counts: Record<Filter, number> = { all: stats.domains, attention: stats.attention, vendor: stats.vendor, purchased: purchasedCount };
+    const tabs = showPurchased ? FILTERS : FILTERS.filter((f) => f.key !== "purchased");
+    const onPurchased = filter === "purchased" && showPurchased;
+    // Warmbly sets up the tracking host and redirect of a store domain itself, so the nudge never names one.
+    const storeDomains = purchased.data?.data;
+    const todo = React.useMemo(() => {
+        const managed = new Set((storeDomains ?? []).map((d) => d.name.toLowerCase()));
+        return setupTodo(managed.size ? all.filter((d) => !managed.has(d.domain.toLowerCase())) : all);
+    }, [all, storeDomains]);
     // Dismissed for the domains it named; a domain added later brings it back.
     const nudgeKey = todo.union.slice().sort().join(",");
     const showNudge = todo.union.length > 0 && nudgeHidden !== nudgeKey;
@@ -144,6 +164,20 @@ export default function SendingDomainsPage() {
         });
     const openBulk = (domains: string[], tracking: boolean, redirect: boolean) => setBulk({ domains, tracking, redirect });
 
+    // ?tab=purchased, where the store's renewal and payment notices link, opens the Purchased tab.
+    React.useEffect(() => {
+        if (searchParams.get("domain") || searchParams.get("tab") !== "purchased") return;
+        setFilter("purchased");
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete("tab");
+                return next;
+            },
+            { replace: true },
+        );
+    }, [searchParams, setSearchParams, setFilter]);
+
     // ?domain=<name>&tab=redirect opens that domain on arrival, e.g. from an import's DNS link.
     React.useEffect(() => {
         const d = searchParams.get("domain");
@@ -176,7 +210,7 @@ export default function SendingDomainsPage() {
     }
 
     const loading = list.isLoading;
-    const empty = !loading && !list.error && all.length === 0;
+    const empty = !loading && !list.error && all.length === 0 && !onPurchased && purchasedCount === 0;
 
     return (
         <Page>
@@ -193,14 +227,9 @@ export default function SendingDomainsPage() {
                 <span className="text-[12.5px] text-slate-600 truncate hidden lg:inline">
                     Authentication, tracking and redirects for every domain you send from
                 </span>
-                <button
-                    type="button"
-                    onClick={addMailboxes}
-                    className="ml-auto h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-                >
-                    <PlusIcon className="w-3 h-3" />
+                <TopbarAction writes onClick={addMailboxes} icon={<PlusIcon className="w-3 h-3" />} className="ml-auto">
                     Add mailboxes
-                </button>
+                </TopbarAction>
             </div>
 
             {!empty && (
@@ -289,7 +318,7 @@ export default function SendingDomainsPage() {
             {!empty && (
                 <div className="px-5 border-b border-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1.5 shrink-0">
                     <div className="flex items-center gap-1 -ml-2.5 overflow-x-auto overflow-y-hidden no-scrollbar" role="tablist" aria-label="Filter domains">
-                        {FILTERS.map((f) => {
+                        {tabs.map((f) => {
                             const active = filter === f.key;
                             return (
                                 <button
@@ -332,7 +361,12 @@ export default function SendingDomainsPage() {
             )}
 
             <PageBody>
-                {loading ? (
+                {onPurchased ? (
+                    <>
+                        {storeDisconnected(store) && store.kind === "locked" && <StorePaused status={store.status} className="mb-4" />}
+                        <PurchasedDomains query={query} />
+                    </>
+                ) : loading ? (
                     <RowsSkeleton />
                 ) : list.error ? (
                     <Empty title="Sending domains could not be loaded" body={buildError(list.error as unknown as AppError)} />

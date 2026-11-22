@@ -26,7 +26,7 @@ import (
 //	AWS_SECRET_ACCESS_KEY     -> S3 credential
 //
 // BLOB_BUCKET overrides defaultBucket when set.
-func NewFromEnv(ctx context.Context, awscfg aws.Config, defaultBucket string) (Store, error) {
+func NewFromEnv(ctx context.Context, awscfg aws.Config, defaultBucket string, brokered ...BrokeredOption) (Store, error) {
 	provider := os.Getenv("BLOB_PROVIDER")
 	if provider == "" {
 		provider = "s3"
@@ -71,7 +71,7 @@ func NewFromEnv(ctx context.Context, awscfg aws.Config, defaultBucket string) (S
 		if token == "" {
 			token = os.Getenv("ENCRYPTED_KEYS_WORKER_TOKEN")
 		}
-		return NewBrokered(baseURL, token)
+		return NewBrokered(baseURL, token, brokered...)
 	default:
 		return nil, fmt.Errorf("storage: unknown BLOB_PROVIDER %q (want: s3, filesystem, brokered)", provider)
 	}

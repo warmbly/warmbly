@@ -138,6 +138,8 @@ func holdCopy(hold *models.LeadHold) string {
 			return "Copied on the emails to " + r + ", so none of their own are sent"
 		}
 		return "Copied on another lead's emails, so none of their own are sent"
+	case models.LeadHoldSourceReview:
+		return "Waiting for review: someone must approve this lead before their first email can go out"
 	case models.LeadHoldSourceCRM:
 		// The reason already reads "Salesforce: ...", naming the rule that held it.
 		if r := strings.TrimSpace(hold.Reason); r != "" {

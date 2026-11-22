@@ -141,6 +141,31 @@ export function useRealtimeEvents() {
       const includes = (...needles: string[]) =>
         needles.some((needle) => event.includes(needle))
 
+      // A purchased domain or mailbox moved (an order step, a renewal, a mailbox connecting).
+      // Checked before the EMAIL and ACCOUNT branches, whose names these would otherwise match.
+      // Each carries org_id, id (of the order, domain or mailbox) and status; a mailbox also its
+      // domain_id, email_account_id and connect_state. None names its order, so an open order re-reads.
+      if (event.startsWith('STORE_')) {
+        const id = getString('id')
+        if (event === 'STORE_ORDER_UPDATED') {
+          invalidate([['store', 'orders', 'list'], ['store', 'status']])
+          if (id) invalidate([['store', 'orders', id]])
+          return
+        }
+        if (event === 'STORE_DOMAIN_UPDATED') {
+          invalidate([['store', 'domains', 'list'], ['store', 'orders'], ['sending-domains']])
+          if (id) invalidate([['store', 'domains', id]])
+          return
+        }
+        // A mailbox that connected shows up in the mailbox list, and its order's track moves.
+        const domainId = getString('domain_id')
+        const accountId = getString('email_account_id')
+        invalidate([['store', 'mailboxes'], ['store', 'orders'], ['emails', 'list']])
+        if (domainId) invalidate([['store', 'domains', domainId]])
+        if (accountId) invalidate([['emails', accountId]])
+        return
+      }
+
       const campaignId = getString('campaign_id')
       const contactId = getString('contact_id')
       const dealId = getString('deal_id')
@@ -578,6 +603,10 @@ export function useRealtimeEvents() {
           // A sending domain's root redirect or vendor forwarding changed. Its
           // tracking host is an email_account write, covered above.
           domain_redirect: [['sending-domains']],
+          // Purchased domains and mailboxes: an order placed, auto-renew or forwarding changed, a renewal, a cancellation.
+          store_order: [['store', 'orders'], ['store', 'status']],
+          store_domain: [['store', 'domains'], ['sending-domains']],
+          store_mailbox: [['store', 'mailboxes'], ['emails']],
           api_key: [['api-keys']],
           webhook: [['webhooks'], ['integrations', 'connections']],
           template: [['templates']],

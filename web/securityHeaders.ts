@@ -3,6 +3,11 @@ export const mailPreviewCsp = "default-src 'none'; script-src 'none'; object-src
 // The lead finder map's default tiles, styles, sprites and glyphs all come from here.
 export const mapTileOrigin = "https://tiles.openfreemap.org";
 
+// Stripe.js for saving a card at the mailbox checkout: its script, its API, and the frames of the card field and 3-D Secure.
+export const stripeScriptOrigin = "https://js.stripe.com";
+export const stripeApiOrigin = "https://api.stripe.com";
+export const stripeFrameOrigins = [stripeScriptOrigin, "https://hooks.stripe.com"];
+
 export function dashboardCsp({ scripts = [], styles = [], nonce = "", connections = [], analytics = [], images = [], frames = [] }: {
     scripts?: string[];
     styles?: string[];
@@ -16,14 +21,14 @@ export function dashboardCsp({ scripts = [], styles = [], nonce = "", connection
     const authorization = nonce ? [`'nonce-${nonce}'`] : [];
     return [
         "default-src 'none'",
-        `script-src 'self' https://challenges.cloudflare.com ${[...authorization, ...scripts, ...analytics].join(" ")}`,
+        `script-src 'self' https://challenges.cloudflare.com ${stripeScriptOrigin} ${[...authorization, ...scripts, ...analytics].join(" ")}`,
         "script-src-attr 'none'",
         `style-src 'self' ${[...authorization, ...styles].join(" ")}`,
         "style-src-attr 'unsafe-inline'",
-        `connect-src 'self' ${mapTileOrigin} ${[...connections, ...analytics].join(" ")}`,
+        `connect-src 'self' ${mapTileOrigin} ${stripeApiOrigin} ${[...connections, ...analytics].join(" ")}`,
         `img-src 'self' data: blob: ${images.join(" ")}`,
         "font-src 'self'",
-        `frame-src 'self' https://challenges.cloudflare.com ${frames.join(" ")}`,
+        `frame-src 'self' https://challenges.cloudflare.com ${[...stripeFrameOrigins, ...frames].join(" ")}`,
         "worker-src 'self' blob:",
         "media-src 'self' blob:",
         "manifest-src 'self'",

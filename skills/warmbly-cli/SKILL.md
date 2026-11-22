@@ -1,6 +1,6 @@
 ---
 name: warmbly-cli
-description: Use the `warmbly` CLI to drive Warmbly as a signed-in user - sign in with `warmbly auth login`, then work with campaigns, contacts, mailboxes, the unified inbox, analytics, webhooks and the live event stream on the hosted service or any self-hosted instance. Use whenever the task is to operate Warmbly the product from a terminal or a script and a `warmbly` binary is available. For instance recovery and accounts (database-level), use warmbly-ops instead.
+description: Use the `warmbly` CLI to drive Warmbly as a signed-in user - sign in with `warmbly auth login`, then work with campaigns, contacts, mailboxes, the unified inbox, analytics, webhooks, the domain and mailbox store, and the live event stream on the hosted service or any self-hosted instance. Use whenever the task is to operate Warmbly the product from a terminal or a script and a `warmbly` binary is available. For instance recovery and accounts (database-level), use warmbly-ops instead.
 ---
 
 # Driving Warmbly through the `warmbly` CLI
@@ -76,6 +76,7 @@ gives the arguments and flags. Ids are positional, not flags.
 | `contact` | list, view, create, edit, delete, lookup, timeline, emails, notes, import, imports, import-status, import-start, import-cancel, export, verify |
 | `mailbox` | list, view, edit, check, sync, skip-folders, identity, refresh-identity, behavior, warmup, hold, release, send |
 | `inbox` | list, view, thread, read, reply, compose, drafts, scheduled, snooze |
+| `store` | status, search, quote, buy, orders, `order view` / `order watch`, `domains` (list, view, renew, auto-renew, forwarding, transfer-out, connect, check-connection, remove, `dns` list/add/edit/delete/check), `mailboxes` (list, rename, cancel, resume, sign-in), `registrant` view/set |
 | `suppression` | the list of addresses and domains that get no campaign mail |
 | `segment`, `template`, `automation`, `form` | audiences, reply templates, automations, lead capture |
 | `deal`, `pipeline`, `task` | the CRM |
@@ -107,7 +108,8 @@ warmbly api /contacts/search -X POST --input filter.json
 These put real mail on the wire and prompt before doing so:
 `campaign start`, `campaign test`, `placement test`, `placement batch-start`,
 `mailbox send`, `inbox reply`, `inbox compose`, `inbox approve-draft`.
-Everything else is safe to run freely.
+Everything else is safe to run freely, apart from the store commands that
+charge or reveal a password (see "Buying domains and mailboxes" below).
 
 - With no terminal they refuse rather than send. `--yes` is what proceeds, so
   **only pass `--yes` when the user asked for that specific send.** Never add
@@ -163,6 +165,47 @@ Everything else is safe to run freely.
   `placement batch BATCH_ID` groups the result by sending domain and provider,
   and `batch-senders BATCH_ID` lists mailboxes worst first: a whole domain low
   is that domain, one mailbox low on a healthy domain is that mailbox.
+
+## Buying domains and mailboxes: it spends money
+
+`warmbly store` buys sending domains and mailboxes and manages them. Buying
+charges the workspace balance (then the card on file), so treat it like a send.
+
+```bash
+warmbly store status --json                     # enabled, plan_active, balance, prices, registrant
+warmbly store search getacme --tlds com,io --json
+warmbly store quote --domain getacme.com --mailbox ada@getacme.com:Ada:Lovelace \
+  --provider google --json                      # prices only, buys nothing
+warmbly store buy  --domain getacme.com --mailbox ada@getacme.com:Ada:Lovelace \
+  --provider google --yes --json                # only once the user agreed to that total
+warmbly store order watch ORDER_ID --json --interval 30s --timeout 6h
+```
+
+- **Quote first and show the user the result**: every line, `due_now_micros`
+  and `recurring_monthly_micros` (amounts are micro-dollars, 1000000 = $1.00).
+  Pass `--yes` to `store buy` only after they agreed to that cart. Without a
+  terminal, `buy` refuses unless `--yes` is given.
+- `buy` re-quotes and sends the quoted total as `expected_due_now_micros`. If
+  the price moved, nothing is charged; under `--yes` it exits naming the new
+  total. Show it to the user and ask again, do not just rerun.
+- `payment_method_required` means the balance is short and there is no card:
+  hand the printed setup link to the user. `registrant_required` means
+  `store registrant set` first (a new domain needs an owner's contact).
+- Cart flags: `--domain NAME[:YEARS]`, `--mailbox ADDRESS[:FIRST:LAST]`,
+  `--provider google|microsoft` (or `DOMAIN=PROVIDER`), `--first-name` /
+  `--last-name` for mailboxes without their own, `--admin ADDRESS`. Or
+  `--input @cart.json` with the `POST /store/quotes` body `{"items": [...]}`.
+- Mailbox setup takes hours. Give `order watch` a `--timeout`; it exits 0 on
+  `completed` and 1 on `failed`, `partially_failed` or timeout, and the order
+  carries on regardless.
+- `domains renew`, `domains transfer-out`, `mailboxes cancel`,
+  `mailboxes resume` and `mailboxes sign-in` also ask first: they charge or
+  change billing, and `sign-in` prints a mailbox password. Ask the user before
+  each one and never write a password or transfer code to a file or log.
+- Scopes: `READ_STORE` to read, `MANAGE_STORE` to change anything. Buying,
+  renewing, auto-renew, cancel, resume, transfer-out and the registrant also
+  need the key's member to hold `manage_billing`; a 403 there is that role,
+  not a missing scope.
 
 ## Migrating in from another tool
 
@@ -229,7 +272,8 @@ Streams the live event stream as newline-delimited JSON. Needs a key with
 
 - Connect a mailbox. That needs OAuth consent or a credential form in a
   browser: `warmbly browse mailboxes --no-browser` prints the URL to hand over.
-- Manage members, roles, invitations, workspace exports or billing. Every
+- Manage members, roles, invitations, workspace exports or billing (adding
+  money or a card; the store spends the balance but cannot top it up). Every
   `/organization/*` and `/subscription/*` route is session-only and refuses an
   API key, so there is no command for them. `warmbly browse settings
   --no-browser` prints the URL to hand over.

@@ -2386,6 +2386,8 @@ The workspace balance in US dollars: the plan's monthly allowance plus money the
 
 `GET /subscription/balance`
 
+`burn` is included only with `?include=burn`, because it sums a month of the ledger; the example below asks for it.
+
 ```json
 {
   "unlimited": false,
@@ -2410,9 +2412,20 @@ The workspace balance in US dollars: the plan's monthly allowance plus money the
     "failure_code": null,
     "failed_at": null
   },
-  "top_up": { "min_usd": 5, "max_usd": 5000, "presets_usd": [10, 25, 50, 100, 250], "default_usd": 25 }
+  "top_up": { "min_usd": 5, "max_usd": 5000, "presets_usd": [10, 25, 50, 100, 250], "default_usd": 25, "fee_bps": 300 },
+  "burn": {
+    "per_day_usd": 1.12,
+    "mailboxes_per_day_usd": 0.3,
+    "renewals_per_day_usd": 0.62,
+    "ai_per_day_usd": 0.2,
+    "mailboxes_monthly_usd": 9,
+    "renewals_due_usd": 11.17,
+    "billing_day": 17
+  }
 }
 ```
+
+`burn` is what the balance pays for a day, for a "lasts about N days" estimate: a month of [bought mailboxes](/guides/buy-mailboxes/) over 30 days, each auto-renewing domain charged in the next 60 days over the days until its charge, and the average daily AI spend over the last 30 days. `billing_day` is the day of the month the mailboxes are billed, `null` before the first one.
 
 `payment_method` is `null` with no saved card. `retry_at` and `retry_reason` are set while a declined automatic reload waits for its next try (1, 6 and 18 hours after the attempts before it). `failure_code` and `failed_at` record why automatic reload last turned itself off: `card_declined`, `authentication_required`, `no_payment_method`, `payment_failed`, or `unavailable` when Stripe could not be reached after 8 tries. A reload waiting for its next try is canceled when automatic reload is turned off or the balance is back above `threshold_usd`.
 
@@ -2424,7 +2437,7 @@ The workspace balance in US dollars: the plan's monthly allowance plus money the
 |-------|------|----------|-------------|
 | `amount_usd` | number | yes | From `5` to `5000`, rounded to whole cents. |
 
-Charges the saved card now, billed as a Stripe invoice, and answers `200` with `{"status": "paid", "amount_usd": 25, "balance_usd": 46.4375, "charge_in_progress": false}`. While the payment is still going through (the card network has not confirmed, or Stripe did not answer and Warmbly retries it in the background) it answers `202` with `status` `processing` and `charge_in_progress` `true`; the money is added when the payment lands. Needs an active paid plan (`403` otherwise). Send an `Idempotency-Key` to retry the call safely; without one, a retry while the first payment is pending answers `409` `charge_in_progress` rather than charging twice.
+Charges the saved card now, billed as a Stripe invoice, and answers `200` with `{"status": "paid", "amount_usd": 25, "charged_usd": 25.75, "balance_usd": 46.4375, "charge_in_progress": false}`. The card is charged `amount_usd` plus the processing fee of `top_up.fee_bps` basis points (3%), rounded half up to the cent and billed as its own invoice line; `amount_usd` is what the balance gains and `charged_usd` what the card paid. While the payment is still going through (the card network has not confirmed, or Stripe did not answer and Warmbly retries it in the background) it answers `202` with `status` `processing` and `charge_in_progress` `true`; the money is added when the payment lands. Needs an active paid plan (`403` otherwise). Send an `Idempotency-Key` to retry the call safely; without one, a retry while the first payment is pending answers `409` `charge_in_progress` rather than charging twice.
 
 | Status | Code | Meaning |
 |--------|------|---------|
@@ -2436,13 +2449,25 @@ Charges the saved card now, billed as a Stripe invoice, and answers `200` with `
 
 `POST /subscription/balance/checkout`
 
-Takes the same `amount_usd` and returns `{"session_id": "cs_...", "checkout_url": "https://checkout.stripe.com/..."}`. Checkout saves the card for later one-click payments. The money is added when Stripe confirms the payment, in the webhook, exactly once.
+Takes the same `amount_usd` and returns `{"session_id": "cs_...", "checkout_url": "https://checkout.stripe.com/..."}`. Checkout shows the amount and the 3% processing fee as two lines, and the balance gains `amount_usd`. Checkout saves the card for later one-click payments. The money is added when Stripe confirms the payment, in the webhook, exactly once.
 
 #### Save or replace the card
 
 `POST /subscription/balance/payment-method`
 
 No body. Returns a Checkout `checkout_url` in setup mode, which saves a card without charging it.
+
+#### Save a card in the page
+
+`POST /subscription/balance/setup-intent`
+
+No body. Returns `{"client_secret": "seti_..._secret_...", "publishable_key": "pk_..."}`: a Stripe SetupIntent on the workspace's customer, card only, for off-session charges. Confirm it with Stripe.js (`stripe.confirmSetup`), which runs any 3-D Secure check in the page; the card is saved without a charge. A workspace with no Stripe customer yet gets one. `409` when the workspace has no billing account at all, in which case use `POST /subscription/balance/payment-method`.
+
+#### Make a saved card the default
+
+`POST /subscription/balance/setup-intent/default`
+
+`{"setup_intent_id": "seti_..."}`. Makes the card a confirmed SetupIntent from `POST /subscription/balance/setup-intent` saved the workspace's default, so the next top-up, automatic reload or store charge uses it, including when it replaces an older card. Call it after `stripe.confirmSetup` succeeds and before charging. Answers `204`. `404` when the SetupIntent is not on the workspace's Stripe customer, `409` while it has not succeeded. Setting the same default again changes nothing, so a retry is safe.
 
 #### Change automatic reload
 
@@ -2452,8 +2477,8 @@ No body. Returns a Checkout `checkout_url` in setup mode, which saves a card wit
 |-------|------|----------|-------------|
 | `enabled` | boolean | yes | Turns automatic reload on or off. Turning it on needs a saved card and an active paid plan. |
 | `threshold_usd` | number | yes | Reload when the balance falls below this, `0.01` to `1000`. |
-| `amount_usd` | number | yes | What each reload adds, `5` to `5000`, more than `threshold_usd`. |
-| `monthly_limit_usd` | number | yes | The most reloaded in a calendar month, at least `amount_usd` and at most `50000`. |
+| `amount_usd` | number | yes | What each reload adds, `5` to `5000`, more than `threshold_usd`. Each reload charges it plus the 3% processing fee. |
+| `monthly_limit_usd` | number | yes | The most reloaded in a calendar month (added to the balance, the fee not counted), at least `amount_usd` and at most `50000`. |
 
 Answers with the body of `GET /subscription/balance`. Refusals: `422` `recharge_too_small` (the amount is not above the threshold), `422` `monthly_limit_too_small` (the limit is below one reload or above the maximum), `409` `payment_method_required`.
 
@@ -2492,7 +2517,7 @@ The endpoints from before the dollar balance remain and carry dollar figures nex
 | `GET /subscription/credits` | `balance_usd`, `monthly_usd`, `purchased_usd`, `monthly_allowance_usd`, `total_purchased_usd` |
 | `GET /subscription/credits/transactions` | Per row: `amount_usd` (negative for a charge), `cost_usd` (the provider price before the markup), `input_tokens`, `output_tokens`, `quantity` (units such as web searches), `balance_after_usd`, `monthly_after_usd`, `purchased_after_usd`, `purchased_delta_usd`. Keyset paginated with an opaque `cursor`. |
 | `GET /subscription/credits/usage?days=30` | `spent_today_usd`, `spent_week_usd`, `spent_month_usd`, `limit_daily_usd`, `limit_weekly_usd`, `limit_monthly_usd`, and `amount_usd` on each `series`, `by_reason` and `by_model` entry. `days` is 1 to 90. |
-| `GET` and `PATCH /subscription/credits/settings` | `spend_limit_daily_usd`, `spend_limit_weekly_usd`, `spend_limit_monthly_usd`, `member_limit_daily_usd`, `member_limit_weekly_usd`, `member_limit_monthly_usd`, `low_balance_usd`, and read-only `auto_reload_enabled`. A limit left out of the `PATCH` body is removed. |
+| `GET` and `PATCH /subscription/credits/settings` | `spend_limit_daily_usd`, `spend_limit_weekly_usd`, `spend_limit_monthly_usd`, `member_limit_daily_usd`, `member_limit_weekly_usd`, `member_limit_monthly_usd`, `low_balance_usd`, `ai_overage_enabled` (whether AI may use money the workspace added once the plan's included usage is spent; default `true`), `ai_overage_monthly_limit_usd` and `ai_overage_monthly_limit_micros` (the most AI may take from that money per calendar month, UTC; `null` is no cap; the `PATCH` accepts either, micros first), and read-only `auto_reload_enabled`. A spend limit left out of the `PATCH` body is removed; the two `ai_overage_*` fields left out are kept, and a `null` limit removes it. |
 
 `POST /subscription/credits/checkout`, which bought a fixed credit pack, is removed.
 

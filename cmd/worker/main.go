@@ -29,6 +29,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/nodeagent"
 	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
+	"github.com/warmbly/warmbly/internal/pkg/nodebackend"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -83,7 +84,10 @@ func main() {
 		masterKey += "-dev"
 	}
 
-	kmsClient, err := kms.FromEnv(ctx, awscfg, masterKey)
+	// Every call back to the control plane goes to its private address when this node can reach it.
+	controlPlane := nodebackend.Resolve(ctx, os.Getenv, publicBackendURL(), log.Printf)
+
+	kmsClient, err := kms.FromEnv(ctx, awscfg, masterKey, kms.WithControlPlane(controlPlane))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -91,6 +95,7 @@ func main() {
 	encryptedKeys, err := encryptedkeys.FromEnv(
 		encryptedkeys.Deps{},
 		"http",
+		encryptedkeys.WithControlPlane(controlPlane),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -100,27 +105,28 @@ func main() {
 	// The worker reaches the messageId -> internal email map over the internal
 	// backend API (same base URL + token as the DEK store) rather than touching
 	// Postgres directly, per the worker no-direct-SQL rule in CLAUDE.md.
-	internalBaseURL := strings.TrimRight(os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"), "/")
+	internalBaseURL := controlPlane.BaseURL(strings.TrimRight(os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"), "/"))
 	internalToken := config.NodeAPIToken()
-	emailMessageMapRepo, err := repository.NewHTTPEmailMessageMapRepository(internalBaseURL, internalToken)
+	viaControlPlane := repository.WithControlPlaneTransport(controlPlane.Transport())
+	emailMessageMapRepo, err := repository.NewHTTPEmailMessageMapRepository(internalBaseURL, internalToken, viaControlPlane)
 	if err != nil {
 		log.Fatal(err)
 	}
 	// Same channel for the sync governor's "is this a reply to our own
 	// mail?" lookup, which decides the priority lane.
-	syncContextRepo, err := repository.NewHTTPSyncContextRepository(internalBaseURL, internalToken)
+	syncContextRepo, err := repository.NewHTTPSyncContextRepository(internalBaseURL, internalToken, viaControlPlane)
 	if err != nil {
 		log.Fatal(err)
 	}
 	// Mailboxes managed by Warmbly Cloud send with access tokens the backend
 	// brokers; the refresh grant never reaches the worker.
-	tokenBroker, err := repository.NewHTTPBrokeredTokenClient(internalBaseURL, internalToken)
+	tokenBroker, err := repository.NewHTTPBrokeredTokenClient(internalBaseURL, internalToken, viaControlPlane)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Blob storage (S3 by default, filesystem when BLOB_PROVIDER=filesystem).
-	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main")
+	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main", storage.WithControlPlane(controlPlane))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -170,7 +176,7 @@ func main() {
 	}
 
 	var workerService *worker.WorkerService
-	agent := newNodeAgent(workerID, bindIP, func() int {
+	agent := newNodeAgent(workerID, bindIP, controlPlane, func() int {
 		if workerService == nil {
 			return 0
 		}
@@ -249,7 +255,7 @@ func main() {
 // newNodeAgent builds the shared fleet agent. It replaces the worker's own
 // heartbeat loop: identity, usage reporting and self-update are node concerns,
 // identical for every role, so they live in one place.
-func newNodeAgent(workerID uuid.UUID, bindIP string, mailboxes func() int) *nodeagent.Agent {
+func newNodeAgent(workerID uuid.UUID, bindIP string, controlPlane nodebackend.Backend, mailboxes func() int) *nodeagent.Agent {
 	reportedIP := os.Getenv("WORKER_PUBLIC_IP")
 	if reportedIP == "" && bindIP != "default route" {
 		reportedIP = bindIP
@@ -265,7 +271,8 @@ func newNodeAgent(workerID uuid.UUID, bindIP string, mailboxes func() int) *node
 		CapacityTarget:     workerCapacityTarget(),
 		Capacity:           workerCapacityFromMemory(mailboxes),
 		Version:            buildVersion(),
-		BaseURL:            os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"),
+		BaseURL:            controlPlane.BaseURL(os.Getenv("ENCRYPTED_KEYS_BACKEND_URL")),
+		HTTPClient:         controlPlane.Client(10 * time.Second),
 		Token:              config.NodeAPIToken(),
 		Credential:         nodeauth.FromEnv().Credential,
 		// Written for the host-side updater installed by `warmbly join`.
@@ -307,6 +314,14 @@ func nodeRegion() string {
 		return v
 	}
 	return os.Getenv("WORKER_REGION")
+}
+
+// publicBackendURL is where a private-address failure falls back to, the address the brokered providers read too.
+func publicBackendURL() string {
+	if v := os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"); v != "" {
+		return v
+	}
+	return os.Getenv("WARMBLY_BACKEND_URL")
 }
 
 // buildVersion is the image tag this build reports. Set by the join script

@@ -3,7 +3,7 @@
 /** Adding money and automatic reload take $5 to $5,000 at a time. */
 export const MIN_TOP_UP_USD = 5;
 export const MAX_TOP_UP_USD = 5000;
-/** The amounts offered first; any other is typed. */
+/** The amounts offered first when the server does not say; any other is typed. */
 export const TOP_UP_PRESETS = [10, 25, 50, 100, 250] as const;
 /** The amount picked first when nothing else says. */
 export const DEFAULT_TOP_UP_USD = 25;
@@ -45,12 +45,19 @@ export function parseUsd(text: string): number | null {
     return Math.round(Number(t) * 100) / 100;
 }
 
-/** An amount the server accepts for adding money or a reload. */
-export function validTopUp(usd: number | null): usd is number {
-    return usd !== null && usd >= MIN_TOP_UP_USD && usd <= MAX_TOP_UP_USD;
-}
-
 /** Rounds to whole cents, the unit a card is charged in. */
 export function roundCents(n: number): number {
     return Math.round(n * 100) / 100;
+}
+
+/** A card payment into a balance adds a 3% processing fee on top of the amount added (models.TopUpFeeBasisPoints). */
+export const TOP_UP_FEE_BPS = 300;
+export const TOP_UP_FEE_LABEL = "Processing fee (3%)";
+
+/** What adding an amount by card costs: the fee, rounded half up to the cent, and the total charged. */
+export function topUpCharge(usd: number): { feeUsd: number; totalUsd: number } {
+    const cents = Math.round(usd * 100);
+    if (!(cents > 0)) return { feeUsd: 0, totalUsd: Math.max(0, cents) / 100 };
+    const fee = Math.floor((cents * TOP_UP_FEE_BPS + 5000) / 10000);
+    return { feeUsd: fee / 100, totalUsd: (cents + fee) / 100 };
 }

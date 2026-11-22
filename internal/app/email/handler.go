@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/lifecycle"
 	"github.com/warmbly/warmbly/internal/app/worker"
 	"github.com/warmbly/warmbly/internal/config"
@@ -553,7 +554,7 @@ func (s *emailService) canUseWarmupPool(ctx context.Context, account *models.Ema
 	if account == nil || account.Status != "active" || account.OrganizationID == nil || s.featureGate == nil {
 		return false
 	}
-	canWarmup, err := s.featureGate.CanUseWarmup(ctx, *account.OrganizationID)
+	canWarmup, err := feature.CanWarmMailbox(ctx, s.featureGate, *account.OrganizationID, account.ID)
 	return err == nil && canWarmup
 }
 

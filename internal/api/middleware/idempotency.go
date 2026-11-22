@@ -171,12 +171,12 @@ const (
 )
 
 // classifyOutcome sorts a finished request: refused before it ran frees the key,
-// a server error is uncertain, anything else is replayed.
+// a server error or an abandoned request is uncertain, anything else is replayed.
 func classifyOutcome(status int) idempotentOutcome {
 	switch {
 	case status == http.StatusUnauthorized, status == http.StatusForbidden, status == http.StatusTooManyRequests:
 		return outcomeRefused
-	case status >= http.StatusInternalServerError:
+	case status >= http.StatusInternalServerError, status == errx.StatusClientClosedRequest:
 		return outcomeUncertain
 	default:
 		return outcomeDefinite

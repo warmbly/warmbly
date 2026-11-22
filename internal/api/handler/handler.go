@@ -54,6 +54,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/keystatus"
 	"github.com/warmbly/warmbly/internal/app/leadfinder"
+	"github.com/warmbly/warmbly/internal/app/leadreview"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboxconnect"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
@@ -69,6 +70,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
+	"github.com/warmbly/warmbly/internal/app/partner"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/pipedrive"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -84,6 +86,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
 	"github.com/warmbly/warmbly/internal/app/socket"
+	"github.com/warmbly/warmbly/internal/app/store"
 	"github.com/warmbly/warmbly/internal/app/stripe"
 	"github.com/warmbly/warmbly/internal/app/subscription"
 	"github.com/warmbly/warmbly/internal/app/sysstatus"
@@ -170,9 +173,11 @@ type Handler struct {
 	TagService      group.GroupService
 	CategoryService group.GroupService
 
-	TzService           tz.TzService
-	SocketService       socket.SocketService
-	TasksService        tasks.TasksService
+	TzService     tz.TzService
+	SocketService socket.SocketService
+	TasksService  tasks.TasksService
+	// LeadReview is the campaign Review tab: readiness, per-lead emails and approvals.
+	LeadReview          *leadreview.Service
 	NotificationService notification.Service
 	TwoFAService        twofa.Service
 	// ViewPreferencesService keeps each member's saved list layouts.
@@ -279,8 +284,10 @@ type Handler struct {
 	WarmupContentService warmupcontent.Service
 
 	// AI writing assistant + credit ledger.
-	CreditService    credits.CreditService
-	BalanceService   *balance.Service
+	CreditService  credits.CreditService
+	BalanceService *balance.Service
+	// StoreService sells domains and mailboxes; nil or disabled when GraphKit is not configured.
+	StoreService     *store.Service
 	WritingGenerator generation.WritingGenerator
 
 	// AI provider layer (RunAgent tool-loop backend) + pluggable web search,
@@ -434,6 +441,8 @@ type Handler struct {
 	BrandService *brandkit.Service
 	// PortalHandoff signs clients in to a portal from the main address; nil answers 404.
 	PortalHandoffs *portalhandoff.Service
+	// Partners runs the reseller API and managed workspaces; nil answers the partner API with 401.
+	Partners *partner.Service
 	// CrossOrgCopy copies campaigns and templates into the caller's other workspaces.
 	CrossOrgCopy *crossorgcopy.Service
 

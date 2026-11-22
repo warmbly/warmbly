@@ -190,6 +190,11 @@ func (h *Handler) GetCurrentOrganization(c *gin.Context) {
 	if h.AgencyService != nil {
 		result.Agency = h.AgencyService.AgencyOf(c.Request.Context(), *orgID)
 	}
+	if h.Partners != nil {
+		if ref, err := h.Partners.ManagedRef(c.Request.Context(), *orgID); err == nil {
+			result.Partner = ref
+		}
+	}
 	if restricted {
 		c.JSON(http.StatusOK, scopedOrganizationWithLimits{
 			OrganizationWithLimits: result,

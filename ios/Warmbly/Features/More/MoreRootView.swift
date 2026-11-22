@@ -1,78 +1,115 @@
 import SwiftUI
 
 /// The settings tab: one of the hub layouts over a navigation stack, with the
-/// workspace switcher, the browsers it opens over everything and log out.
+/// workspace switcher, the browsers it opens over everything and log out. On
+/// a wide window the hub becomes a list with the chosen page beside it.
 struct MoreRootView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.shellLayout) private var shell
     @State private var store = SettingsHubStore()
-    @State private var path = NavigationPath()
+    @State private var path: [SettingsDestination] = []
+    @State private var pane: SettingsPane?
+    @State private var contentWidth: CGFloat?
     @State private var cover: SettingsCover?
     @State private var showSwitcher = false
     @State private var confirmLogout = false
 
     var body: some View {
-        NavigationStack(path: $path) {
-            hub
-                .toolbarVisibility(.hidden, for: .navigationBar)
-                .navigationDestination(for: SettingsDestination.self) { destination in
-                    switch destination {
-                    case .profile: ProfileSettingsView()
-                    case .notifications: NotificationsView()
-                    case .security: SecurityInfoView()
-                    case .billing: BillingView()
-                    case .team: TeamMembersView()
-                    case .templates: TemplatesListView()
-                    case .activity: AuditLogView()
-                    }
-                }
-                .refreshable {
-                    await load()
-                    await env.session.refreshCurrentOrg()
-                }
-        }
-        .task { await load() }
-        .onChange(of: env.realtime.pulse(for: .billing)) { Task { await load() } }
-        .onChange(of: env.realtime.pulse(for: .notifications)) { Task { await load() } }
-        .onChange(of: env.realtime.pulse(for: .emailAccounts)) { Task { await load() } }
-        .onChange(of: env.realtime.pulse(for: .me)) { Task { await load() } }
-        .onChange(of: env.realtime.pulse(for: .team)) { Task { await env.session.refreshCurrentOrg() } }
-        .onChange(of: env.session.currentOrgID) { Task { await load() } }
-        .onChange(of: path.count) { _, count in
-            // Back on the hub: pick up whatever the page changed.
-            if count == 0 { Task { await load() } }
-        }
-        .sheet(isPresented: $showSwitcher) {
-            MoreWorkspaceSwitcherSheet()
-        }
-        .fullScreenCover(item: $cover) { cover in
-            switch cover {
-            case .mailboxes: MailboxesRootView(onClose: { self.cover = nil })
-            case .analytics: AnalyticsRootView(onClose: { self.cover = nil })
-            case .deals: CRMDealsView()
-            case .tasks: CRMTasksView()
-            case .meetings: CRMMeetingsView()
+        // The shell's estimate covers the first frame, before the page has measured itself.
+        let width = contentWidth ?? (shell.windowSize.width - shell.leadingInset)
+        let wide = width >= SplitMetrics.detailMinContentWidth
+        layout(wide: wide, width: width)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
+            .onChange(of: wide, initial: true) { _, wide in handOff(wide) }
+            .onChange(of: path) { if wide { handOff(true) } }
+            .task { await load() }
+            .onChange(of: env.realtime.pulse(for: .billing)) { Task { await load() } }
+            .onChange(of: env.realtime.pulse(for: .notifications)) { Task { await load() } }
+            .onChange(of: env.realtime.pulse(for: .emailAccounts)) { Task { await load() } }
+            .onChange(of: env.realtime.pulse(for: .me)) { Task { await load() } }
+            .onChange(of: env.realtime.pulse(for: .team)) { Task { await env.session.refreshCurrentOrg() } }
+            .onChange(of: env.session.currentOrgID) { Task { await load() } }
+            .onChange(of: path.count) { _, count in
+                // Back on the hub: pick up whatever the page changed.
+                if count == 0 { Task { await load() } }
             }
-        }
-        .confirmationDialog("Log out of Warmbly?", isPresented: $confirmLogout, titleVisibility: .visible) {
-            Button("Log out", role: .destructive) {
-                Task { await env.session.logout() }
+            .onChange(of: pane) { Task { await load() } }
+            .sheet(isPresented: $showSwitcher) {
+                MoreWorkspaceSwitcherSheet()
             }
-            Button("Cancel", role: .cancel) {}
-        }
-        #if DEBUG
-        .onAppear(perform: applyDebugLaunch)
-        #endif
+            .fullScreenCover(item: $cover) { cover in
+                switch cover {
+                case .mailboxes: MailboxesRootView(onClose: { self.cover = nil })
+                case .analytics: AnalyticsRootView(onClose: { self.cover = nil })
+                case .deals: CRMDealsView()
+                case .tasks: CRMTasksView()
+                case .meetings: CRMMeetingsView()
+                }
+            }
+            .confirmationDialog("Log out of Warmbly?", isPresented: $confirmLogout, titleVisibility: .visible) {
+                Button("Log out", role: .destructive) {
+                    Task { await env.session.logout() }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            #if DEBUG
+            .onAppear(perform: applyDebugLaunch)
+            #endif
     }
 
     @ViewBuilder
-    private var hub: some View {
-        let ctx = SettingsHubContext(
+    private func layout(wide: Bool, width: CGFloat) -> some View {
+        if wide {
+            SettingsSplitView(ctx: context, selection: $pane, contentWidth: width, refresh: refresh)
+        } else {
+            NavigationStack(path: $path) {
+                hub
+                    .toolbarVisibility(.hidden, for: .navigationBar)
+                    .navigationDestination(for: SettingsDestination.self) { destination in
+                        switch destination {
+                        case .profile: ProfileSettingsView()
+                        case .notifications: NotificationsView()
+                        case .security: SecurityInfoView()
+                        case .billing: BillingView()
+                        case .team: TeamMembersView()
+                        case .templates: TemplatesListView()
+                        case .activity: AuditLogView()
+                        }
+                    }
+                    .refreshable { await refresh() }
+            }
+        }
+    }
+
+    /// Carries the open page across a resize: pushed when narrow, selected when wide.
+    private func handOff(_ wide: Bool) {
+        if wide {
+            if let first = path.first {
+                pane = SettingsPane(first)
+                path.removeAll()
+            }
+        } else {
+            if let destination = pane?.destination { path = [destination] }
+            pane = nil
+        }
+    }
+
+    private func refresh() async {
+        await load()
+        await env.session.refreshCurrentOrg()
+    }
+
+    private var context: SettingsHubContext {
+        SettingsHubContext(
             store: store,
             present: { cover = $0 },
             switchWorkspace: { showSwitcher = true },
             logout: { confirmLogout = true }
         )
-        SettingsTilesHub(ctx: ctx)
+    }
+
+    private var hub: some View {
+        SettingsTilesHub(ctx: context)
     }
 
     private func load() async {
@@ -85,14 +122,15 @@ struct MoreRootView: View {
     }
 
     #if DEBUG
-    /// WARMBLY_DEBUG_SETTINGS opens a page for scripted screenshots.
+    /// WARMBLY_DEBUG_SETTINGS opens a page for scripted screenshots; wide, the hand-off selects it.
     private func applyDebugLaunch() {
-        guard path.isEmpty, let page = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_SETTINGS"] else { return }
+        guard path.isEmpty, pane == nil, let page = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_SETTINGS"] else { return }
         let destinations: [String: SettingsDestination] = [
             "profile": .profile, "notifications": .notifications, "security": .security,
             "billing": .billing, "team": .team, "templates": .templates, "activity": .activity,
         ]
         if let destination = destinations[page] { path.append(destination) }
+        if page == "appearance" { pane = .appearance }
         if let target = SettingsCover(rawValue: page) { cover = target }
     }
     #endif

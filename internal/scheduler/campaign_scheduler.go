@@ -953,13 +953,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		candidateTime = resolveConflicts(candidateTime, booked, gapSeconds)
 	}
 
-	// STEP 13: Apply human-like distribution (favor morning/afternoon peaks).
-	// Skipped for behaviour-profiled mailboxes: the profile already describes
-	// this mailbox's workday and its own lunch break, and layering the generic
-	// curve on top would drag sends away from the hours the customer chose.
-	if !preview && !selected.Behavior.Enabled {
-		candidateTime = applyDistributionCurve(candidateTime, campaignTZ)
-	}
+	// No generic morning/lunch curve here: a campaign is one chain, so pushing one slot an hour out idles every mailbox in it.
 
 	// STEP 13.5: Aim the send at the RECIPIENT's business hours. hardFloor
 	// moves with it, because the task handler sends whatever pair this returns

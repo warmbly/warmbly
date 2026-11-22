@@ -11,6 +11,7 @@ export type AuditAction =
     | "stop"
     | "pause"
     | "resume"
+    | "approve"
     | "send"
     | "duplicate"
     | "disconnect"
@@ -34,8 +35,8 @@ export type AuditAction =
 export type AuditEntityType =
     | "campaign"
     // One contact inside one campaign: the entity id is the contact and the
-    // metadata carries the campaign. Written when a lead's flow is held or
-    // resumed.
+    // metadata carries the campaign. Written when a lead's flow is held,
+    // resumed, approved or reopened, or one of its emails is personalized.
     | "campaign_lead"
     | "contact"
     | "email_account"

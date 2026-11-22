@@ -7,6 +7,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/balance"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/store"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/utils/paging"
@@ -119,7 +121,7 @@ func (h *Handler) GetCreditBalance(c *gin.Context) {
 	})
 }
 
-// GetBalance — GET /subscription/balance
+// GetBalance — GET /subscription/balance[?include=burn]
 // Everything the balance page shows: what is left, the allowance, the saved
 // card, automatic reload and its state, and the top-up bounds.
 func (h *Handler) GetBalance(c *gin.Context) {
@@ -154,6 +156,7 @@ func (h *Handler) GetBalance(c *gin.Context) {
 		"top_up": gin.H{
 			"min_usd": usd(credits.TopUpMin), "max_usd": usd(credits.TopUpMax),
 			"presets_usd": []int{10, 25, 50, 100, 250}, "default_usd": 25,
+			"fee_bps": models.TopUpFeeBasisPoints,
 		},
 	}
 	// What the workspace's agency balance would add, so the dashboard does not call a funded client out of balance.
@@ -190,7 +193,47 @@ func (h *Handler) GetBalance(c *gin.Context) {
 		out["payment_method"] = st.PaymentMethod
 		out["charge_in_progress"] = st.Pending != nil && st.Pending.RetryAt == nil
 	}
+	// The daily draw sums a month of the ledger, so only the billing page asks for it.
+	if c.Query("include") == "burn" {
+		out["burn"] = h.balanceBurn(c, orgID)
+	}
+	// Lets the page save a card with Stripe.js instead of leaving for Checkout.
+	if h.StripeService != nil {
+		if key := h.StripeService.PublishableKey(); key != "" {
+			out["stripe_publishable_key"] = key
+		}
+	}
 	c.JSON(http.StatusOK, out)
+}
+
+// balanceBurn is what the balance pays for a day, so the page can say how long it lasts. Best effort:
+// a part that cannot be read counts as nothing rather than failing the balance.
+func (h *Handler) balanceBurn(c *gin.Context, orgID uuid.UUID) gin.H {
+	ctx := c.Request.Context()
+	var upkeep *store.Upkeep
+	if h.StoreService != nil {
+		if u, err := h.StoreService.Upkeep(ctx, orgID); err == nil {
+			upkeep = u
+		}
+	}
+	ai, _ := h.CreditService.AIDailyAverage(ctx, orgID, 30)
+	b := store.BurnPerDay(upkeep, int64(ai), time.Now())
+	out := gin.H{
+		"per_day_usd":           usd(models.Micro(b.PerDayMicros)),
+		"mailboxes_per_day_usd": usd(models.Micro(b.MailboxesPerDayMicros)),
+		"renewals_per_day_usd":  usd(models.Micro(b.RenewalsPerDayMicros)),
+		"ai_per_day_usd":        usd(models.Micro(b.AIPerDayMicros)),
+		"mailboxes_monthly_usd": 0.0,
+		"renewals_due_usd":      usd(models.Micro(b.RenewalsDueMicros)),
+		"billing_day":           nil,
+	}
+	if upkeep != nil {
+		out["mailboxes_monthly_usd"] = usd(models.Micro(upkeep.MonthlyMailboxesMicros))
+		if upkeep.BillingDay > 0 {
+			out["billing_day"] = upkeep.BillingDay
+		}
+	}
+	return out
 }
 
 func nilIfEmpty(s string) any {
@@ -274,7 +317,7 @@ func (h *Handler) TopUpBalance(c *gin.Context) {
 		status = http.StatusAccepted
 	}
 	c.JSON(status, gin.H{
-		"status": res.Status, "amount_usd": usd(res.Amount), "balance_usd": usd(bal),
+		"status": res.Status, "amount_usd": usd(res.Amount), "charged_usd": float64(res.ChargedCents) / 100, "balance_usd": usd(bal),
 		"charge_in_progress": res.Status != "paid",
 	})
 }
@@ -325,6 +368,56 @@ func (h *Handler) CreatePaymentMethodSetup(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"session_id": sess.ID, "checkout_url": sess.URL})
+}
+
+// CreateCardSetupIntent — POST /subscription/balance/setup-intent
+// A SetupIntent the dashboard confirms in the page with Stripe.js, saving the
+// card for off-session charges without leaving for Checkout.
+func (h *Handler) CreateCardSetupIntent(c *gin.Context) {
+	uid, err := uuid.Parse(c.GetString("user_id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Unauthorized, "invalid user"))
+		return
+	}
+	orgID, ok := h.billingOrg(c)
+	if !ok {
+		return
+	}
+	if h.StripeService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "card setup is not available"))
+		return
+	}
+	setup, xerr := h.StripeService.CreateCardSetupIntent(c.Request.Context(), uid, orgID)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, setup)
+}
+
+// AdoptCardSetup — POST /subscription/balance/setup-intent/default {setup_intent_id}
+// makes a card saved in the page the default before it is charged; a retry sets the same default.
+func (h *Handler) AdoptCardSetup(c *gin.Context) {
+	orgID, ok := h.billingOrg(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		SetupIntentID string `json:"setup_intent_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.SetupIntentID == "" {
+		errx.JSON(c, errx.New(errx.BadRequest, "setup_intent_id is required"))
+		return
+	}
+	if h.StripeService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "card setup is not available"))
+		return
+	}
+	if xerr := h.StripeService.AdoptCardSetup(c.Request.Context(), orgID, body.SetupIntentID); xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // UpdateAutoReload — PATCH /subscription/balance/auto-reload
@@ -444,8 +537,17 @@ func (h *Handler) ListCreditTransactions(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
-	// One extra row tells whether a next page exists.
-	txns, xerr := h.CreditService.ListTransactionsBefore(c.Request.Context(), orgID, limit+1, beforeAt, beforeID)
+	// One extra row tells whether a next page exists; category=store keeps only the store's lines.
+	list := h.CreditService.ListTransactionsBefore
+	switch c.Query("category") {
+	case "":
+	case "store":
+		list = h.CreditService.ListStoreTransactionsBefore
+	default:
+		errx.JSON(c, errx.NewWithIdentifier(errx.BadRequest, "invalid_category", "category must be store or left out."))
+		return
+	}
+	txns, xerr := list(c.Request.Context(), orgID, limit+1, beforeAt, beforeID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -503,7 +605,8 @@ func (h *Handler) GetCreditUsage(c *gin.Context) {
 		"spent_today_usd": usd(o.SpentToday), "spent_week_usd": usd(o.SpentWeek), "spent_month_usd": usd(o.SpentMonth),
 		"limit_daily_usd": usdPtr(o.LimitDaily), "limit_weekly_usd": usdPtr(o.LimitWeekly), "limit_monthly_usd": usdPtr(o.LimitMonthly),
 		"spent_today": models.CreditsFromMicro(o.SpentToday), "spent_week": models.CreditsFromMicro(o.SpentWeek), "spent_month": models.CreditsFromMicro(o.SpentMonth),
-		"series": series, "by_reason": buckets(o.ByReason), "by_model": buckets(o.ByModel),
+		"ai_from_balance_month_usd": usd(o.FromBalanceMonth),
+		"series":                    series, "by_reason": buckets(o.ByReason), "by_model": buckets(o.ByModel),
 	})
 }
 
@@ -517,6 +620,10 @@ func spendSettingsJSON(cfg *models.AISpendSettings) gin.H {
 		"member_limit_monthly_usd": usdPtr(cfg.MemberLimitMonthly),
 		"low_balance_usd":          usd(cfg.LowBalanceThreshold),
 		"auto_reload_enabled":      cfg.AutoReloadEnabled,
+		// Whether AI may use added money once the plan's included usage is spent, and the most per calendar month.
+		"ai_overage_enabled":              cfg.AIOverageEnabled,
+		"ai_overage_monthly_limit_usd":    usdPtr(cfg.AIOverageMonthlyLimit),
+		"ai_overage_monthly_limit_micros": cfg.AIOverageMonthlyLimit,
 	}
 }
 
@@ -559,9 +666,19 @@ func (h *Handler) UpdateCreditSettings(c *gin.Context) {
 		MemberLimitWeekly   *int `json:"member_limit_weekly"`
 		MemberLimitMonthly  *int `json:"member_limit_monthly"`
 		LowBalanceThreshold *int `json:"low_balance_threshold"`
+
+		// Absent keeps the saved value; a null limit removes it.
+		AIOverageEnabled            *bool           `json:"ai_overage_enabled"`
+		AIOverageMonthlyLimitUSD    json.RawMessage `json:"ai_overage_monthly_limit_usd"`
+		AIOverageMonthlyLimitMicros json.RawMessage `json:"ai_overage_monthly_limit_micros"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		errx.JSON(c, errx.InvalidBody(err))
+		return
+	}
+	overageLimit, limitSent, lerr := overageLimitFromBody(body.AIOverageMonthlyLimitMicros, body.AIOverageMonthlyLimitUSD)
+	if lerr != nil {
+		errx.JSON(c, lerr)
 		return
 	}
 	low := credits.DefaultLowBalance
@@ -581,8 +698,50 @@ func (h *Handler) UpdateCreditSettings(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+	if body.AIOverageEnabled != nil || limitSent {
+		enabled := cfg.AIOverageEnabled
+		if body.AIOverageEnabled != nil {
+			enabled = *body.AIOverageEnabled
+		}
+		if !limitSent {
+			overageLimit = cfg.AIOverageMonthlyLimit
+		}
+		if cfg, xerr = h.CreditService.UpdateAIOverage(c.Request.Context(), orgID, enabled, overageLimit); xerr != nil {
+			errx.JSON(c, xerr)
+			return
+		}
+	}
 	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCreditGrant, nil, nil, map[string]string{"kind": "spend_settings"})
 	c.JSON(http.StatusOK, spendSettingsJSON(cfg))
+}
+
+// overageLimitFromBody reads the AI overage limit, micros first: sent reports
+// whether either field was present, and a null clears the limit.
+func overageLimitFromBody(micros, dollars json.RawMessage) (limit *models.Micro, sent bool, xerr *errx.Error) {
+	bad := errx.New(errx.BadRequest, "ai_overage_monthly_limit must be a positive amount or null")
+	switch {
+	case len(micros) > 0:
+		if string(micros) == "null" {
+			return nil, true, nil
+		}
+		var v int64
+		if err := json.Unmarshal(micros, &v); err != nil {
+			return nil, true, bad
+		}
+		m := models.Micro(v)
+		return &m, true, nil
+	case len(dollars) > 0:
+		if string(dollars) == "null" {
+			return nil, true, nil
+		}
+		var v float64
+		if err := json.Unmarshal(dollars, &v); err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+			return nil, true, bad
+		}
+		m := models.USDToMicro(v)
+		return &m, true, nil
+	}
+	return nil, false, nil
 }
 
 // parseCreditLimit parses an optional ?limit into [1, max], defaulting to def.

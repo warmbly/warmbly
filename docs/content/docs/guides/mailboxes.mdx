@@ -378,7 +378,20 @@ Connecting a mailbox does two things: it imports the mailbox's recent history, a
 
 **Live sync** follows the provider's supported folders, including junk (so placement problems are visible) and sent mail (so a conversation shows both sides). Outlook follows Inbox, Sent, Junk, Drafts and Archive where Archive is available; it does not follow every custom Graph folder. Read state, flags, deletions and moves are mirrored too.
 
-New mail usually appears within seconds when the provider tells Warmbly about it: an IMAP server that supports `IDLE` does this for the inbox, and Gmail and Outlook do it on instances whose operator has turned on [push notifications](/development/mailbox-push/). Mail is also picked up by a regular check: about once a minute for a mailbox without one of those signals, every 3 minutes for the other folders of an IMAP mailbox whose inbox is held in `IDLE`, and every 10 minutes (the default) for a Gmail or Outlook mailbox with push on. Providers do not promise when they announce a change, so neither does Warmbly; the regular check always runs as well.
+New mail usually appears within seconds when the provider tells Warmbly about it: an IMAP server that supports `IDLE` does this for the inbox, and Gmail and Outlook do it on instances whose operator has turned on [push notifications](/development/mailbox-push/). Each announcement triggers a quick check of what it can be about: the inbox and junk folders (the whole mailbox's change history on Gmail). Checks of one mailbox start at least 30 seconds apart, so a burst of changes is picked up together.
+
+Every mailbox also gets a full check of every followed folder on a timer. How often depends on how many mailboxes your workspace has connected against what your plan allows:
+
+| Mailboxes connected | Full check |
+|---|---|
+| A quarter of the allowance or fewer | every 15 minutes |
+| Half of the allowance | every 30 minutes |
+| The whole allowance or more | every 60 minutes |
+| A plan without a mailbox limit | every 15 minutes |
+
+In between, the interval grows in proportion. These are the defaults; a self-hosted instance can change both ends under Instance settings. Placement-test seed mailboxes and pool-linked warmup mailboxes are checked every minute. Each mailbox's timer carries a little random spread so they do not all check at once.
+
+The full check is the one that covers sent mail, drafts, archive and your own folders. A mailbox without a change signal (an IMAP server without `IDLE`, or a Gmail or Outlook mailbox on an instance without push) gets the quick inbox and junk check every 5 minutes instead, so its new mail appears within about 5 minutes. A mailbox whose signal drops moves to the 5-minute check at once and back when the signal returns. A Gmail or Outlook mailbox with push still gets the quick check every 15 minutes, in case notifications stop arriving. While the history import is running, the full check runs about once a minute so the import finishes at its usual pace. Providers do not promise when they announce a change, so neither does Warmbly; the full check always runs as well.
 
 The Sync card distinguishes a completed history import from a recent successful live check. An unfinished pass, provider failure, recovery scan or budget hold does not refresh the last successful check or erase the last observed deferred count. That count is an observation from sync, not a measurement of all mail still on the provider. A worker heartbeat alone is not evidence that a mailbox is current. Repeated connection failures refresh the warning's observation time without generating a new notification each pass; no later successful check means recovery is unverified.
 
@@ -622,6 +635,8 @@ It keeps its worker assignment while off, so switching it back on puts it back o
 
 **Disconnecting** removes the mailbox for good. It is on the mailbox's own **More** menu in the list, as **Disconnect mailbox**, and at the bottom of its **Settings** tab under Danger zone. To remove several at once, tick their rows and use the selection bar. The machine syncing it is told to drop it before the record is removed, because afterwards there is nothing left to tell. If that instruction cannot be delivered, the disconnect fails with a `503` and nothing is removed, so retry it in a moment rather than assuming it worked.
 
+A mailbox [bought through Warmbly](/guides/buy-mailboxes/#cancelling-and-resuming) has no **Disconnect** while you still pay for it, because removing it would not stop its billing: cancel it from its **Subscription** card, or switch it off to pause it. Once its subscription ends it is switched off, keeps its history, and can be disconnected like any other mailbox. A mailbox a partner attached is removed through the partner.
+
 A mailbox belongs to the workspace, not to the member who connected it. Anyone with the **Manage mailboxes** permission can switch any of the workspace's mailboxes off, change its warmup, or disconnect it, including ones a teammate added and ones whose owner has since left. That is the same permission the list itself is behind, so a mailbox you can see is a mailbox you can act on.
 
 Everything belonging to that mailbox goes with it: its imported mail in the unibox, its warmup history and pool membership, its credentials, its sender links, and any send still scheduled for it. A campaign that was using it keeps running on its remaining senders, and the leads it had been writing to move onto them at their next step. Export the workspace first if you want a copy. Disable the mailbox instead when you only want it to stop.
@@ -771,6 +786,16 @@ Health is judged only on what happened while the mailbox was in the pool: signal
 </Callout>
 
 </Fold>
+
+## In a workspace a reseller manages
+
+When a reseller (a [partner](/development/partners/)) runs and bills the workspace, it decides what each mailbox may do, and **Mailboxes** shows it on every mailbox, read-only:
+
+- **Sending & warmup**: campaigns send from it and it warms up.
+- **Warmup only**: it warms up, and campaigns skip it and use the workspace's other mailboxes.
+- **Off**: no campaigns and no warmup. It stays connected and keeps its history.
+
+New mailboxes come through the reseller: the workspace has no store, so there is nothing to buy here. A mailbox you connect here starts **Off**; turn it on in the reseller's product. While the reseller has the workspace paused it is read-only, so connecting is held until it resumes. The reseller may also cap how many campaign emails each mailbox sends per UTC day, below the mailbox's own limit. A mailbox the reseller added is removed or reconnected there, not here: those actions answer that it is managed by the reseller.
 
 ## Related guides
 

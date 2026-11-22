@@ -524,14 +524,14 @@ func (r *oauthRepository) ListAuthorizedApps(ctx context.Context, orgID, userID 
 
 func (r *oauthRepository) ListWorkspaceAuthorizations(ctx context.Context, orgID uuid.UUID) ([]models.OAuthMemberAuthorization, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT a.id, a.name, a.logo_url, a.website_url, g.user_id, COALESCE(u.email, ''),
+		SELECT a.id, a.name, a.logo_url, a.website_url, g.user_id, COALESCE(u.email, ''), COALESCE(u.contact_email, ''),
 			trim(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')),
 			bit_or(g.scopes)::bigint, min(g.created_at), max(g.last_used_at)
 		FROM oauth_access_grants g
 		JOIN oauth_applications a ON a.id = g.application_id
 		LEFT JOIN users u ON u.id = g.user_id
 		WHERE g.organization_id = $1 AND `+grantIsLiveAs+`
-		GROUP BY a.id, a.name, a.logo_url, a.website_url, g.user_id, u.email, u.first_name, u.last_name
+		GROUP BY a.id, a.name, a.logo_url, a.website_url, g.user_id, u.email, u.contact_email, u.first_name, u.last_name
 		ORDER BY min(g.created_at) DESC`, orgID)
 	if err != nil {
 		return nil, err
@@ -541,10 +541,12 @@ func (r *oauthRepository) ListWorkspaceAuthorizations(ctx context.Context, orgID
 	for rows.Next() {
 		var ap models.OAuthMemberAuthorization
 		var scopes int64
-		if err := rows.Scan(&ap.ApplicationID, &ap.Name, &ap.LogoURL, &ap.WebsiteURL, &ap.UserID, &ap.UserEmail, &ap.UserName,
+		var contact string
+		if err := rows.Scan(&ap.ApplicationID, &ap.Name, &ap.LogoURL, &ap.WebsiteURL, &ap.UserID, &ap.UserEmail, &contact, &ap.UserName,
 			&scopes, &ap.AuthorizedAt, &ap.LastUsedAt); err != nil {
 			return nil, err
 		}
+		ap.UserEmail = models.VisibleEmail(ap.UserEmail, contact)
 		ap.Scopes = uint64(scopes)
 		out = append(out, ap)
 	}

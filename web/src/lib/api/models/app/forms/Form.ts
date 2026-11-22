@@ -105,6 +105,8 @@ export default interface Form {
     redirect_url_active?: boolean;
     campaign_id?: string;
     category_ids: string[];
+    /** Segments each submitted contact is pinned into. */
+    segment_ids?: string[];
     allowed_domains: string[];
     captcha_enabled: boolean;
     /** Classify each submission through TypeSafe; junk creates no contact. */
@@ -134,6 +136,7 @@ export interface FormWrite {
     redirect_url?: string;
     campaign_id?: string | null;
     category_ids?: string[];
+    segment_ids?: string[];
     allowed_domains?: string[];
     captcha_enabled?: boolean;
     triage_enabled?: boolean;

@@ -23,6 +23,8 @@ import { AppHeader } from "./AppHeader";
 import { AppNav } from "./AppNav";
 import PendingDeletionBar from "./PendingDeletionBar";
 import SendingRestrictedBar from "./SendingRestrictedBar";
+import PartnerPausedBar from "./PartnerPausedBar";
+import usePartnerManaged from "@/hooks/usePartnerManaged";
 import ClientViewBar from "./ClientViewBar";
 import TrialBar from "./TrialBar";
 import { useClientBrand } from "@/hooks/useClientBrand";
@@ -53,6 +55,8 @@ export function AppShell() {
     const [navOpen, setNavOpen] = useState(false);
     // A client member of a branded workspace is not shown Warmbly's trial or balance prompts.
     const clientBrand = useClientBrand();
+    // A reseller's workspace has no balance to top up, and its PartnerPausedBar carries any deletion date.
+    const partner = usePartnerManaged();
     // The same members see the dashboard in that brand's colour, font and corners.
     useBrandTheme(clientBrand);
     const { pathname } = useLocation();
@@ -80,9 +84,10 @@ export function AppShell() {
                     own account is scheduled for deletion. */}
                 <ClientViewBar />
                 <SendingRestrictedBar />
-                <PendingDeletionBar />
+                <PartnerPausedBar />
+                {partner?.state !== "cancelled" && <PendingDeletionBar />}
                 {!clientBrand && <TrialBar />}
-                {!clientBrand && <BalanceBanner />}
+                {!clientBrand && !partner && <BalanceBanner />}
 
                 <AppHeader onMenu={() => setNavOpen(true)} />
 

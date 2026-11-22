@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,11 +10,16 @@ import (
 type User struct {
 	ID uuid.UUID `json:"id"`
 
-	FirstName string      `json:"first_name"`
-	LastName  string      `json:"last_name"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	// Email is the sign-in address, and where platform mail goes. Shown to people only through VisibleEmail.
 	Email     string      `json:"email"`
 	AvatarURL *string     `json:"avatar_url,omitempty"`
 	Roles     []uuid.UUID `json:"roles"`
+	// ContactEmail is the address a partner gave for a person it signs in; never a sign-in or a mail destination.
+	ContactEmail string `json:"contact_email,omitempty"`
+	// PartnerAccount marks an account that signs in only through the partner managing its workspace (set by ForDisplay).
+	PartnerAccount bool `json:"partner_account,omitempty"`
 
 	ReferralSource        *string    `json:"referral_source"`
 	OnboardingCompletedAt *time.Time `json:"onboarding_completed_at"`
@@ -59,6 +65,39 @@ type User struct {
 
 	// PasswordExpiresAt is set only by CreateExemptUser, to the stored expiry of the issued password.
 	PasswordExpiresAt *time.Time `json:"-"`
+}
+
+// VisibleEmail is the address the user is shown under (see the package function).
+func (u *User) VisibleEmail() string {
+	return VisibleEmail(u.Email, u.ContactEmail)
+}
+
+// ForDisplay rewrites the user for a response read by people: Email becomes the visible address.
+func (u *User) ForDisplay() {
+	if u == nil {
+		return
+	}
+	u.PartnerAccount = InternalAddress(u.Email)
+	u.Email, u.ContactEmail = u.VisibleEmail(), ""
+}
+
+// InternalAddress reports a sign-in address under the reserved .invalid domain (RFC 2606): a partner's
+// service account or a person it signs in. Such an address receives no mail and is never shown.
+func InternalAddress(addr string) bool {
+	a := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(addr)), ">")
+	return strings.HasSuffix(a, ".invalid")
+}
+
+// VisibleEmail is the address a user is shown under: the sign-in address, or for an internal one the
+// contact email its partner gave, else nothing (the name alone is shown).
+func VisibleEmail(login, contact string) string {
+	if !InternalAddress(login) {
+		return login
+	}
+	if InternalAddress(contact) {
+		return ""
+	}
+	return contact
 }
 
 // IsPendingDeletion reports whether the user has a pending account deletion.

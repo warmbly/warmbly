@@ -77,6 +77,11 @@ type StripeService interface {
 	DefaultPaymentMethod(ctx context.Context, customerID string) (*PaymentMethodSummary, error)
 	CreateBalanceCheckout(ctx context.Context, userID, orgID uuid.UUID, amount models.Micro, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error)
 	CreateCardSetupCheckout(ctx context.Context, userID, orgID uuid.UUID, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error)
+	// CreateCardSetupIntent saves a card in the page with Stripe.js instead of a Checkout redirect.
+	CreateCardSetupIntent(ctx context.Context, userID, orgID uuid.UUID) (*CardSetup, *errx.Error)
+	// AdoptCardSetup makes the card a confirmed in-page setup saved the workspace's default.
+	AdoptCardSetup(ctx context.Context, orgID uuid.UUID, setupIntentID string) *errx.Error
+	PublishableKey() string
 	ListInvoices(ctx context.Context, customerID string, limit int) ([]InvoiceSummary, error)
 	// WireBalance attaches the balance service a paid charge invoice settles
 	// through (post-construction; nil = those invoices wait for the sweep).
@@ -155,6 +160,8 @@ type stripeService struct {
 	balance          BalanceSettler
 	agency           AgencyWebhooks
 	partners         PartnerAttribution
+	// cardSaved hears about a newly saved card; nil when nothing listens.
+	cardSaved func(ctx context.Context, orgID uuid.UUID)
 }
 
 // AgencyWebhooks applies the Stripe events that bill an agency rather than a workspace.
@@ -718,8 +725,21 @@ func (s *stripeService) processWorkspaceEvent(ctx context.Context, event *stripe
 		processErr = s.handlePaymentIntentSucceeded(ctx, event)
 	case "charge.refunded":
 		processErr = s.handleChargeRefunded(ctx, event)
+	case "setup_intent.succeeded":
+		processErr = s.handleSetupIntentSucceeded(ctx, event)
 	}
 	return processErr
+}
+
+func (s *stripeService) handleSetupIntentSucceeded(ctx context.Context, event *stripe.Event) *errx.Error {
+	var si stripe.SetupIntent
+	if err := json.Unmarshal(event.Data.Raw, &si); err != nil {
+		return errx.New(errx.Internal, "failed to parse setup intent")
+	}
+	if si.Metadata["purpose"] != purposeCardSetupInline {
+		return nil
+	}
+	return s.fulfillInlineCardSetup(ctx, &si)
 }
 
 func (s *stripeService) handlePaymentIntentSucceeded(ctx context.Context, event *stripe.Event) *errx.Error {

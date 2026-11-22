@@ -111,6 +111,10 @@ type WMail struct {
 	relayCache relayCache
 	googleTick *tickStats
 	graphTick  *tickStats
+	// mapPage is the running page's batched message-map answers.
+	mapPage mapPage
+	// narrowDeferred is set by a narrow check that met work only the full pass does.
+	narrowDeferred bool
 	// googleReconciledAt is when the Gmail folder reconciliation last ran;
 	// googleInboxChecked is when it last looked up an id and found it still
 	// in the inbox (or gone), so the next passes spend lookups elsewhere.
@@ -142,7 +146,9 @@ type WMail struct {
 
 	// wake runs the next sync pass early; push is the provider channel that fills it.
 	wake chan struct{}
-	push pushChannel
+	// signal is poked when the mailbox's change signal (IDLE or a push channel) may have come or gone.
+	signal chan struct{}
+	push   pushChannel
 
 	Ctx           context.Context
 	Cancel        context.CancelFunc
@@ -182,12 +188,16 @@ func NewWMail(
 		Cancel:        cancel,
 		TerminateFunc: terminate,
 		wake:          make(chan struct{}, 1),
+		signal:        make(chan struct{}, 1),
 
 		Cache:                     cache,
 		Storage:                   storage,
 		EmailMessageMapRepository: emailMessageMapRepository,
 		SyncContext:               syncContext,
 		CipherService:             cipherService,
+	}
+	if emailMessageMapRepository != nil && (data.Type == models.InboxProviderGoogle || data.Type == models.InboxProviderOutlook) {
+		mail.EmailMessageMapRepository = newCachedMessageMap(emailMessageMapRepository)
 	}
 	mail.rememberExecution(data)
 	mail.ApplyPush(data.Push)

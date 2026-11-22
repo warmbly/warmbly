@@ -95,8 +95,11 @@ func (r *orgRiskRepository) GetOrgRiskStates(ctx context.Context, orgIDs []uuid.
 	if len(orgIDs) == 0 {
 		return out, nil
 	}
-	rows, err := r.DB.Pool.Query(ctx,
-		`SELECT id, risk_state FROM organizations WHERE id = ANY($1::uuid[])`, orgIDs)
+	// A workspace its reseller suspended or cancelled reads as suspended here, so every send path holds it without parking campaigns.
+	rows, err := r.DB.Pool.Query(ctx, `
+		SELECT o.id, CASE WHEN po.state IN ('suspended', 'cancelled') THEN 'suspended' ELSE o.risk_state END
+		FROM organizations o LEFT JOIN partner_organizations po ON po.organization_id = o.id
+		WHERE o.id = ANY($1::uuid[])`, orgIDs)
 	if err != nil {
 		return nil, err
 	}

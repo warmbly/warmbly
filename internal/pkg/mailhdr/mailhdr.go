@@ -26,6 +26,18 @@ func Subject(s string) string {
 	return mime.QEncoding.Encode("utf-8", s)
 }
 
+// ReplySubject is the subject a reply carries: "Re: " once, never stacked.
+func ReplySubject(subject string) string {
+	s := strings.TrimSpace(subject)
+	if s == "" {
+		return "Re:"
+	}
+	if strings.HasPrefix(strings.ToLower(s), "re:") {
+		return s
+	}
+	return "Re: " + s
+}
+
 // Address encodes one address entry, which may be bare ("a@b.com") or carry a
 // display name ("Ana Rodríguez <a@b.com>"). Anything that is not exactly one
 // address encodes to "", so it never reaches a header.

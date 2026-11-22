@@ -18,11 +18,14 @@ import {
     getInstanceSettings,
     putInstanceSettings,
     type InstanceSettings,
+    type StoreSettings,
     type UsageSettings,
 } from "@/lib/api/client/admin/instance";
+import { getStorePricing } from "@/lib/api/client/admin/store";
 import { RangeHint, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
 const SETTINGS_KEY = ["admin", "instance", "settings"];
+const STORE_PRICING_KEY = ["admin", "store", "pricing"];
 
 // The backend clamps to the same band; matching it here keeps the operator
 // from spending a round-trip to learn the range.
@@ -67,9 +70,32 @@ const SYNC_FIELDS = [
         max: 2000000,
         help: "New plus imported mail across one organization per UTC day.",
     },
+    {
+        key: "fullCheckMin",
+        setting: "full_check_min_minutes",
+        label: "Full check, fastest (minutes)",
+        min: 5,
+        max: 180,
+        help: "How often a workspace with room left under its plan gets a full check of every folder. Push and IDLE still bring new mail within seconds in between.",
+    },
+    {
+        key: "fullCheckMax",
+        setting: "full_check_max_minutes",
+        label: "Full check, slowest (minutes)",
+        min: 5,
+        max: 180,
+        help: "How often a workspace using its whole mailbox allowance gets a full check. In between, the interval scales with mailboxes connected over the allowance. Must not be below the fastest.",
+    },
 ] as const;
 
 type SyncFieldKey = (typeof SYNC_FIELDS)[number]["key"];
+
+// Compiled full check bounds, for a backend older than the setting.
+const FULL_CHECK_DEFAULTS = { full_check_min_minutes: 15, full_check_max_minutes: 60 } as const;
+
+function syncSetting(sync: InstanceSettings["sync"], setting: (typeof SYNC_FIELDS)[number]["setting"]): number {
+    return sync[setting] ?? FULL_CHECK_DEFAULTS[setting as keyof typeof FULL_CHECK_DEFAULTS];
+}
 
 // Retention windows, mirroring internal/config/constants.go. Each one is also
 // how long the personal data in that log is held, so the help text says what
@@ -430,6 +456,90 @@ function formatUSD(n: number): string {
     return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
 
+// Store retail pricing, mirroring the store section of internal/app/instancesettings.
+const MICROS_PER_USD = 1_000_000;
+const MICROS_PER_CENT = 10_000;
+const STORE_USD_MAX = 100;
+const STORE_PERCENT_MAX = 500;
+// The preview prices this extension from the live wholesale list.
+const STORE_PREVIEW_TLD = "com";
+
+const STORE_LEAD_MIN = 2;
+const STORE_LEAD_MAX = 10;
+const STORE_MIN_CARD_FLOOR = 0.5;
+
+const STORE_DEFAULTS: StoreSettings = {
+    mailbox_monthly_micros: 3_000_000,
+    domain_markup_percent: 0,
+    domain_markup_fixed_micros: 0,
+    mailbox_bill_lead_days: 5,
+    min_card_charge_micros: 10_000_000,
+};
+
+interface StoreForm {
+    mailboxMonthly: string;
+    markupPercent: string;
+    markupFixed: string;
+    billLead: string;
+    minCard: string;
+}
+
+function microsToDollars(micros: number): string {
+    const usd = micros / MICROS_PER_USD;
+    return micros % MICROS_PER_CENT === 0 ? usd.toFixed(2) : String(usd);
+}
+
+function dollarsToMicros(raw: string): number {
+    return Math.round(Number(raw) * MICROS_PER_USD);
+}
+
+function toStoreForm(s: StoreSettings | undefined): StoreForm {
+    const store = { ...STORE_DEFAULTS, ...s };
+    return {
+        mailboxMonthly: microsToDollars(store.mailbox_monthly_micros),
+        markupPercent: String(store.domain_markup_percent),
+        markupFixed: microsToDollars(store.domain_markup_fixed_micros),
+        billLead: String(store.mailbox_bill_lead_days ?? 5),
+        minCard: microsToDollars(store.min_card_charge_micros ?? 10_000_000),
+    };
+}
+
+// Dollars to at most micro-dollar precision, between zero and max.
+function dollarsValid(raw: string, max: number): boolean {
+    return /^\d+(\.\d{1,6})?$/.test(raw.trim()) && Number(raw) <= max;
+}
+
+function storeFormValid(f: StoreForm): boolean {
+    return (
+        dollarsValid(f.mailboxMonthly, STORE_USD_MAX) &&
+        syncFieldValid(f.markupPercent, 0, STORE_PERCENT_MAX) &&
+        dollarsValid(f.markupFixed, STORE_USD_MAX) &&
+        syncFieldValid(f.billLead, STORE_LEAD_MIN, STORE_LEAD_MAX) &&
+        dollarsValid(f.minCard, STORE_USD_MAX) &&
+        Number(f.minCard) >= STORE_MIN_CARD_FLOOR
+    );
+}
+
+// Retail domain price: wholesale plus the percent plus the fixed amount, rounded up to the cent.
+function retailDomainMicros(wholesale: number, percent: number, fixed: number): number {
+    const exact = wholesale * (100 + percent) + fixed * 100;
+    return Math.ceil(exact / (100 * MICROS_PER_CENT)) * MICROS_PER_CENT;
+}
+
+function mailboxPreview(f: StoreForm): string {
+    return `Customers pay ${formatUSD(dollarsToMicros(f.mailboxMonthly) / MICROS_PER_USD)} per mailbox per month`;
+}
+
+// What a .com sells for at the form's markup, from the live wholesale price.
+function domainPreview(f: StoreForm, wholesaleMicros: number): string {
+    const percent = Number(f.markupPercent);
+    const fixed = dollarsToMicros(f.markupFixed);
+    const wholesale = formatUSD(wholesaleMicros / MICROS_PER_USD);
+    if (percent === 0 && fixed === 0) return `a .${STORE_PREVIEW_TLD} costs ${wholesale} at cost`;
+    const retail = formatUSD(retailDomainMicros(wholesaleMicros, percent, fixed) / MICROS_PER_USD);
+    return `a .${STORE_PREVIEW_TLD} that costs ${wholesale} wholesale sells for ${retail}`;
+}
+
 interface FormState {
     linksEnabled: boolean;
     ttlHours: string;
@@ -442,6 +552,7 @@ interface FormState {
     authGraceHours: string;
     autoVendorReconnect: boolean;
     usage: UsageForm;
+    store: StoreForm;
 }
 
 function toForm(s: InstanceSettings): FormState {
@@ -455,6 +566,8 @@ function toForm(s: InstanceSettings): FormState {
             backfillMessages: String(s.sync.backfill_messages),
             dailyPerMailbox: String(s.sync.daily_messages_per_mailbox),
             dailyPerOrg: String(s.sync.daily_messages_per_org),
+            fullCheckMin: String(syncSetting(s.sync, "full_check_min_minutes")),
+            fullCheckMax: String(syncSetting(s.sync, "full_check_max_minutes")),
         },
         retention: {
             engagementDays: String(s.retention.engagement_event_days),
@@ -485,6 +598,7 @@ function toForm(s: InstanceSettings): FormState {
         authGraceHours: String(s.deliverability.auth_grace_hours),
         autoVendorReconnect: s.mailbox_signin?.auto_vendor_reconnect ?? true,
         usage: toUsageForm(s.usage),
+        store: toStoreForm(s.store),
     };
 }
 
@@ -530,7 +644,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
     const syncDirty =
         !!server &&
         !!form &&
-        SYNC_FIELDS.some((f) => form.sync[f.key] !== String(server.sync[f.setting]));
+        SYNC_FIELDS.some((f) => form.sync[f.key] !== String(syncSetting(server.sync, f.setting)));
     const retentionDirty =
         !!server &&
         !!form &&
@@ -550,6 +664,10 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
         );
     const usageDirty =
         !!server && !!form && usageSignature(form.usage) !== usageSignature(toUsageForm(server.usage));
+    const storeDirty =
+        !!server &&
+        !!form &&
+        JSON.stringify(form.store) !== JSON.stringify(toStoreForm(server.store));
     const dirty =
         !!server &&
         !!form &&
@@ -563,14 +681,19 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             trackingDirty ||
             placementDirty ||
             usageDirty ||
+            storeDirty ||
             syncDirty);
 
     useEffect(() => {
         onDirtyChange?.(dirty);
         return () => onDirtyChange?.(false);
     }, [dirty, onDirtyChange]);
+    const fullCheckOrdered =
+        form !== null && Number(form.sync.fullCheckMin) <= Number(form.sync.fullCheckMax);
     const syncValid =
-        form !== null && SYNC_FIELDS.every((f) => syncFieldValid(form.sync[f.key], f.min, f.max));
+        form !== null &&
+        SYNC_FIELDS.every((f) => syncFieldValid(form.sync[f.key], f.min, f.max)) &&
+        fullCheckOrdered;
     const retentionValid =
         form !== null &&
         RETENTION_FIELDS.every((f) => syncFieldValid(form.retention[f.key], f.min, RETENTION_MAX_DAYS));
@@ -591,6 +714,8 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 !modelNameError(form.usage.models, m) && priceValid(m.input) && priceValid(m.output),
         ) &&
         Object.values(form.usage.units).every(priceValid);
+
+    const storeValid = form !== null && storeFormValid(form.store);
 
     const authGrace = form ? Number(form.authGraceHours) : NaN;
     const authGraceValid =
@@ -617,7 +742,11 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             return;
         }
         if (!syncValid) {
-            toast.error("Every sync budget must be a whole number inside its range");
+            toast.error(
+                fullCheckOrdered
+                    ? "Every sync budget must be a whole number inside its range"
+                    : "The slowest full check cannot be faster than the fastest",
+            );
             return;
         }
         if (!retentionValid) {
@@ -642,6 +771,12 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             );
             return;
         }
+        if (!storeValid) {
+            toast.error(
+                `The mailbox price and the fixed domain markup must be dollar amounts from $0 to $${STORE_USD_MAX}, and the domain markup a whole percent from 0 to ${STORE_PERCENT_MAX}`,
+            );
+            return;
+        }
         if (!authGraceValid) {
             toast.error(
                 `The authentication grace period must be a whole number of hours between ${AUTH_GRACE_MIN_HOURS} and ${AUTH_GRACE_MAX_HOURS}`,
@@ -656,6 +791,8 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 backfill_messages: Number(form.sync.backfillMessages),
                 daily_messages_per_mailbox: Number(form.sync.dailyPerMailbox),
                 daily_messages_per_org: Number(form.sync.dailyPerOrg),
+                full_check_min_minutes: Number(form.sync.fullCheckMin),
+                full_check_max_minutes: Number(form.sync.fullCheckMax),
             },
             retention: {
                 engagement_event_days: Number(form.retention.engagementDays),
@@ -697,6 +834,13 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 units: Object.fromEntries(
                     Object.entries(form.usage.units).map(([k, v]) => [k, Number(v)]),
                 ),
+            },
+            store: {
+                mailbox_monthly_micros: dollarsToMicros(form.store.mailboxMonthly),
+                domain_markup_percent: Number(form.store.markupPercent),
+                domain_markup_fixed_micros: dollarsToMicros(form.store.markupFixed),
+                mailbox_bill_lead_days: Number(form.store.billLead),
+                min_card_charge_micros: dollarsToMicros(form.store.minCard),
             },
         });
     }
@@ -792,11 +936,12 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                         title="Mailbox sync fair use"
                         description={
                             <>
-                                What a connected mailbox imports and how much new mail it may
-                                store. Mail over a budget waits and is picked up when the window
-                                rolls; nothing is dropped, and replies to the mailbox&apos;s own
-                                outreach are never held. Changes apply the next time a mailbox is
-                                loaded onto a worker (within a few minutes). The fixed pacing
+                                What a connected mailbox imports, how much new mail it may store,
+                                and how often every folder is checked. Mail over a budget waits and
+                                is picked up when the window rolls; nothing is dropped, and replies
+                                to the mailbox&apos;s own outreach are never held. Changes apply the
+                                next time a mailbox is loaded onto a worker (within a few minutes).
+                                The fixed pacing
                                 numbers are listed under{" "}
                                 <TabLink onClick={() => onSwitchTab?.("limits")}>Limits</TabLink>.
                             </>
@@ -811,8 +956,15 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                                 range={`Between ${f.min.toLocaleString()} and ${f.max.toLocaleString()}.`}
                                 value={form.sync[f.key]}
                                 onChange={(v) => setForm({ ...form, sync: { ...form.sync, [f.key]: v } })}
-                                valid={syncFieldValid(form.sync[f.key], f.min, f.max)}
-                                error={`Enter a whole number between ${f.min.toLocaleString()} and ${f.max.toLocaleString()}.`}
+                                valid={
+                                    syncFieldValid(form.sync[f.key], f.min, f.max) &&
+                                    (f.key !== "fullCheckMax" || fullCheckOrdered)
+                                }
+                                error={
+                                    f.key === "fullCheckMax" && !fullCheckOrdered
+                                        ? "Must not be below the fastest full check."
+                                        : `Enter a whole number between ${f.min.toLocaleString()} and ${f.max.toLocaleString()}.`
+                                }
                             />
                         ))}
                     </SettingsGroup>
@@ -921,6 +1073,11 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                     <UsagePricingGroup
                         usage={form.usage}
                         onChange={(usage) => setForm({ ...form, usage })}
+                    />
+
+                    <StorePricingGroup
+                        store={form.store}
+                        onChange={(store) => setForm({ ...form, store })}
                     />
 
                     <SettingsGroup
@@ -1143,6 +1300,111 @@ function UsagePricingGroup({
                     />
                 );
             })}
+        </SettingsGroup>
+    );
+}
+
+// Retail prices for the domains and mailboxes workspaces buy in the dashboard.
+function StorePricingGroup({
+    store,
+    onChange,
+}: {
+    store: StoreForm;
+    onChange: (s: StoreForm) => void;
+}) {
+    const pricingQ = useQuery({
+        queryKey: STORE_PRICING_KEY,
+        queryFn: getStorePricing,
+        retry: false,
+        staleTime: 5 * 60_000,
+    });
+    const comWholesale = pricingQ.data?.domains.find((d) => d.tld === STORE_PREVIEW_TLD)?.register_micros;
+    const valid = storeFormValid(store);
+    return (
+        <SettingsGroup
+            title="Domains and mailboxes"
+            description={
+                <>
+                    What a workspace pays for the domains and mailboxes it buys under Buy mailboxes,
+                    charged from its balance. Only used when the store is configured with{" "}
+                    <code className="font-mono text-[12px]">GRAPHKIT_API_KEY</code>. A change applies
+                    to quotes made after it; a mailbox already bought keeps the monthly price it was
+                    bought at. A self-hosted instance with billing off charges workspaces nothing and
+                    its partner account pays, so these prices do nothing there.
+                </>
+            }
+        >
+            <NumberRow
+                id="store-mailbox-monthly"
+                label="Mailbox price ($ per month)"
+                help="What one mailbox costs each month, Google or Microsoft alike."
+                range={`Between $0 and $${STORE_USD_MAX}.`}
+                value={store.mailboxMonthly}
+                onChange={(v) => onChange({ ...store, mailboxMonthly: v })}
+                valid={dollarsValid(store.mailboxMonthly, STORE_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${STORE_USD_MAX}.`}
+                inputMode="decimal"
+            />
+            <NumberRow
+                id="store-domain-percent"
+                label="Domain markup (%)"
+                help="Added to the wholesale price of every domain, for registration and renewal. With both markups at 0, domains are sold at cost."
+                range={`Between 0 and ${STORE_PERCENT_MAX}.`}
+                value={store.markupPercent}
+                onChange={(v) => onChange({ ...store, markupPercent: v })}
+                valid={syncFieldValid(store.markupPercent, 0, STORE_PERCENT_MAX)}
+                error={`Enter a whole number between 0 and ${STORE_PERCENT_MAX}.`}
+            />
+            <NumberRow
+                id="store-domain-fixed"
+                label="Domain markup ($ per domain)"
+                help="Added after the percent to every domain price. The result is rounded up to the cent."
+                range={`Between $0 and $${STORE_USD_MAX}.`}
+                value={store.markupFixed}
+                onChange={(v) => onChange({ ...store, markupFixed: v })}
+                valid={dollarsValid(store.markupFixed, STORE_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${STORE_USD_MAX}.`}
+                inputMode="decimal"
+            />
+            <NumberRow
+                id="store-bill-lead"
+                label="Mailbox billing lead (days)"
+                help="A workspace's mailboxes are charged together this many days before its monthly billing day, so a failed payment has time to be fixed before the provider bills the next month."
+                range={`Between ${STORE_LEAD_MIN} and ${STORE_LEAD_MAX}.`}
+                value={store.billLead}
+                onChange={(v) => onChange({ ...store, billLead: v })}
+                valid={syncFieldValid(store.billLead, STORE_LEAD_MIN, STORE_LEAD_MAX)}
+                error={`Enter a whole number between ${STORE_LEAD_MIN} and ${STORE_LEAD_MAX}.`}
+            />
+            <NumberRow
+                id="store-min-card"
+                label="Minimum card charge ($)"
+                help="When a store charge needs the card, it is charged at least this, and the rest stays on the workspace balance. Fewer, larger card charges cost less in card fees."
+                range={`Between $${STORE_MIN_CARD_FLOOR.toFixed(2)} and $${STORE_USD_MAX}.`}
+                value={store.minCard}
+                onChange={(v) => onChange({ ...store, minCard: v })}
+                valid={dollarsValid(store.minCard, STORE_USD_MAX) && Number(store.minCard) >= STORE_MIN_CARD_FLOOR}
+                error={`Enter a dollar amount between ${STORE_MIN_CARD_FLOOR.toFixed(2)} and ${STORE_USD_MAX}.`}
+                inputMode="decimal"
+            />
+            <div className="px-4 py-3 text-[12.5px] tabular-nums text-muted-foreground" aria-live="polite">
+                {!valid ? (
+                    "Fix the values above to see what customers pay."
+                ) : pricingQ.isLoading ? (
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                        {mailboxPreview(store)};
+                        <Skeleton className="h-3.5 w-40" aria-hidden />
+                        <span className="sr-only">loading the live .{STORE_PREVIEW_TLD} price</span>
+                    </div>
+                ) : comWholesale === undefined ? (
+                    <>
+                        {mailboxPreview(store)}.{" "}
+                        <span className={TONE_TEXT.warning}>Live price unavailable</span>
+                    </>
+                ) : (
+                    `${mailboxPreview(store)}; ${domainPreview(store, comWholesale)}.`
+                )}
+            </div>
         </SettingsGroup>
     );
 }

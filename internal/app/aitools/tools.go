@@ -39,6 +39,8 @@ import (
 // handler calls one of these exactly as the matching HTTP handler would, so a
 // tool never bypasses business rules, validation, or org scoping.
 type Deps struct {
+	// MailboxLock refuses removing a mailbox a partner attached or the workspace still pays for; read at call time.
+	MailboxLock *func(ctx context.Context, orgID, accountID uuid.UUID) *errx.Error
 	Contacts    contact.ContactService
 	CRM         crm.CRMService
 	Campaigns   campaign.CampaignService

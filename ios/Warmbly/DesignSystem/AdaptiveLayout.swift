@@ -2,22 +2,124 @@ import SwiftUI
 
 // MARK: - Shell
 
-/// How the window is laid out: a bottom bar on a phone-width window, a side
-/// rail once the window is wide (iPad, an unfolded iPhone Duo, a phone held
-/// sideways), where thumbs rest on the edges and the height is the scarce side.
+/// Where the tab bar sits.
+enum TabBarPlacement: Equatable {
+    /// Floating off the bottom edge: iPhone, iPhone Duo unfolded in portrait,
+    /// and an iPad window too narrow for the sidebar or with it hidden.
+    case bottom
+    /// No bar: the iPad's `AppSidebar` holds the navigation as a first column.
+    case sidebar
+    /// At the bottom of the strip iPhone Duo keeps down one side for the status
+    /// bar and the system's own bars (the cover screen, and unfolded in
+    /// landscape), where a system tab bar would be.
+    case strip(HorizontalEdge)
+}
+
+/// How the window is laid out, following where the system puts its own bars.
 struct ShellLayout: Equatable {
     var windowSize: CGSize = .zero
-    var usesRail = false
+    var bar: TabBarPlacement = .bottom
+    /// The width the shell takes from the content's leading side.
+    var leadingInset: CGFloat = 0
 
     static let railWidth: CGFloat = 76
     static let railMinWindowWidth: CGFloat = 600
+    static let sidebarWidth: CGFloat = 272
+    /// Below this an iPad window keeps the list and its open item side by side
+    /// only without the sidebar, so it takes the bottom bar instead.
+    static let sidebarMinWindowWidth: CGFloat = 900
 
-    static func resolve(_ size: CGSize) -> ShellLayout {
-        ShellLayout(windowSize: size, usesRail: size.width >= railMinWindowWidth)
+    @MainActor
+    static func resolve(_ size: CGSize, safeArea: EdgeInsets, systemBarEdge: HorizontalEdge?, sidebarHidden: Bool = false) -> ShellLayout {
+        var bar: TabBarPlacement = .bottom
+        if let systemBarEdge {
+            bar = .strip(systemBarEdge)
+        } else if isPad, !sidebarHidden, size.width >= sidebarMinWindowWidth {
+            bar = .sidebar
+        }
+        #if DEBUG
+        bar = debugBarPlacement ?? bar
+        #endif
+        let leading: CGFloat = switch bar {
+        case .sidebar: sidebarWidth + 1
+        case .strip(.leading): max(safeArea.leading, railWidth)
+        default: 0
+        }
+        return ShellLayout(windowSize: size, bar: bar, leadingInset: leading)
     }
 
-    /// The width the side rail takes from the content.
-    var railInset: CGFloat { usesRail ? Self.railWidth : 0 }
+    @MainActor
+    static var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+}
+
+/// Reports the edge where the system places its vertical bar on iPhone Duo,
+/// and nil wherever its bars are horizontal.
+struct VerticalBarEdgeReader: UIViewRepresentable {
+    @Binding var edge: HorizontalEdge?
+
+    /// The active scene's edge, so the first frame already has the bar in place.
+    @MainActor
+    static func current() -> HorizontalEdge? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        return scene.flatMap { edge(in: $0.traitCollection) }
+    }
+
+    static func edge(in traits: UITraitCollection) -> HorizontalEdge? {
+        // The trait ships in the iOS 27.1 SDK; older toolchains build without the strip.
+        #if compiler(>=6.4.1)
+        guard #available(iOS 27.1, *) else { return nil }
+        switch traits.verticalBarEdge {
+        case .leading: return .leading
+        case .trailing: return .trailing
+        default: return nil
+        }
+        #else
+        return nil
+        #endif
+    }
+
+    func makeUIView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.isUserInteractionEnabled = false
+        // Reported outside SwiftUI's update, which may be what moved this view into its window.
+        view.onChange = { value in Task { @MainActor in edge = value } }
+        return view
+    }
+
+    func updateUIView(_ view: ReaderView, context: Context) {}
+
+    final class ReaderView: UIView {
+        var onChange: ((HorizontalEdge?) -> Void)?
+        private var reported: HorizontalEdge??
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            #if compiler(>=6.4.1)
+            if #available(iOS 27.1, *) {
+                registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (view: ReaderView, _) in
+                    view.report()
+                }
+            }
+            #endif
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+        }
+
+        private func report() {
+            guard window != nil else { return }
+            let edge = VerticalBarEdgeReader.edge(in: traitCollection)
+            guard reported != .some(edge) else { return }
+            reported = .some(edge)
+            onChange?(edge)
+        }
+    }
 }
 
 extension EnvironmentValues {
@@ -27,6 +129,8 @@ extension EnvironmentValues {
     @Entry var closeDetail: (() -> Void)?
     /// The list tab's drawer is open as its own column, so headers drop the menu button.
     @Entry var drawerPinned = false
+    /// Shown as a sidebar destination rather than a cover, so it has no close button.
+    @Entry var isSidebarDestination = false
 }
 
 // MARK: - List and detail
@@ -38,7 +142,7 @@ struct SplitMetrics: Equatable {
     let pinsSidebar: Bool
     let listWidth: CGFloat
 
-    static let detailMinContentWidth: CGFloat = 760
+    static let detailMinContentWidth: CGFloat = 720
     static let pinnedMinContentWidth: CGFloat = 1180
 
     init(contentWidth: CGFloat, shell: ShellLayout) {
@@ -49,8 +153,8 @@ struct SplitMetrics: Equatable {
         } else {
             // Ends the list at the middle of the window, so on a book-style
             // foldable the list and the detail each sit on their own half.
-            let toFold = shell.windowSize.width / 2 - shell.railInset
-            listWidth = min(max(toFold, 320), 420)
+            let toFold = shell.windowSize.width / 2 - shell.leadingInset
+            listWidth = min(max(toFold, 320), 480)
         }
     }
 }
@@ -193,7 +297,7 @@ struct ListDetailShell<Item: Hashable, ListContent: View, Drawer: View, Detail: 
             .overlay(shape.strokeBorder(WTheme.hairlineStrong, lineWidth: 1))
             // Vertical only: on a wide window the side rail holds the leading edge.
             .ignoresSafeArea(edges: .vertical)
-            .offset(x: (sidebarOpen ? 0 : -sidebarWidth - 40 - shell.railInset) + drag)
+            .offset(x: (sidebarOpen ? 0 : -sidebarWidth - 40 - shell.leadingInset) + drag)
             .gesture(
                 DragGesture()
                     .onChanged { value in
@@ -285,6 +389,20 @@ struct ReadableMargins: ViewModifier {
 // MARK: - Debug window
 
 #if DEBUG
+extension ShellLayout {
+    /// WARMBLY_DEBUG_BARS=bottom|sidebar|leading|trailing places the tab bar as on
+    /// another device, for a WARMBLY_DEBUG_FRAME run that cannot fold the host.
+    static let debugBarPlacement: TabBarPlacement? = {
+        switch ProcessInfo.processInfo.environment["WARMBLY_DEBUG_BARS"] {
+        case "bottom": .bottom
+        case "sidebar": .sidebar
+        case "leading": .strip(.leading)
+        case "trailing": .strip(.trailing)
+        default: nil
+        }
+    }()
+}
+
 /// WARMBLY_DEBUG_FRAME=<width>x<height> renders the app in a window of that
 /// size, so a scripted run on an iPad simulator can show another device's
 /// layout (951x669 is an unfolded iPhone Duo). It sets the size only: safe-area

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
 )
 
@@ -72,6 +73,9 @@ func (c *Client) fetchHistory(ctx context.Context, lastHistoryID uint64) (uint64
 			return checkpoint, fmt.Errorf("gmail history.list: %w", HandleError(err))
 		}
 
+		if c.OnHistoryPage != nil && len(resp.History) > 0 {
+			c.OnHistoryPage(ctx, historyMessageIDs(resp.History))
+		}
 		for _, h := range resp.History {
 			complete := true
 			for _, m := range h.MessagesAdded {
@@ -122,6 +126,33 @@ func (c *Client) fetchHistory(ctx context.Context, lastHistoryID uint64) (uint64
 	}
 
 	return checkpoint, errHistoryIncomplete
+}
+
+// historyMessageIDs lists every message a history page reports on, once each.
+func historyMessageIDs(records []*gmail.History) []string {
+	seen := map[string]bool{}
+	var ids []string
+	add := func(m *gmail.Message) {
+		if m != nil && m.Id != "" && !seen[m.Id] {
+			seen[m.Id] = true
+			ids = append(ids, m.Id)
+		}
+	}
+	for _, h := range records {
+		for _, m := range h.MessagesAdded {
+			add(m.Message)
+		}
+		for _, m := range h.MessagesDeleted {
+			add(m.Message)
+		}
+		for _, m := range h.LabelsAdded {
+			add(m.Message)
+		}
+		for _, m := range h.LabelsRemoved {
+			add(m.Message)
+		}
+	}
+	return ids
 }
 
 func (c *Client) HistoryBaseline(ctx context.Context) (uint64, error) {

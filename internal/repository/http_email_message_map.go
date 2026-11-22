@@ -36,7 +36,7 @@ type httpEmailMessageMapRepository struct {
 }
 
 // NewHTTPEmailMessageMapRepository returns the worker-side implementation.
-func NewHTTPEmailMessageMapRepository(baseURL, token string) (EmailMessageMapRepository, error) {
+func NewHTTPEmailMessageMapRepository(baseURL, token string, opts ...ControlPlaneOption) (EmailMessageMapRepository, error) {
 	if baseURL == "" {
 		return nil, errors.New("email_message_map.http: baseURL is required")
 	}
@@ -46,7 +46,7 @@ func NewHTTPEmailMessageMapRepository(baseURL, token string) (EmailMessageMapRep
 	return &httpEmailMessageMapRepository{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		client:  newControlPlaneClient(10 * time.Second),
+		client:  newControlPlaneClient(10*time.Second, opts),
 	}, nil
 }
 

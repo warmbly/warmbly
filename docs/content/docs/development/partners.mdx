@@ -1,0 +1,166 @@
+---
+title: Partners
+description: Resellers that create, sign people in to and bill Warmbly workspaces through the partner API. Off until an operator adds one.
+---
+
+A partner is a reseller that sells Warmbly inside its own product. Through the partner API it creates a Warmbly workspace for each of its customers, signs that customer's people in without a Warmbly password, issues the workspace an API key for its own integration, and bills the customer itself. GraphKit is one such partner on Warmbly Cloud.
+
+The partner API is off on every instance until an operator adds a partner. A self-hosted instance needs nothing for it: no setting, no external account, and no change to an upgrade. With no partner, every request to `/v1/partner` answers `401`.
+
+## Adding a partner
+
+From the [admin panel](/development/admin-panel/), **Accounts > Organizations > Partners > New partner** (manage organizations, and a fresh confirmation). Or from the backend container:
+
+```bash
+docker compose -p warmbly exec backend warmblyctl partner create --slug graphkit --name GraphKit --allowed-hosts app.graphkit.com
+docker compose -p warmbly exec backend warmblyctl partner key --partner graphkit --mode test
+docker compose -p warmbly exec backend warmblyctl partner list
+```
+
+A partner has:
+
+| Setting | What it decides |
+|---|---|
+| Slug | A short, permanent identifier |
+| Display name | What its workspaces' members read, as in "Billed through GraphKit" |
+| Status | `active`, or `suspended`, which makes every one of its keys answer `403 partner_suspended` |
+| Allowed hosts | Hosts a return URL the partner sends may point at |
+| Delegation domains | Domains you have confirmed the partner controls. A mailbox it attaches by `delegation` connects only on one of these, or on a domain its workspace verified itself. Empty by default; set it from the partner's page in the admin panel |
+| Webhook URL and signing secret | Where its events are delivered, and the secret they are signed with |
+| Token callback base and key | Where Warmbly asks the partner for short-lived mailbox access tokens, and the key it presents |
+| Wholesale per mailbox-day | What the partner pays per enabled mailbox-day, for sending and warmup and for warmup only. Both start at zero |
+| Requests per second | The rate limit across all of the partner's keys, 20 to 1,000 (50 by default) |
+
+The webhook secret and callback key are stored encrypted with `CREDENTIALS_ENCRYPTION_KEY` and are never shown again once set. A partner owns a service account that owns its workspaces and that its workspace API keys act for. The account has no password and an address under the reserved `.invalid` domain, so nobody signs in as it and no mail is sent to it.
+
+### Keys
+
+A partner key is `wmbp_live_…` or `wmbp_test_…`, shown once and stored only as a SHA-256 hash. The prefix is the mode: a live key reaches only live workspaces and a test key only test ones, and the same id under the other mode is a different workspace. A test workspace is classified Test like an operator's [tester workspace](/development/accounts-and-access/). Revoke a key from the partner's page; anything using it stops at once.
+
+## Managed workspaces
+
+A workspace a partner creates runs on the private **Managed** plan: every feature (the API and webhooks, the unified inbox, CRM, placement tests, roles and the audit log), no plan tiers or send caps of its own, and no included AI allowance. Its members see **Billed through** the partner's display name instead of the billing page: no checkout, plan change, cancellation, balance top-up or workspace deletion. Those requests answer `403 partner_managed`.
+
+The [store](/guides/buy-mailboxes/) is off in a managed workspace, because its customers buy in the partner's product: the dashboard shows no buy button, store link, **Purchased** tab, balance or **Add money**, and an empty **Mailboxes** page says mailboxes are added through the partner. Members with **Manage mailboxes** can still connect a mailbox they already have; it starts **off** (see [Enablement](#enablement)). An agency whose every client is managed has no **Store** page either.
+
+People reach the workspace only through the partner's one-time login links. Each person is a separate Warmbly account bound to the partner's id for them and the key's mode, never to an existing account with the same email: a test key naming a person creates a test person and never reaches the live one. Their role comes from the partner on every sign-in (`admin` as Admin, `member` as Manager, `viewer` as Viewer). Such an account cannot set a password, add a passkey, a second factor or another sign-in method (`403 partner_account`), and a person the partner removes loses the membership and every session.
+
+The account signs in under an unguessable address in the reserved `.invalid` domain, which no other sign-in can match and which never receives mail. The person's `email` from the partner is kept as their **contact email**: it is what the dashboard and the API show for them (the user menu, profile, member, team and agency staff lists, Slack and app authorizations, the audit log and `GET /v1/me`), and it is refreshed on the upsert that creates the workspace and on every login link. The contact email is never a sign-in and never a mail destination; platform mail to these accounts is dropped. It is optional: without one the person is shown by name only, never under the `.invalid` address. An address that does not parse, or one under `.invalid`, is `400 invalid_request`. A name the [display-name rules](/api/error-codes/#name-refusals) refuse is cleaned rather than refused, so a reconcile loop never sticks on it.
+
+When the partner **suspends** a workspace, campaign sending and warmup stop, campaigns stay active and resume on their own when it is reactivated, and the workspace is read-only: members still sign in and read everything, while every change answers `403 organization_suspended` and a banner says the workspace is paused by the partner. The dashboard holds its write controls (connecting a mailbox, new campaigns, launching, importing contacts, new automations, composing, workspace settings, invitations) with the banner's explanation, and a change that still reaches the API is explained in the same words. When the partner **cancels** one, the same happens, the partner's API keys in it are revoked, and the workspace is deleted 30 days later through the normal workspace deletion unless the partner restores it first.
+
+## The partner API
+
+Base URL: `https://<your api host>/v1/partner`. Every request carries `Authorization: Bearer wmbp_…`.
+
+| Method and path | What it does |
+|---|---|
+| `PUT /organizations/{external_id}` | Create (`201`) or update (`200`) a workspace under the partner's id for it |
+| `GET /organizations/{external_id}` | The workspace, with usage and warmup summaries |
+| `GET /organizations` | Every workspace in the key's mode, newest first |
+| `DELETE /organizations/{external_id}` | Cancel: suspend now, delete after 30 days |
+| `POST /organizations/{external_id}/login-links` | A one-time sign-in URL for a person, valid for 60 seconds |
+| `DELETE /organizations/{external_id}/people/{person_external_id}` | Remove a person and end their sessions |
+| `POST /organizations/{external_id}/api-keys` | A `wmbly_` workspace key for the partner's integration, shown once |
+| `DELETE /organizations/{external_id}/api-keys/{id}` | Revoke a key the partner created |
+| `GET /organizations/{external_id}/mailboxes` | The workspace's mailboxes, oldest first (detached ones left out) |
+| `PUT /organizations/{external_id}/mailboxes/{partner_mailbox_id}` | Attach a mailbox under the partner's id for it (`201`), or bring an attached one up to date (`200`) |
+| `DELETE /organizations/{external_id}/mailboxes/{partner_mailbox_id}` | Detach it: it stops and turns off, its history stays |
+| `PUT /organizations/{external_id}/enablements/{mailbox_id}` | Set what one mailbox may do: `sending_warmup`, `warmup_only` or `off` |
+| `POST /organizations/{external_id}/connect-links` | A one-time, hour-long page that connects an outside Google or Microsoft mailbox |
+| `POST /organizations/{external_id}/microsoft-consent-links` | A one-time, hour-long page where a domain's Microsoft 365 administrator approves this instance's app |
+| `GET /organizations/{external_id}/balance` | The workspace's balance for AI and usage |
+| `POST /organizations/{external_id}/balance/credits` | Add money the partner charged its customer for, once per `reference` |
+| `GET /usage/mailbox-days?month=YYYY-MM` | Enabled mailbox-days per mailbox in a month, for reconciliation |
+| `GET /usage?month=YYYY-MM` | Enabled mailbox-days and the wholesale amount per workspace in a month |
+| `GET /events?after=evt_…&limit=100` | The partner's events in order, kept 30 days |
+
+The upsert body takes `name`, `plan` (`graphkit_managed`), `state` (`active` or `suspended`), `suspended_reason` (`billing`, `admin` or `reseller`), `limits.campaign_sends_per_mailbox_per_day`, `group`, `owner` (used only when the workspace is created) and `timezone`. A `PUT` on a cancelled workspace within its 30 days restores it. Unknown fields are ignored.
+
+A login link body is `{"person": {"external_id", "email", "name", "role"}, "return_to"}`. `return_to` is a path inside the app, or an HTTPS URL on one of the partner's allowed hosts; anything else is `400 invalid_request`. The link opens `/auth/partner` on the dashboard, signs the person in once, selects the workspace and lands on `return_to`. A cancelled workspace issues no links (`409 organization_cancelled`); a suspended one does, read-only.
+
+### Writes and retries
+
+Every `POST`, `PUT`, `PATCH` and `DELETE` needs an `Idempotency-Key` of 1 to 255 visible characters (`400 idempotency_key_required` without one). Keys are kept 24 hours per partner and mode. The same key with the same body returns the first answer with `Idempotent-Replayed: true`, the API key secret included: answers are stored encrypted with `CREDENTIALS_ENCRYPTION_KEY`. The same key with another body is `409 idempotency_conflict`, and a key whose first request is still running is `409 idempotency_in_progress`. A request that has not finished after two minutes is treated as abandoned and the same request may run again; the abandoned one can no longer store or clear an answer under the key. A server error or a `401`, `403` or `429` frees the key, so a retry with it runs again.
+
+### Errors and limits
+
+Errors are `{"error": {"code", "message", "request_id"}}`: `invalid_request`, `idempotency_key_required`, `idempotency_conflict`, `idempotency_in_progress`, `unauthorized`, `partner_suspended`, `not_found`, `plan_unknown`, `permission_not_allowed`, `organization_suspended`, `organization_cancelled`, `mailbox_exists`, `connection_failed`, `delegation_not_allowed`, `provider_unavailable`, `upstream_unavailable` (`503` with `Retry-After`, when Microsoft did not answer), `rate_limited` and `internal`. An unknown path under `/v1/partner` answers `404 not_found` in the same shape. Over the partner's rate limit the answer is `429` with `Retry-After`. Lists are `{"data": […], "pagination": {"next_cursor", "has_more"}}` with `?cursor=&limit=` (at most 100). Timestamps are RFC 3339 in UTC and money is integer micro-USD.
+
+### Webhooks
+
+With a webhook URL and secret set, every event is posted to the URL with `X-Warmbly-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<unix>." + body)>`, the same scheme as [customer webhooks](/guides/webhooks/), plus `X-Warmbly-Event` and `X-Warmbly-Event-Id`. For a day after a rotation the header carries a second `v1=` signed with the previous secret. The body is `{"id", "type", "created_at", "organization_external_id", "livemode", "data"}`, where `data` is the current state of what the event is about. Delivery is at least once and in no guaranteed order, retried with backoff for 72 hours; a `2xx` within 10 seconds counts as delivered. The webhook URL must be HTTPS and public, unless the instance allows unsafe webhook URLs (`WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS`, development and self-hosted only).
+
+Events: `organization.updated` (state, plan or limit changed, and on cancellation), `organization.deleted` (the workspace is gone), `mailbox.created` (a mailbox was connected inside the workspace or through a connect link), `mailbox.updated` (its status, enablement or warmup state changed, not on every send) and `mailbox.deleted` (it was removed inside Warmbly). `data` is the mailbox. A reader ignores types it does not know.
+
+## Mailboxes
+
+Every mailbox of a managed workspace has an id in the partner API (`id`, a UUID) and, when the partner attached it, the partner's own id for it (`partner_mailbox_id`). A mailbox answer carries `email`, `provider` (`google`, `microsoft` or `smtp`), `source`, `status` (`connecting` until its first sync, `connected`, `error` with `status_error`, or `disconnected`), `action_required` (`microsoft_consent` while the mailbox waits for its [tenant's approval](#microsoft-365-approval), with `status_error` saying what to do; otherwise `null`), `enablement`, `sends_today`, `daily_send_limit` and `warmup` (`state` is `off`, `ramping` or the mailbox's warmup health band, with `reason`, `daily_target`, `sent_7d`, `inbox_rate_7d` and `score`).
+
+### Attaching
+
+`PUT /organizations/{external_id}/mailboxes/{partner_mailbox_id}` takes `source`, `email`, `provider`, `first_name`, `last_name`, `enablement` and `connection`:
+
+| `source` | `connection.method` | How Warmbly connects it |
+|---|---|---|
+| `graphkit_infrastructure` (bought through the partner) | `token` (Google) | Through the same purchased-mailbox path as the [store](/guides/buy-mailboxes/), with short-lived tokens from the partner's token callback (`POST {callback base}/mailboxes/{id}/access-token`). The token has to open exactly the attached address. Connects in the background a few seconds after the attach, retried with backoff |
+| `graphkit_infrastructure` | `delegation` (Google) | This instance's own Google service account. Only for a domain the workspace already holds an active grant for (it verified the domain, or the store bought it), or one of the partner's delegation domains; anything else is `422 delegation_not_allowed`. Also in the background |
+| `graphkit_infrastructure` | `delegation` (Microsoft) | This instance's own Microsoft app, once the domain's Microsoft 365 administrator approved it for the workspace through a [consent link](#microsoft-365-approval) (or the domain is one of the partner's delegation domains). Until then the attach succeeds and the mailbox waits with `status: connecting` and `action_required: microsoft_consent` |
+| `graphkit_infrastructure` or `partner` | `password` | `connection.credentials` (`username`, `password` or Google's `app_password`, and `imap` and `smtp` host, port and `security` of `ssl` or `starttls`). Checked live during the call and sealed like any mailbox password; never kept anywhere else, logged or returned. A refusal is `422 connection_failed` |
+
+A bought mailbox shows as **Purchased** in the workspace. An address the workspace already has is adopted under the partner's id instead of connected again. Attaching again applies the body's enablement and sender name, brings a detached mailbox back, and retries a connect that failed. A suspended or cancelled workspace refuses an attach (`409 organization_suspended` or `organization_cancelled`), and nothing a suspended partner attached connects until it is active again.
+
+While the partner holds a mailbox it attached, the workspace's members cannot remove it or sign it in again: those requests answer `403 partner_managed_mailbox`, and the mailbox says it is managed by the partner. `DELETE …/mailboxes/{partner_mailbox_id}` detaches it: it turns off, stops connecting, keeps its history, and the members may then remove it themselves.
+
+### Enablement
+
+What a mailbox may do is its **enablement**, set by `PUT …/enablements/{mailbox_id}` with `{"enablement": "…"}` and on attach:
+
+| Enablement | Campaigns | Warmup |
+|---|---|---|
+| `sending_warmup` | Yes | Yes |
+| `warmup_only` | Skipped, like a resting mailbox: its leads move to the campaign's other mailboxes | Yes |
+| `off` | No | No, and it leaves the warmup pools |
+
+A mailbox someone connects inside a managed workspace starts **off**, and the partner hears about it as `mailbox.created`; the workspace shows it with "Turn it on" in the partner's product. Turning a mailbox on in a suspended or cancelled workspace is `409`; turning it off always works. Cancelling a workspace turns every mailbox off.
+
+Enablement is enforced where every send is already decided, not in a parallel check: the scheduler's send admission skips a mailbox campaigns may not use, the dispatch gate refuses a campaign, warmup or placement send from it, and the warmup entitlement (the same one a lapsed plan turns off) is read per mailbox, so the task runner, the pool reconciler and pool membership all agree. The workspace's members see each mailbox's enablement read-only in **Mailboxes**.
+
+### Daily campaign cap
+
+`limits.campaign_sends_per_mailbox_per_day` on the workspace upsert caps each mailbox's campaign emails per UTC day (1 to 5,000; 50 by default). It applies with the mailbox's own daily limit, and the lower one binds. At the cap the mailbox stops until the next UTC midnight and campaigns move on to the workspace's other mailboxes; the dispatch gate refuses anything past it. Warmup, placement tests and replies do not count. `sends_today` and `daily_send_limit` on each mailbox show where it stands.
+
+### Connect links
+
+`POST /organizations/{external_id}/connect-links` with `provider` (`google` or `microsoft`), `partner_mailbox_id`, `enablement`, an optional `login_hint` and `return_url` answers `{"url", "expires_at"}`. The page is the [client connect page](/guides/agencies/#client-connect-links), in the group's brand, for that one provider. It works once and for an hour: the first mailbox connected spends it, and a used or expired link opens an explanation instead. The person signs in at Google or Microsoft (whose consent screen names this instance's OAuth app), the mailbox joins the workspace as `source: partner` under `partner_mailbox_id` with the requested enablement, the partner gets `mailbox.created`, and the browser returns to `return_url` with `?partner_mailbox_id=…&status=connected`, `cancelled` or `error`. `return_url` must be HTTPS on one of the partner's allowed hosts (`400 invalid_request` otherwise). An instance without Google or Microsoft sign-in, or without a portal address (`PORTAL_DOMAIN`), answers `422 provider_unavailable`.
+
+### Microsoft 365 approval
+
+A Microsoft 365 mailbox attached with `delegation` connects through this instance's Microsoft app, which the administrator of the domain's Microsoft 365 account approves once for the workspace. Until they do, the mailbox stays `connecting` with `action_required: microsoft_consent` and `status_error` naming the step, announced once with `mailbox.updated`. It checks again every 30 minutes and never turns to `error` while it waits.
+
+`POST /organizations/{external_id}/microsoft-consent-links` with `{"domain": "getacme.com", "return_url": "https://app.partner.test/…"}` answers `201 {"url", "expires_at"}`. Send the administrator to `url`: Microsoft's admin consent page for this instance's app, then a sign-in that proves they administer that domain's Microsoft 365 account. The link works once and for an hour. When it is done, the browser returns to `return_url` with `?domain=getacme.com&status=connected`, `cancelled` (they declined) or `error` (Microsoft did not confirm an administrator of that account), and the workspace's waiting mailboxes on the account connect within a minute. A used or expired link opens an explanation instead of redirecting.
+
+When the workspace's approval for the domain already works, the answer is `200 {"url": null, "consented": true}` and the waiting mailboxes are retried at once. `domain` must belong to a Microsoft 365 mailbox the partner attached to the workspace (`404 not_found` otherwise), and `return_url` must be HTTPS on one of the partner's allowed hosts (`400 invalid_request`). A suspended or cancelled workspace refuses it (`409 organization_suspended` or `organization_cancelled`), an instance without a Microsoft app answers `422 provider_unavailable`, and a Microsoft that did not answer `503 upstream_unavailable`.
+
+### Group branding
+
+`group.branding` on the workspace upsert (`product_name`, `logo_url`, `accent_color`, `website`, `hide_powered_by`, `portal_domain`) is the brand of every workspace sent with that group: its connect pages, shared reports and other public pages show it, and `hide_powered_by` is honoured on every plan. A workspace's own brand still wins. The group is not an agency: balances, limits and billing stay per workspace. A `portal_domain` is checked every few minutes for a CNAME to the portal address and the TXT record listed in `group.portal.dns_records`; `group.portal.status` turns `verified` once both resolve. Pages and sign-in links stay on the shared portal and app hosts for now.
+
+## Usage and billing
+
+A **mailbox-day** is a UTC day on which a mailbox had `sending_warmup` or `warmup_only` at any moment; it counts once, under the higher of the two it had. Days come from each mailbox's enablement history, so detached mailboxes and cancelled workspaces count for the days they were on.
+
+- `GET /usage/mailbox-days?month=YYYY-MM` lists each mailbox with days in the month (`external_id`, `mailbox_id`, `partner_mailbox_id`, `email`, `sending_warmup_days`, `warmup_only_days`) and the month's `totals`, up to 1,000 rows a page with `?cursor=&limit=`.
+- `GET /usage?month=YYYY-MM` adds them up per workspace with `amount_micros` at the partner's wholesale prices, and `total_micros`. `final` is true once the month is closed.
+
+A month closes one day after it ends: its days and amounts are written once at the prices in force then, and never change after that. Test-mode workspaces are counted but bill nothing. The admin panel's partner page shows the statement for any month, the running one at today's prices.
+
+`GET …/balance` reads the workspace's balance for AI and usage (`owner` is always `organization`; the Managed plan includes no allowance). `POST …/balance/credits` with `amount_micros` (5 to 5,000 USD), `reference` and `description` adds money the partner charged its customer for; a `reference` already credited adds nothing and answers the current balance.
+
+## Test mode
+
+A workspace created with a test key sends no real mail: campaign, warmup and placement sends are refused at dispatch, its mailboxes never join the warmup pools, and manual sends are refused too. Everything else, enablement and mailbox-days included, works as in live mode.
+
+## Data
+
+Partners, their keys, the link between a partner and a workspace, its mailbox enablements and connect links, group brands and monthly statements belong to the instance. A [workspace archive](/guides/workspace-export-import/) never carries them, so an imported workspace is an ordinary one: its mailboxes travel, unmanaged. Partner events are kept 30 days and idempotency answers 24 hours. See [data control](/development/data-control/).

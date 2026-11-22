@@ -91,8 +91,9 @@ type Deps struct {
 func (s *Service) WireVendors(v Vendors) { s.d.Vendors = v }
 
 type Service struct {
-	d      Deps
-	states stateStore
+	d       Deps
+	states  stateStore
+	partner PartnerLinks
 }
 
 func New(d Deps) *Service {
@@ -427,6 +428,9 @@ func (s *Service) connect(ctx context.Context, link *models.ClientConnectLink, p
 		log.Warn().Str("link_id", link.ID.String()).Msg("connect link: mailbox connected but its use was not recorded")
 	}
 	s.applyDefaults(ctx, link, acc)
+	if s.partner != nil {
+		s.partner.Connected(ctx, link.ID, acc)
+	}
 	s.notifyCreator(ctx, link, actor, acc)
 	return &Result{Account: acc, Link: s.withStatus(link), ActorID: actor}, nil
 }

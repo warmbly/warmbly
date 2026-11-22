@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +18,15 @@ import (
 // balance (monthly + purchased) is lower than the amount. Callers map it to a
 // 402.
 var ErrInsufficientCredits = errors.New("insufficient balance")
+
+// ErrAllowanceUsed refuses an AllowanceOnly debit the allowance (and agency funding) cannot cover.
+var ErrAllowanceUsed = fmt.Errorf("%w: the included allowance is used up", ErrInsufficientCredits)
+
+// ErrOverageLimitReached refuses a debit that only the purchased money past its monthly cap could cover.
+var ErrOverageLimitReached = fmt.Errorf("%w: the monthly limit on spending added money is reached", ErrInsufficientCredits)
+
+// StoreKeyPrefix starts the idempotency key of every ledger line the store writes.
+const StoreKeyPrefix = "store:"
 
 // CreditRepository persists the balance ledger and its append-only transaction
 // log, in micro-dollars. The ledger has two pools: the monthly allowance (reset
@@ -50,8 +61,14 @@ type CreditRepository interface {
 	// it came from, once (refundKey). Monthly money spent before the last
 	// reset expired with it, so only the purchased part comes back then.
 	RefundSpend(ctx context.Context, orgID uuid.UUID, spendKey, refundKey, reason string) (refunded, balance models.Micro, err error)
+	// KeyedCharge is the debit under key and what its own refund gave back; nil when there is no such debit.
+	KeyedCharge(ctx context.Context, orgID uuid.UUID, key string) (*models.KeyedCharge, error)
+	// RefundCapped gives money back to the purchased pool under refundKey, once, and never past what
+	// the debits under capPrefix took less what already came back under it. spendKey sizes the refund
+	// to that debit (nothing when it was never made); amount is used when spendKey is empty.
+	RefundCapped(ctx context.Context, orgID uuid.UUID, capPrefix, spendKey, refundKey string, amount models.Micro, reason string) (models.Micro, error)
 
-	// SpentInWindows sums net debits since each window start.
+	// SpentInWindows sums net debits since each window start, the store's lines left out.
 	SpentInWindows(ctx context.Context, orgID uuid.UUID, dayStart, weekStart, monthStart time.Time) (day, week, month models.Micro, err error)
 	// MemberSpentInWindows is SpentInWindows for one member's charges.
 	MemberSpentInWindows(ctx context.Context, orgID, userID uuid.UUID, dayStart, weekStart, monthStart time.Time) (day, week, month models.Micro, err error)
@@ -60,6 +77,10 @@ type CreditRepository interface {
 	UsageDaily(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.CreditUsagePoint, error)
 	// UsageBreakdown groups spend since `since` by "reason" or "model".
 	UsageBreakdown(ctx context.Context, orgID uuid.UUID, since time.Time, by string) ([]models.CreditUsageBucket, error)
+	// AIFromPurchasedThisMonth is what non-store debits took from the purchased pool this calendar month (UTC), net of refunds.
+	AIFromPurchasedThisMonth(ctx context.Context, orgID uuid.UUID) (models.Micro, error)
+	// SpentOutsideSince sums debits since `since` whose key does not start with keyPrefix (the store's lines, say).
+	SpentOutsideSince(ctx context.Context, orgID uuid.UUID, since time.Time, keyPrefix string) (models.Micro, error)
 
 	// AnnualAllowancesDue lists active subscriptions billed over more than a
 	// month, with their period start, plan allowance and last reset, so the
@@ -69,6 +90,8 @@ type CreditRepository interface {
 	ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, error)
 	// ListTransactionsBefore keyset-paginates rows older than the cursor.
 	ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, error)
+	// ListTransactionsByKeyBefore is ListTransactionsBefore limited to rows whose idempotency key starts with keyPrefix.
+	ListTransactionsByKeyBefore(ctx context.Context, orgID uuid.UUID, keyPrefix string, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, error)
 }
 
 type creditRepository struct {
@@ -222,17 +245,21 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 	}
 	defer tx.Rollback(ctx)
 
-	if key != "" {
+	replay := func() (*models.CreditTransaction, error) {
+		if key == "" {
+			return nil, nil
+		}
 		existing, err := replayByKey(ctx, tx, key)
+		if err != nil || existing == nil {
+			return nil, err
+		}
+		return existing, tx.Commit(ctx)
+	}
+	if existing, err := replay(); err != nil || existing != nil {
 		if err != nil {
 			return 0, nil, false, err
 		}
-		if existing != nil {
-			if cerr := tx.Commit(ctx); cerr != nil {
-				return 0, nil, false, cerr
-			}
-			return existing.MonthlyAfter + existing.PurchasedAfter, existing, true, nil
-		}
+		return existing.MonthlyAfter + existing.PurchasedAfter, existing, true, nil
 	}
 
 	// The row lock serializes concurrent debits; a missing ledger is an empty one.
@@ -240,9 +267,11 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 	if err != nil {
 		return 0, nil, false, err
 	}
-	funding, err := agencyFundingFor(ctx, tx, orgID, d.AgencyAllowance, time.Now())
-	if err != nil {
-		return 0, nil, false, err
+	var funding *agencyFunding
+	if !d.PurchasedOnly {
+		if funding, err = agencyFundingFor(ctx, tx, orgID, d.AgencyAllowance, time.Now()); err != nil {
+			return 0, nil, false, err
+		}
 	}
 	if missing && funding == nil {
 		if !d.Clamp {
@@ -256,6 +285,13 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 			return 0, nil, false, err
 		}
 	}
+	// A same-key debit that committed while this one waited on the lock replays.
+	if existing, err := replay(); err != nil || existing != nil {
+		if err != nil {
+			return 0, nil, false, err
+		}
+		return existing.MonthlyAfter + existing.PurchasedAfter, existing, true, nil
+	}
 	var agency models.AgencyAILedger
 	var agencyAvail models.Micro
 	if funding != nil {
@@ -264,21 +300,44 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 		}
 	}
 
-	own := monthly + purchased
+	spendableMonthly, spendablePurchased := monthly, purchased
+	if d.PurchasedOnly {
+		spendableMonthly = 0
+	}
+	if d.AllowanceOnly {
+		spendablePurchased = 0
+	}
+	capped := false
+	if d.OverageMonthlyLimit != nil && !d.PurchasedOnly && spendablePurchased > 0 {
+		used, err := overageUsed(ctx, tx, orgID, time.Now())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		if left := max(*d.OverageMonthlyLimit-used, 0); left < spendablePurchased {
+			spendablePurchased, capped = left, true
+		}
+	}
+	own := spendableMonthly + spendablePurchased
 	take := d.Amount
 	if own+agencyAvail < take {
 		if !d.Clamp {
+			switch {
+			case d.AllowanceOnly:
+				return 0, nil, false, ErrAllowanceUsed
+			case capped:
+				return 0, nil, false, ErrOverageLimitReached
+			}
 			return 0, nil, false, ErrInsufficientCredits
 		}
 		take = own + agencyAvail
 	}
 	if take == 0 {
-		return own, nil, false, tx.Commit(ctx)
+		return monthly + purchased, nil, false, tx.Commit(ctx)
 	}
 
 	fromOwn := min(take, own)
 	fromAgency := take - fromOwn
-	fromMonthly := min(fromOwn, monthly)
+	fromMonthly := min(fromOwn, spendableMonthly)
 	fromPurchased := fromOwn - fromMonthly
 	monthly -= fromMonthly
 	purchased -= fromPurchased
@@ -309,6 +368,38 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 		return 0, nil, false, err
 	}
 	return monthly + purchased, txn, false, nil
+}
+
+// overageUsed is what non-store debits made this calendar month (UTC) took
+// from the purchased pool, net of their own refunds whenever those came. A
+// refund is netted against its charge's month, never against this month's.
+func overageUsed(ctx context.Context, q queryRower, orgID uuid.UUID, now time.Time) (models.Micro, error) {
+	start := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	var used int64
+	err := q.QueryRow(ctx, `
+		SELECT COALESCE(SUM(GREATEST(-`+purchasedMicro("d")+` - COALESCE(`+purchasedMicro("rf")+`, 0), 0)), 0)
+		FROM credit_ledger_transactions d `+refundOf+`
+		WHERE d.org_id = $1 AND d.created_at >= $2 AND `+debitMicro+` < 0 AND `+notStore+`
+	`, orgID, start, storeLike(orgID)).Scan(&used)
+	return models.Micro(max(used, 0)), err
+}
+
+// purchasedMicro is a row's change to the purchased pool, legacy rows included.
+func purchasedMicro(t string) string {
+	return `COALESCE(` + t + `.purchased_delta_micro, ` + t + `.purchased_delta::bigint * legacy_credit_micro())`
+}
+
+// storeLike matches the scoped keys of the store's ledger lines.
+func storeLike(orgID uuid.UUID) string { return likePrefix(orgID, StoreKeyPrefix) }
+
+// likePrefix is a LIKE pattern for the scoped keys starting with prefix.
+func likePrefix(orgID uuid.UUID, prefix string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(scopeKey(orgID, prefix)) + "%"
+}
+
+// AIFromPurchasedThisMonth is overageUsed outside a transaction, for the usage view.
+func (r *creditRepository) AIFromPurchasedThisMonth(ctx context.Context, orgID uuid.UUID) (models.Micro, error) {
+	return overageUsed(ctx, r.DB, orgID, time.Now())
 }
 
 // lockOrgLedger row-locks the org's ledger, creating it first when create is
@@ -406,6 +497,80 @@ func (r *creditRepository) RefundSpend(ctx context.Context, orgID uuid.UUID, spe
 	return total, monthly + purchased, nil
 }
 
+func (r *creditRepository) KeyedCharge(ctx context.Context, orgID uuid.UUID, key string) (*models.KeyedCharge, error) {
+	scoped := scopeKey(orgID, key)
+	if scoped == "" {
+		return nil, errors.New("a keyed charge needs a key")
+	}
+	var taken, refunded int64
+	err := r.DB.QueryRow(ctx, `
+		SELECT -`+debitMicro+`, COALESCE(rf.amount_micro, rf.amount::bigint * legacy_credit_micro(), 0)
+		FROM credit_ledger_transactions d `+refundOf+`
+		WHERE d.org_id = $1 AND d.idempotency_key = $2 AND `+debitMicro+` < 0`, orgID, scoped).Scan(&taken, &refunded)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &models.KeyedCharge{Taken: models.Micro(taken), Refunded: models.Micro(refunded)}, nil
+}
+
+func (r *creditRepository) RefundCapped(ctx context.Context, orgID uuid.UUID, capPrefix, spendKey, refundKey string, amount models.Micro, reason string) (models.Micro, error) {
+	if capPrefix == "" || refundKey == "" || !strings.HasPrefix(refundKey, capPrefix) {
+		return 0, errors.New("a capped refund needs a key under its prefix")
+	}
+	refundScoped := scopeKey(orgID, refundKey)
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	// The ledger lock serializes every balance change, so two refunds cannot both fit under the cap.
+	if _, _, _, err := lockOrgLedger(ctx, tx, orgID, true); err != nil {
+		return 0, err
+	}
+	if existing, err := replayByKey(ctx, tx, refundScoped); err != nil {
+		return 0, err
+	} else if existing != nil {
+		return existing.Amount, tx.Commit(ctx)
+	}
+	if spendKey != "" {
+		spend, err := replayByKey(ctx, tx, scopeKey(orgID, spendKey))
+		if err != nil {
+			return 0, err
+		}
+		if spend == nil || spend.OrgID != orgID || spend.Amount >= 0 {
+			return 0, tx.Commit(ctx)
+		}
+		amount = -spend.Amount
+	}
+	like := likePrefix(orgID, capPrefix)
+	var charged, back int64
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(-amount_micro) FILTER (WHERE amount_micro < 0), 0), COALESCE(SUM(amount_micro) FILTER (WHERE amount_micro > 0), 0)
+		FROM credit_ledger_transactions WHERE org_id = $1 AND idempotency_key LIKE $2`, orgID, like).Scan(&charged, &back); err != nil {
+		return 0, err
+	}
+	give := min(amount, models.Micro(charged-back))
+	if give <= 0 {
+		return 0, tx.Commit(ctx)
+	}
+	var monthly, purchased models.Micro
+	if err := tx.QueryRow(ctx, `
+		UPDATE credit_ledger SET purchased_micro = purchased_micro + $2, updated_at = now() WHERE org_id = $1
+		RETURNING balance_micro, purchased_micro`, orgID, give).Scan(&monthly, &purchased); err != nil {
+		return 0, err
+	}
+	if _, err := insertTxn(ctx, tx, orgID, models.CreditTransaction{
+		Amount: give, Reason: reason, MonthlyAfter: monthly, PurchasedDelta: give, PurchasedAfter: purchased,
+		IdempotencyKey: keyPtr(refundScoped),
+	}); err != nil {
+		return 0, err
+	}
+	return give, tx.Commit(ctx)
+}
+
 // A keyed refund names its charge (RefundSpend writes "<charge key>:refund"),
 // so a spend window nets a refund against the charge it returns, in the window
 // the charge fell in, however much later the refund came.
@@ -414,6 +579,8 @@ const (
 	refundOf   = `LEFT JOIN credit_ledger_transactions rf
 		ON d.idempotency_key IS NOT NULL AND rf.idempotency_key = d.idempotency_key || ':refund'`
 	netSpend = `GREATEST(-` + debitMicro + ` - COALESCE(rf.amount_micro, rf.amount::bigint * legacy_credit_micro(), 0), 0)`
+	// notStore leaves the store's lines out; $3 is storeLike.
+	notStore = `(d.idempotency_key IS NULL OR d.idempotency_key NOT LIKE $3)`
 )
 
 func (r *creditRepository) SpentInWindows(ctx context.Context, orgID uuid.UUID, dayStart, weekStart, monthStart time.Time) (models.Micro, models.Micro, models.Micro, error) {
@@ -421,11 +588,11 @@ func (r *creditRepository) SpentInWindows(ctx context.Context, orgID uuid.UUID, 
 	err := r.DB.QueryRow(ctx, `
 		SELECT
 			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $2), 0),
-			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $3), 0),
-			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $4), 0)
+			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $4), 0),
+			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $5), 0)
 		FROM credit_ledger_transactions d `+refundOf+`
-		WHERE d.org_id = $1 AND `+debitMicro+` < 0 AND d.created_at >= LEAST($2, $3, $4)
-	`, orgID, dayStart, weekStart, monthStart).Scan(&day, &week, &month)
+		WHERE d.org_id = $1 AND `+debitMicro+` < 0 AND `+notStore+` AND d.created_at >= LEAST($2, $4, $5)
+	`, orgID, dayStart, storeLike(orgID), weekStart, monthStart).Scan(&day, &week, &month)
 	return day, week, month, err
 }
 
@@ -433,12 +600,12 @@ func (r *creditRepository) MemberSpentInWindows(ctx context.Context, orgID, user
 	var day, week, month models.Micro
 	err := r.DB.QueryRow(ctx, `
 		SELECT
-			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $3), 0),
+			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $2), 0),
 			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $4), 0),
 			COALESCE(SUM(`+netSpend+`) FILTER (WHERE d.created_at >= $5), 0)
 		FROM credit_ledger_transactions d `+refundOf+`
-		WHERE d.org_id = $1 AND d.actor_user_id = $2 AND `+debitMicro+` < 0 AND d.created_at >= LEAST($3, $4, $5)
-	`, orgID, userID, dayStart, weekStart, monthStart).Scan(&day, &week, &month)
+		WHERE d.org_id = $1 AND d.actor_user_id = $6 AND `+debitMicro+` < 0 AND `+notStore+` AND d.created_at >= LEAST($2, $4, $5)
+	`, orgID, dayStart, storeLike(orgID), weekStart, monthStart, userID).Scan(&day, &week, &month)
 	return day, week, month, err
 }
 
@@ -466,6 +633,18 @@ func (r *creditRepository) UsageDaily(ctx context.Context, orgID uuid.UUID, sinc
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+func (r *creditRepository) SpentOutsideSince(ctx context.Context, orgID uuid.UUID, since time.Time, keyPrefix string) (models.Micro, error) {
+	like := likePrefix(orgID, keyPrefix)
+	var total int64
+	err := r.DB.QueryRow(ctx, `
+		SELECT COALESCE(SUM(-COALESCE(amount_micro, amount::bigint * legacy_credit_micro())), 0)
+		FROM credit_ledger_transactions
+		WHERE org_id = $1 AND COALESCE(amount_micro, amount::bigint) < 0 AND created_at >= $2
+		  AND (idempotency_key IS NULL OR idempotency_key NOT LIKE $3)
+	`, orgID, since, like).Scan(&total)
+	return models.Micro(total), err
 }
 
 func (r *creditRepository) UsageBreakdown(ctx context.Context, orgID uuid.UUID, since time.Time, by string) ([]models.CreditUsageBucket, error) {
@@ -627,21 +806,37 @@ func (r *creditRepository) ListTransactions(ctx context.Context, orgID uuid.UUID
 }
 
 func (r *creditRepository) ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, error) {
+	return r.listTransactions(ctx, orgID, "", limit, beforeCreatedAt, beforeID)
+}
+
+func (r *creditRepository) ListTransactionsByKeyBefore(ctx context.Context, orgID uuid.UUID, keyPrefix string, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, error) {
+	if keyPrefix == "" {
+		return nil, errors.New("a key prefix is required")
+	}
+	return r.listTransactions(ctx, orgID, keyPrefix, limit, beforeCreatedAt, beforeID)
+}
+
+func (r *creditRepository) listTransactions(ctx context.Context, orgID uuid.UUID, keyPrefix string, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
+	}
+	// Stored keys carry the org id in front (scopeKey); an empty prefix matches every row.
+	var like any
+	if keyPrefix != "" {
+		like = likePrefix(orgID, keyPrefix)
 	}
 	query := `
 		SELECT ` + creditTxnCols + `
 		FROM credit_ledger_transactions
-		WHERE org_id = $1
+		WHERE org_id = $1 AND ($3::text IS NULL OR idempotency_key LIKE $3)
 		ORDER BY created_at DESC, id DESC
 		LIMIT $2`
-	args := []any{orgID, limit}
+	args := []any{orgID, limit, like}
 	if !beforeCreatedAt.IsZero() {
 		query = `
 		SELECT ` + creditTxnCols + `
 		FROM credit_ledger_transactions
-		WHERE org_id = $1 AND (created_at, id) < ($3, $4)
+		WHERE org_id = $1 AND ($3::text IS NULL OR idempotency_key LIKE $3) AND (created_at, id) < ($4, $5)
 		ORDER BY created_at DESC, id DESC
 		LIMIT $2`
 		args = append(args, beforeCreatedAt, beforeID)

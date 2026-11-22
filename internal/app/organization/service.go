@@ -566,6 +566,9 @@ func (s *organizationService) Delete(ctx context.Context, orgID uuid.UUID) *errx
 		if errors.Is(err, repository.ErrOrganizationCloudLinked) {
 			return errx.NewWithIdentifier(errx.Conflict, "organization_cloud_connected", "Disconnect this workspace from Warmbly Cloud before deleting it.")
 		}
+		if errors.Is(err, repository.ErrStorePurchasesActive) {
+			return errx.NewWithIdentifier(errx.Conflict, "store_purchases_active", "Cancel this workspace's purchased mailboxes and turn off renewal on its purchased domains before deleting it.")
+		}
 		errs.CaptureException(err)
 		return errx.New(errx.Internal, "failed to delete organization")
 	}
@@ -675,6 +678,10 @@ func (s *organizationService) GetMembers(ctx context.Context, orgID uuid.UUID) (
 		errs.CaptureException(err)
 	}
 	s.attachMemberAccess(ctx, orgID, members)
+	// Every caller renders the list to people, so the joined users carry their visible address.
+	for i := range members {
+		members[i].User.ForDisplay()
+	}
 	return members, nil
 }
 
@@ -986,7 +993,11 @@ func (s *organizationService) acceptResolved(ctx context.Context, inv *models.Or
 	// Verify email matches. Name both addresses: the usual cause is a browser
 	// already signed in as someone else, and a bare "does not match" hides it.
 	if !strings.EqualFold(email, inv.Email) {
-		return nil, errx.New(errx.Forbidden, "this invitation is for "+inv.Email+", but you are signed in as "+email+"; sign out and use the invited address")
+		as := email
+		if models.InternalAddress(email) {
+			as = "an account the service managing your workspace signs in"
+		}
+		return nil, errx.New(errx.Forbidden, "this invitation is for "+inv.Email+", but you are signed in as "+as+"; sign out and use the invited address")
 	}
 
 	// An expired invitation stays listed so the team page can send it again.

@@ -2,6 +2,8 @@ package fleetnode
 
 import (
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/nodebackend"
 )
 
 // NodeEnvKeys are the settings a node needs to do its job, in the order they
@@ -72,7 +75,6 @@ var NodeEnvKeys = []string{
 	"POSTHOG_ERROR_TRACKING",
 	"SENTRY_DSN",
 	"IMAP_IDLE",
-	"SYNC_PUSH_FALLBACK_INTERVAL",
 }
 
 // consumerEnvKeys reach a consumer and never a worker. A consumer runs the
@@ -150,20 +152,61 @@ func BackendURL() string {
 // ErrBackendNotHTTPS names a cleartext control-plane address handed to nodes on hosted production.
 var ErrBackendNotHTTPS = errors.New("hosted production hands nodes a cleartext control-plane address; keep ENCRYPTED_KEYS_BACKEND_URL on a private network or set it to an https:// URL")
 
-// CheckBackendURL reports a non-https, non-loopback control-plane address on hosted production.
+// CheckBackendURL reports a non-https, non-loopback control-plane address on hosted production, and an unusable private one.
 func CheckBackendURL() error {
-	backend := BackendURL()
+	_, _, internalErr := InternalBackend()
+	if cleartextOnHostedProduction(BackendURL()) {
+		return errors.Join(ErrBackendNotHTTPS, internalErr)
+	}
+	return internalErr
+}
+
+func cleartextOnHostedProduction(backend string) bool {
 	if backend == "" || !config.HostedProduction() {
-		return nil
+		return false
 	}
 	u, err := url.Parse(backend)
 	if err != nil {
-		return ErrBackendNotHTTPS
+		return true
 	}
-	if strings.EqualFold(u.Scheme, "https") || loopbackHost(u.Hostname()) {
-		return nil
+	return !strings.EqualFold(u.Scheme, "https") && !loopbackHost(u.Hostname())
+}
+
+// ErrInternalBackendUnusable names a private control-plane address that is not handed to nodes.
+var ErrInternalBackendUnusable = errors.New("NODE_BACKEND_INTERNAL_URL is not handed to nodes")
+
+// InternalBackend is the private control-plane address nodes are offered and its CA as base64 PEM; empty when unset or unusable.
+func InternalBackend() (rawURL, caB64 string, err error) {
+	rawURL = strings.TrimRight(strings.TrimSpace(os.Getenv("NODE_BACKEND_INTERNAL_URL")), "/")
+	if rawURL == "" {
+		return "", "", nil
 	}
-	return ErrBackendNotHTTPS
+	u, perr := url.Parse(rawURL)
+	if perr != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return "", "", fmt.Errorf("%w: it is not an http(s) URL", ErrInternalBackendUnusable)
+	}
+	if u.Scheme != "https" && config.HostedProduction() {
+		return "", "", fmt.Errorf("%w: hosted production needs https", ErrInternalBackendUnusable)
+	}
+	inline := strings.TrimSpace(os.Getenv("NODE_BACKEND_INTERNAL_CA"))
+	file := strings.TrimSpace(os.Getenv("NODE_BACKEND_INTERNAL_CA_FILE"))
+	if inline != "" && file != "" {
+		return "", "", fmt.Errorf("%w: set NODE_BACKEND_INTERNAL_CA or NODE_BACKEND_INTERNAL_CA_FILE, not both", ErrInternalBackendUnusable)
+	}
+	pem := []byte(inline)
+	if file != "" {
+		if pem, perr = os.ReadFile(file); perr != nil {
+			return "", "", fmt.Errorf("%w: reading NODE_BACKEND_INTERNAL_CA_FILE: %v", ErrInternalBackendUnusable, perr)
+		}
+	}
+	if len(pem) == 0 {
+		return rawURL, "", nil
+	}
+	if !x509.NewCertPool().AppendCertsFromPEM(pem) {
+		return "", "", fmt.Errorf("%w: its CA holds no PEM certificate", ErrInternalBackendUnusable)
+	}
+	// Base64, because the env file docker reads cannot hold a multi-line value.
+	return rawURL, base64.StdEncoding.EncodeToString(pem), nil
 }
 
 func loopbackHost(host string) bool {
@@ -204,6 +247,13 @@ func RenderEnv(nodeID uuid.UUID, role models.NodeRole, region string) string {
 	}
 
 	fmt.Fprintf(&b, "WARMBLY_BACKEND_URL=%s\n", backend)
+	// Additive: a node probes it at startup and keeps WARMBLY_BACKEND_URL when it does not answer.
+	if internal, ca, err := InternalBackend(); err == nil && internal != "" {
+		fmt.Fprintf(&b, "%s=%s\n", nodebackend.EnvInternalURL, internal)
+		if ca != "" {
+			fmt.Fprintf(&b, "%s=%s\n", nodebackend.EnvInternalCAB64, ca)
+		}
+	}
 	fmt.Fprintf(&b, "ENCRYPTED_KEYS_PROVIDER=%s\n", keysProvider)
 	fmt.Fprintf(&b, "ENCRYPTED_KEYS_BACKEND_URL=%s\n", backend)
 	// A node calls only the node-only internal routes. With a separate

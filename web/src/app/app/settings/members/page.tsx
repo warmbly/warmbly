@@ -272,7 +272,8 @@ export default function MembersSettingsPage() {
                             </thead>
                             <tbody>
                                 {memberList.map((m) => {
-                                    const email = safeEmail(m.email) || `(user ${m.user_id.slice(0, 8)})`;
+                                    // The visible address, or the name for someone shown without one (a reseller's people and its account).
+                                    const email = safeEmail(m.email) || m.name?.trim() || `(user ${m.user_id.slice(0, 8)})`;
                                     const isSelf = m.user_id === currentUserId;
                                     const isOwner = m.role === "owner";
                                     return (
@@ -284,7 +285,7 @@ export default function MembersSettingsPage() {
                                                 <div className="flex items-center gap-2.5">
                                                     <div className="size-7 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
                                                         <span className="text-[10px] font-semibold text-slate-600">
-                                                            {initials(m.email, m.user_id)}
+                                                            {initials(m.email || m.name, m.user_id)}
                                                         </span>
                                                     </div>
                                                     <div className="min-w-0">

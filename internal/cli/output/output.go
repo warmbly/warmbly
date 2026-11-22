@@ -23,8 +23,8 @@ type Column struct {
 	Header string
 	// Path is dotted, so "organization.name" and "counts.sent" both work.
 	Path string
-	// Format names a renderer: time, date, bool, status, bytes, or empty for
-	// the value as it stands.
+	// Format names a renderer: time, date, bool, status, bytes, micros (an
+	// amount in micro-dollars, shown as dollars), or empty for the value as it stands.
 	Format string
 	// Truncate caps the rendered width; 0 means no cap.
 	Truncate int
@@ -286,11 +286,25 @@ func render(v any, c Column) string {
 		if f, ok := v.(float64); ok {
 			return strconv.FormatInt(int64(f), 10)
 		}
+	case "micros":
+		if f, ok := v.(float64); ok {
+			return Dollars(int64(f))
+		}
 	}
 	if c.Truncate > 0 && len([]rune(s)) > c.Truncate {
 		s = string([]rune(s)[:c.Truncate-1]) + "…"
 	}
 	return s
+}
+
+// Dollars renders an amount in micro-dollars (1_000_000 is $1.00) to the cent.
+func Dollars(micros int64) string {
+	sign := ""
+	if micros < 0 {
+		sign, micros = "-", -micros
+	}
+	cents := (micros + 5_000) / 10_000
+	return fmt.Sprintf("%s$%d.%02d", sign, cents/100, cents%100)
 }
 
 func stringify(v any) string {

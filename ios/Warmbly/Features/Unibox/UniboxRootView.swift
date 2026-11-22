@@ -6,6 +6,7 @@ import SwiftUI
 /// snooze swipes. Backed by `GET /v1/unibox` + `GET /v1/unibox/overview`.
 struct UniboxRootView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.shellLayout) private var shell
     @State private var store = UniboxStore()
     @State private var rail = UniboxRailStore()
     @State private var path: [UniboxRoute] = []
@@ -233,9 +234,16 @@ struct UniboxRootView: View {
             query: $store.query,
             searchPrompt: "Search \(scopeTitle.lowercased())",
             searchFocused: $searchFocused,
-            menuLabel: "Open inbox menu"
+            menuLabel: "Open inbox menu",
+            onMenu: openSidebar
         ) {
-            openSidebar()
+            // The iPad sidebar has no round bar action, so Compose sits in the header like Mail's.
+            if shell.bar == .sidebar, canCompose {
+                HeaderPrimaryButton(symbol: "square.and.pencil", label: "Compose email") {
+                    composeItem = ComposeSheetItem(id: UUID().uuidString, draft: nil)
+                }
+                .keyboardShortcut("n", modifiers: .command)
+            }
         }
     }
 

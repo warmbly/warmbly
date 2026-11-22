@@ -42,6 +42,9 @@ type ConsentState struct {
 	Verifier     string `json:"verifier,omitempty"`
 	Nonce        string `json:"nonce,omitempty"`
 	ReturnOrigin string `json:"return_origin,omitempty"`
+	// Tenant and ReturnURL belong to a purchased mailbox's tenant consent: who must consent, and where its owner goes back to.
+	Tenant    string `json:"tenant,omitempty"`
+	ReturnURL string `json:"return_url,omitempty"`
 }
 
 func (s *Service) OAuthReturnOrigin(ctx context.Context, state string) string {
@@ -383,29 +386,9 @@ func (s *Service) FinishMicrosoft(ctx context.Context, orgID, userID uuid.UUID, 
 	if xerr != nil {
 		return nil, xerr
 	}
-	if strings.TrimSpace(code) == "" || st.Verifier == "" {
-		return nil, errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not complete the consent. Start again as a Global Administrator.")
-	}
-	tok, err := s.microsoftSigninConfig().Exchange(context.WithValue(ctx, oauth2.HTTPClient, s.http), code, oauth2.VerifierOption(st.Verifier))
-	if err != nil {
-		return nil, errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not accept the consent. Start again as a Global Administrator.")
-	}
-	claims, ok := idTokenClaims(tok)
-	if ok && !nonceMatches(claims, st) {
-		return nil, errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not accept the consent. Start again as a Global Administrator.")
-	}
-	tenant := claimString(claims, "tid")
-	if _, err := uuid.Parse(tenant); !ok || err != nil {
-		return nil, errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not say which organization consented. Start again.")
-	}
-	// The consent alone proves nothing once another workspace has consented for
-	// the tenant; the person signing in must hold a role that can grant it.
-	// The ID token lists roles only when the app emits them; Graph's token does by default.
-	access, _ := jwtClaims(tok.AccessToken)
-	graphAdmin := strings.EqualFold(claimString(access, "tid"), tenant) && microsoftConsentAdmin(access)
-	if !microsoftConsentAdmin(claims) && !graphAdmin {
-		return nil, errx.NewWithIdentifier(errx.Forbidden, ErrIDProof,
-			"Sign in as a Global Administrator or Privileged Role Administrator of the organization to connect it.")
+	tenant, xerr := s.microsoftAdminTenant(ctx, code, st)
+	if xerr != nil {
+		return nil, xerr
 	}
 	s.forget("m\x00" + tenant)
 	g, xerr := s.verifyMicrosoft(ctx, tenant)
@@ -417,6 +400,36 @@ func (s *Service) FinishMicrosoft(ctx context.Context, orgID, userID uuid.UUID, 
 		return nil, errx.InternalError()
 	}
 	return s.get(ctx, orgID, g.ID)
+}
+
+// microsoftAdminTenant redeems the sign-in that follows a consent and returns
+// the tenant it names, refusing anyone who does not hold a role that grants it.
+func (s *Service) microsoftAdminTenant(ctx context.Context, code string, st ConsentState) (string, *errx.Error) {
+	if strings.TrimSpace(code) == "" || st.Verifier == "" {
+		return "", errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not complete the consent. Start again as a Global Administrator.")
+	}
+	tok, err := s.microsoftSigninConfig().Exchange(context.WithValue(ctx, oauth2.HTTPClient, s.http), code, oauth2.VerifierOption(st.Verifier))
+	if err != nil {
+		return "", errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not accept the consent. Start again as a Global Administrator.")
+	}
+	claims, ok := idTokenClaims(tok)
+	if ok && !nonceMatches(claims, st) {
+		return "", errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not accept the consent. Start again as a Global Administrator.")
+	}
+	tenant := claimString(claims, "tid")
+	if _, err := uuid.Parse(tenant); !ok || err != nil {
+		return "", errx.NewWithIdentifier(errx.BadRequest, ErrIDMicrosoftConsent, "Microsoft did not say which organization consented. Start again.")
+	}
+	// The consent alone proves nothing once another workspace has consented for
+	// the tenant; the person signing in must hold a role that can grant it.
+	// The ID token lists roles only when the app emits them; Graph's token does by default.
+	access, _ := jwtClaims(tok.AccessToken)
+	graphAdmin := strings.EqualFold(claimString(access, "tid"), tenant) && microsoftConsentAdmin(access)
+	if !microsoftConsentAdmin(claims) && !graphAdmin {
+		return "", errx.NewWithIdentifier(errx.Forbidden, ErrIDProof,
+			"Sign in as a Global Administrator or Privileged Role Administrator of the organization to connect it.")
+	}
+	return tenant, nil
 }
 
 // Directory roles that can grant tenant-wide consent to Graph application permissions.

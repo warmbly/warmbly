@@ -24,6 +24,7 @@ type ApolloImportSource struct {
 	ListName        string           `json:"list_name"`
 	CampaignID      *uuid.UUID       `json:"campaign_id,omitempty"`
 	CategoryIDs     []uuid.UUID      `json:"category_ids"`
+	SegmentIDs      []uuid.UUID      `json:"segment_ids"`
 	VerifiedOnly    bool             `json:"verified_only"`
 	Recurring       bool             `json:"recurring"`
 	Enabled         bool             `json:"enabled"`

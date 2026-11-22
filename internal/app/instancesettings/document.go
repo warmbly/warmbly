@@ -46,6 +46,10 @@ type Sync struct {
 	// DailyMessagesPerOrg caps new plus backfilled messages stored across one
 	// organization per UTC day.
 	DailyMessagesPerOrg int `json:"daily_messages_per_org"`
+	// FullCheckMinMinutes and FullCheckMaxMinutes bound how often a mailbox
+	// gets a full check; the interval grows with mailboxes held against the plan.
+	FullCheckMinMinutes int `json:"full_check_min_minutes"`
+	FullCheckMaxMinutes int `json:"full_check_max_minutes"`
 }
 
 // Retention holds how long event-level history is kept. Every window here
@@ -312,6 +316,7 @@ type Document struct {
 	Notifications  Notifications  `json:"notifications"`
 	MailboxSignin  MailboxSignin  `json:"mailbox_signin"`
 	Usage          Usage          `json:"usage"`
+	Store          StoreRetail    `json:"store"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -331,6 +336,7 @@ func Defaults() Document {
 		Placement:      DefaultPlacement(),
 		MailboxSignin:  MailboxSignin{AutoVendorReconnect: true},
 		Usage:          DefaultUsage(),
+		Store:          DefaultStoreRetail(),
 	}
 }
 
@@ -352,6 +358,8 @@ func DefaultSync() Sync {
 		BackfillMessages:        config.SyncBackfillMessagesDefault,
 		DailyMessagesPerMailbox: config.SyncDailyMessagesMailboxDefault,
 		DailyMessagesPerOrg:     config.SyncDailyMessagesOrgDefault,
+		FullCheckMinMinutes:     config.SyncFullCheckMinMinutesDefault,
+		FullCheckMaxMinutes:     config.SyncFullCheckMaxMinutesDefault,
 	}
 }
 
@@ -425,6 +433,7 @@ func (d *Document) Normalize() {
 	d.Placement.Normalize()
 	d.Notifications.Normalize()
 	d.Usage.Normalize()
+	d.Store.Normalize()
 }
 
 // Normalize clamps the grace window. Zero and negative resolve to the compiled
@@ -465,6 +474,26 @@ func (s *Sync) Normalize() {
 	s.BackfillMessages = clamp(s.BackfillMessages, config.SyncBackfillMessagesDefault, config.SyncBackfillMessagesMax)
 	s.DailyMessagesPerMailbox = clamp(s.DailyMessagesPerMailbox, config.SyncDailyMessagesMailboxDefault, config.SyncDailyMessagesMailboxMax)
 	s.DailyMessagesPerOrg = clamp(s.DailyMessagesPerOrg, config.SyncDailyMessagesOrgDefault, config.SyncDailyMessagesOrgMax)
+	s.FullCheckMinMinutes = max(clamp(s.FullCheckMinMinutes, config.SyncFullCheckMinMinutesDefault, config.SyncFullCheckMinutesCeiling), config.SyncFullCheckMinutesFloor)
+	s.FullCheckMaxMinutes = max(clamp(s.FullCheckMaxMinutes, config.SyncFullCheckMaxMinutesDefault, config.SyncFullCheckMinutesCeiling), config.SyncFullCheckMinutesFloor)
+	// A maximum below the minimum is raised to it.
+	s.FullCheckMaxMinutes = max(s.FullCheckMaxMinutes, s.FullCheckMinMinutes)
+}
+
+// FullCheckInterval is how often a workspace's mailboxes get a full check:
+// the maximum scaled by mailboxes used over the plan's allowance, within the
+// bounds. An unlimited workspace (nil) or one with no mailboxes gets the
+// minimum; one holding mailboxes on a zero allowance gets the maximum.
+func (s Sync) FullCheckInterval(used int, allowance *int) time.Duration {
+	lo := time.Duration(s.FullCheckMinMinutes) * time.Minute
+	hi := time.Duration(s.FullCheckMaxMinutes) * time.Minute
+	if allowance == nil || used <= 0 {
+		return lo
+	}
+	if *allowance <= 0 {
+		return hi
+	}
+	return min(max(hi*time.Duration(used)/time.Duration(*allowance), lo), hi)
 }
 
 // TTL is the invitation lifetime as a duration.
@@ -487,6 +516,8 @@ type Patch struct {
 		BackfillMessages        *int `json:"backfill_messages"`
 		DailyMessagesPerMailbox *int `json:"daily_messages_per_mailbox"`
 		DailyMessagesPerOrg     *int `json:"daily_messages_per_org"`
+		FullCheckMinMinutes     *int `json:"full_check_min_minutes"`
+		FullCheckMaxMinutes     *int `json:"full_check_max_minutes"`
 	} `json:"sync"`
 	Retention *struct {
 		EngagementEventDays *int `json:"engagement_event_days"`
@@ -534,6 +565,13 @@ type Patch struct {
 		Models        *[]ModelPrice       `json:"models"`
 		Units         *map[string]float64 `json:"units"`
 	} `json:"usage"`
+	Store *struct {
+		MailboxMonthlyMicros    *int64 `json:"mailbox_monthly_micros"`
+		DomainMarkupPercent     *int   `json:"domain_markup_percent"`
+		DomainMarkupFixedMicros *int64 `json:"domain_markup_fixed_micros"`
+		MailboxBillLeadDays     *int   `json:"mailbox_bill_lead_days"`
+		MinCardChargeMicros     *int64 `json:"min_card_charge_micros"`
+	} `json:"store"`
 }
 
 // Apply merges a patch onto a document.
@@ -566,6 +604,12 @@ func (p Patch) Apply(doc Document) Document {
 		}
 		if p.Sync.DailyMessagesPerOrg != nil {
 			doc.Sync.DailyMessagesPerOrg = *p.Sync.DailyMessagesPerOrg
+		}
+		if p.Sync.FullCheckMinMinutes != nil {
+			doc.Sync.FullCheckMinMinutes = *p.Sync.FullCheckMinMinutes
+		}
+		if p.Sync.FullCheckMaxMinutes != nil {
+			doc.Sync.FullCheckMaxMinutes = *p.Sync.FullCheckMaxMinutes
 		}
 	}
 	if p.Retention != nil {
@@ -667,6 +711,28 @@ func (p Patch) Apply(doc Document) Document {
 			for k, v := range *p.Usage.Units {
 				doc.Usage.Units[k] = v
 			}
+		}
+	}
+	if p.Store != nil {
+		if v := p.Store.MailboxMonthlyMicros; v != nil {
+			n := *v
+			doc.Store.MailboxMonthlyMicros = &n
+		}
+		if v := p.Store.DomainMarkupPercent; v != nil {
+			n := *v
+			doc.Store.DomainMarkupPercent = &n
+		}
+		if v := p.Store.DomainMarkupFixedMicros; v != nil {
+			n := *v
+			doc.Store.DomainMarkupFixedMicros = &n
+		}
+		if v := p.Store.MailboxBillLeadDays; v != nil {
+			n := *v
+			doc.Store.MailboxBillLeadDays = &n
+		}
+		if v := p.Store.MinCardChargeMicros; v != nil {
+			n := *v
+			doc.Store.MinCardChargeMicros = &n
 		}
 	}
 	return doc

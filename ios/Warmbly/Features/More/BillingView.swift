@@ -30,7 +30,7 @@ struct BillingView: View {
             }
         }
         .navigationTitle("Billing")
-        .navigationBarTitleDisplayMode(.inline)
+        .surfaceTitleDisplayMode()
         .task {
             if !loaded { await load() }
         }
@@ -116,8 +116,8 @@ struct BillingView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
         }
-        .background(WTheme.groupedCard)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .surfaceCard(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .reveal(shown, 0)
         .animation(.snappy, value: usage != nil)
     }
@@ -386,8 +386,8 @@ struct BillingView: View {
                 .padding(.top, 6)
             }
             .padding(16)
-            .background(WTheme.groupedCard)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .surfaceCard(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
             if !topUses.isEmpty {
                 MoreCard(dividerLeading: 16) {

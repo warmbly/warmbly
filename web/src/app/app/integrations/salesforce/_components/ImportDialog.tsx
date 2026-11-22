@@ -24,6 +24,7 @@ import { Label, TextInput } from "@/components/ui/field";
 import CampaignPicker from "@/components/app/campaigns/CampaignPicker";
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
+import { SegmentMultiPicker } from "@/components/app/segments/SegmentPickers";
 import { useConfirm } from "@/hooks/context/confirm";
 import {
     useCreateSalesforceImportSource,
@@ -42,7 +43,7 @@ import { cn } from "@/lib/utils";
 
 import ProviderGlyph from "../../_components/ProviderGlyph";
 import { Pill, SearchSelect, primaryBtn } from "./shared";
-import { errMsg } from "./util";
+import { errMsg, sameIds } from "./util";
 
 type Kind = "lead_view" | "contact_view" | "campaign";
 
@@ -84,6 +85,8 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
     const [campaignId, setCampaignId] = React.useState<string | null>(null);
     const [campaignName, setCampaignName] = React.useState("");
     const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
+    const [segmentIds, setSegmentIds] = React.useState<string[]>([]);
+    const [segmentBusy, setSegmentBusy] = React.useState(false);
     const [recurring, setRecurring] = React.useState(true);
 
     const previewM = useSalesforceImportPreview();
@@ -163,6 +166,7 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
                     source_label: sourceLabel,
                     campaign_id: campaignId ?? undefined,
                     category_ids: categoryIds,
+                    segment_ids: segmentIds,
                     recurring,
                 },
             });
@@ -262,6 +266,17 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
                                     />
                                 </div>
                                 <div>
+                                    <Label>Add to segments (optional)</Label>
+                                    <SegmentMultiPicker
+                                        onBusyChange={setSegmentBusy}
+                                        value={segmentIds}
+                                        onChange={setSegmentIds}
+                                        allowCreate
+                                        suggestedName={name.trim() || sourceLabel}
+                                        placeholder="Pick or create a segment…"
+                                    />
+                                </div>
+                                <div>
                                     <Label>Labels (optional)</Label>
                                     <CategoryPicker value={categoryIds} onChange={setCategoryIds} />
                                 </div>
@@ -316,7 +331,7 @@ export default function ImportDialog({ connectionId, onClose }: { connectionId: 
                             <ChevronRightIcon className="w-3 h-3" />
                         </button>
                     ) : (
-                        <button type="button" onClick={() => void submit()} disabled={create.isPending} className={cn(primaryBtn, "shrink-0")}>
+                        <button type="button" onClick={() => void submit()} disabled={create.isPending || segmentBusy} className={cn(primaryBtn, "shrink-0")}>
                             {create.isPending ? (
                                 <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
                             ) : (
@@ -540,13 +555,16 @@ export function EditImportDialog({
     const [campaignId, setCampaignId] = React.useState<string | null>(source.campaign_id ?? null);
     const [campaignName, setCampaignName] = React.useState("");
     const [categoryIds, setCategoryIds] = React.useState<string[]>(source.category_ids ?? []);
+    const [segmentIds, setSegmentIds] = React.useState<string[]>(source.segment_ids ?? []);
+    const [segmentBusy, setSegmentBusy] = React.useState(false);
     const [recurring, setRecurring] = React.useState(source.recurring);
 
     const dirty =
         name !== source.name ||
         (campaignId ?? null) !== (source.campaign_id ?? null) ||
         recurring !== source.recurring ||
-        JSON.stringify([...categoryIds].sort()) !== JSON.stringify([...(source.category_ids ?? [])].sort());
+        !sameIds(categoryIds, source.category_ids) ||
+        !sameIds(segmentIds, source.segment_ids);
 
     const requestClose = React.useCallback(() => {
         if (update.isPending) return;
@@ -574,6 +592,7 @@ export function EditImportDialog({
                     name: name.trim() || source.source_label,
                     campaign_id: campaignId,
                     category_ids: categoryIds,
+                    segment_ids: segmentIds,
                     recurring,
                 },
             });
@@ -608,6 +627,17 @@ export function EditImportDialog({
                     />
                 </div>
                 <div>
+                    <Label>Add to segments</Label>
+                    <SegmentMultiPicker
+                        onBusyChange={setSegmentBusy}
+                        value={segmentIds}
+                        onChange={setSegmentIds}
+                        allowCreate
+                        suggestedName={name.trim() || source.source_label}
+                        placeholder="Pick or create a segment…"
+                    />
+                </div>
+                <div>
                     <Label>Labels</Label>
                     <CategoryPicker value={categoryIds} onChange={setCategoryIds} />
                 </div>
@@ -627,7 +657,7 @@ export function EditImportDialog({
                 >
                     Cancel
                 </button>
-                <button type="button" onClick={() => void save()} disabled={!dirty || update.isPending} className={primaryBtn}>
+                <button type="button" onClick={() => void save()} disabled={!dirty || update.isPending || segmentBusy} className={primaryBtn}>
                     {update.isPending && <Loader2Icon className="w-3.5 h-3.5 animate-spin" />}
                     Save
                 </button>

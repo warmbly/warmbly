@@ -36,6 +36,7 @@ The sidebar lists sections. A section with more than one page shows its pages as
 | **Warmup** | Pool (the Warmup page below), Appeals, Content, Seed panel |
 | **Sending** | Campaigns, Sends |
 | **Organizations** | Organizations, Limit requests |
+| **Store** | Store (the [Store](#store) page below), with a page per workspace |
 | **Growth** | Promo codes, Outreach |
 | **Admins** | Admins, Testers |
 | **Activity** | Audit log, Live events, Jobs |
@@ -96,6 +97,10 @@ An organization's page has two cards that decide what the workspace may buy, bes
 - **Plan offers** lets the workspace buy a private plan. Pick a private plan, give a reason, and optionally an end date (the end of that day in your timezone). The workspace then sees the plan on its billing overview and can check out; the generic checkout and plan change refuse a private plan to any workspace without an open offer (`plan_offer_required`). Offering the same plan again renews it with the new reason and end date, and **Withdraw** closes it. Neither touches a subscription the workspace already bought. Withdrawing stops new checkouts; a Stripe checkout page the customer already opened stays usable until it lapses, which is at most 24 hours and never past the offer's end date by more than Stripe's 30-minute minimum. The Warmup plan is no longer sold and cannot be offered.
 
 Each grant, renewal and withdrawal is written to the **Audit log** with the reason. Reading the cards needs `view_organizations`; changing them needs `manage_organizations`.
+
+### Partners
+
+**Partners** lists the resellers that run workspaces through the [partner API](/development/partners/), which is off until one exists. **New partner** adds one. Its page sets the display name its workspaces show, its allowed hosts, webhook and token callback addresses, wholesale prices and rate limit; issues and revokes live and test keys, each shown once; creates or rotates the webhook signing secret, shown once; stores the token callback key; suspends or resumes the partner; shows its **Statement** for any month (enabled mailbox-days per workspace at its wholesale prices, the running month at today's prices, a closed month as it was written); and lists every workspace it manages with its state. Reading needs `view_organizations`; every change needs `manage_organizations` and a recent confirmation of your identity, and is written to the **Audit log**.
 
 ### Agencies
 
@@ -167,6 +172,34 @@ Three tabs.
 
 Reading the tabs needs `view_organizations`; every action needs `manage_organizations`.
 
+## Store
+
+**Store** is the operator side of the [domain and mailbox store](/guides/buy-mailboxes/): whether it is working, what every workspace bought, the actions that repair an order, a domain or a mailbox, and what the store earns. It reads from Warmbly's own records and from GraphKit, the store's supplier; it is turned on by adding a GraphKit API key under **Setup and health > Integrations**, or by `GRAPHKIT_API_KEY` (see [configuration](/development/configuration/#domain-and-mailbox-store)). When the store is off, the page says so and nothing else.
+
+| Tab | What it answers |
+|---|---|
+| **Health** | Whether the store runs against GraphKit's live service, its sandbox, or the built-in simulator (development only), and whether workspaces are charged. The GraphKit account balance against its low-balance threshold, when the last webhook arrived, and the reconciler's and the billing pass's last run, lag and last error. Counts of open, stuck and recently failed orders, failed connects, mailboxes behind on payment, failed renewals and domains expiring within 30 days, and the recent `store.unavailable` [operator alerts](/development/operator-notifications/) |
+| **Orders** | Every order on the instance, filtered by status, workspace, failure code or **Stuck only**, or searched by order id or workspace name. An order opens a drawer with its lines, its setup steps, what was charged and refunded, and whether it was placed with GraphKit |
+| **Domains** | Every purchased and connected domain, filtered by status, workspace, auto-renew, expiry within some days or a failed renewal, or searched by name |
+| **Mailboxes** | Every purchased mailbox, filtered by status, workspace, connect state (waiting, connecting, connected, failed) or a failed monthly payment, or searched by address |
+| **Economics** | What each mailbox and domain costs from GraphKit against what the instance charges for it: per mailbox provider the wholesale and retail monthly price, the margin, any scheduled wholesale change and how many are live; per domain extension the wholesale and retail registration and renewal prices; and the instance's monthly retail, wholesale and margin totals |
+
+Any workspace name opens that workspace's store page: whether it has a store account and a saved registrant, whether its plan is active, whether a partner manages it, its balance and monthly store spend, and its latest orders, its domains and its mailboxes, with the same actions.
+
+### Store actions
+
+| Where | Action | What it does |
+|---|---|---|
+| Order | **Refresh** | Re-reads the order from GraphKit and applies what it says |
+| Order | **Retry placing** | Places an order that was charged but never reached GraphKit, under its original key, so it can never be placed twice |
+| Order | **Refund** | Refunds one line's charge, or an amount with a reason, to the workspace balance |
+| Domain | **Refresh**, **Force renewal**, **Auto-renew** | Re-reads the domain, renews it now, or turns its auto-renew on or off |
+| Mailbox | **Refresh**, **Retry connect**, **Cancel**, **Resume** | Re-reads the mailbox, retries a failed connect now (resetting its attempts), cancels it at the end of its paid month, or undoes that |
+
+Every action is written to the **Audit log** (`store_order_refresh`, `store_order_place`, `store_order_refund`, `store_mailbox_refresh`, `store_mailbox_connect`, `store_mailbox_cancel`, `store_mailbox_resume`, `store_domain_refresh`, `store_domain_renew` and `store_domain_auto_renew`), and every action is safe to repeat: a second **Retry placing** on a placed order answers `409` `store_state_conflict`, and a line refunded once refunds nothing more. A refund by amount needs an `Idempotency-Key` (`400` `idempotency_key_required` without one, and the panel sends one), is capped at what was charged less what was already refunded (`422` `refund_exceeds_charge`), and is refused with `409` `store_unmetered` on an instance that charges workspaces nothing. Errors use Warmbly codes; GraphKit's wording never appears.
+
+Reading the Store pages needs `view_organizations`; every action needs `manage_organizations`. Like every admin route, both need a session that verified a second factor. The API behind them is `/admin/store/*` (`health`, `economics`, `orders`, `domains`, `mailboxes` and `workspaces/:orgId`), with lists in the usual `data` and `pagination` shape, `limit` 1 to 100 (50 by default).
+
 ## Activity
 
 | Page | What it answers |
@@ -179,7 +212,7 @@ Reading the tabs needs `view_organizations`; every action needs `manage_organiza
 
 | Page | What it answers |
 |---|---|
-| **Setup and health** | Three tabs. **Findings** is the [instance health](/development/instance-health/) check list, and the sidebar badge counts its errors and warnings, not operational signals. **Services** holds scoped service reachability probes and the platform mail card. **Operations** holds read-only measurements, coverage, affected counts, evidence age, waits and permission-gated investigation links |
+| **Setup and health** | Four tabs. **Findings** is the [instance health](/development/instance-health/) check list, and the sidebar badge counts its errors and warnings, not operational signals. **Services** holds scoped service reachability probes and the platform mail card. **Operations** holds read-only measurements, coverage, affected counts, evidence age, waits and permission-gated investigation links. **Integrations**, shown with `manage_settings`, holds the **Domains and mailboxes (GraphKit)** card: the GraphKit API key, optional webhook secret and API URL that turn the [store](#store) on, with **Test connection**, **Save** and **Disconnect**, and the webhook URL to register with GraphKit. Secrets are write-only, a changed API URL needs the API key entered again, a replaced webhook secret keeps verifying for 24 hours, every change needs a recent confirmation of your identity, and the card is read-only when `GRAPHKIT_*` in the environment configures the store. See [adding the key in the admin panel](/development/configuration/#adding-the-key-in-the-admin-panel) |
 | **Configuration** | Five tabs. **Settings** is the database-backed settings document; **Notifications** is the [operator notification](/development/operator-notifications/) channels; **Environment** is the read-only [configuration reference](/development/configuration/) view of what the backend resolved; **Effective limits** lists the compiled pacing constants; **Keys** shows whether a [key rotation](/development/configuration/#rotate-instance-keys) can be finished: sealed values still opening only under a read key or under no key, open overlap windows for previous tokens and unsubscribe secrets, and live nodes that have not applied the current env. It is read only; rotation runs where the keys are stored |
 | **Transfers** | Workspace export and import for any organization, from the operator side, with the same archives as `warmblyctl org export` and `org import`. A whole-instance backup stays `warmblyctl backup` and `restore` |
 
@@ -193,7 +226,7 @@ Reading the tabs needs `view_organizations`; every action needs `manage_organiza
 | Warmup, Warmup content, Seed panel | `view_warmup_pool` (changing seeds or running a test needs `manage_warmup_bans`) |
 | Warmup appeals | `review_appeals` |
 | Campaigns, Sends | `view_campaigns` |
-| Organizations, Agencies, Limit requests, Developer apps, Promo codes, Outreach, Transfers | `view_organizations` |
+| Organizations, Agencies, Limit requests, Developer apps, Promo codes, Outreach, Transfers, Store | `view_organizations` (Store actions need `manage_organizations`) |
 | Admins | `grant_admin_access` |
 | Audit log | `view_audit_logs` |
 | Jobs, Setup and health | `view_analytics` |

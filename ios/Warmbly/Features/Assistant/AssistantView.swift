@@ -6,6 +6,7 @@ import SwiftUI
 struct AssistantView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isSidebarDestination) private var isSidebarDestination
 
     /// Context hint sent with the first message (web sends the current page).
     var page: String?
@@ -100,13 +101,15 @@ struct AssistantView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.down")
+        if !isSidebarDestination {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .accessibilityLabel("Close Remie")
             }
-            .accessibilityLabel("Close Remie")
         }
         ToolbarItem(placement: .principal) {
             HStack(spacing: 7) {

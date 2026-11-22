@@ -38,7 +38,7 @@ type httpBrokeredTokenClient struct {
 }
 
 // NewHTTPBrokeredTokenClient returns the proxy for GET {BaseURL}/api/v1/internal/cloud-link/token/:id.
-func NewHTTPBrokeredTokenClient(baseURL, token string) (BrokeredTokenClient, error) {
+func NewHTTPBrokeredTokenClient(baseURL, token string, opts ...ControlPlaneOption) (BrokeredTokenClient, error) {
 	if baseURL == "" {
 		return nil, errors.New("brokered_token.http: baseURL is required")
 	}
@@ -48,7 +48,7 @@ func NewHTTPBrokeredTokenClient(baseURL, token string) (BrokeredTokenClient, err
 	return &httpBrokeredTokenClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		client:  newControlPlaneClient(25 * time.Second),
+		client:  newControlPlaneClient(25*time.Second, opts),
 	}, nil
 }
 

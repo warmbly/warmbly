@@ -8,7 +8,8 @@ import SwiftUI
 /// the scoped tasks grouped under due-date eyebrow captions (overdue in rose
 /// with a ping, today, tomorrow, upcoming, no due date, done). Tap the circle
 /// to complete or reopen (gated behind manageContacts). Reloads on the .crm
-/// realtime pulse.
+/// realtime pulse. A pane at least SplitMetrics.detailMinContentWidth wide
+/// shows CRMTasksBoard instead.
 struct CRMTasksView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
@@ -20,10 +21,13 @@ struct CRMTasksView: View {
     @State private var completedPulse = 0
     /// Just-toggled tasks, held in their old place (by their old state) so the check animates before they move.
     @State private var lingering: [String: CRMTask] = [:]
+    @State private var paneWidth: CGFloat = 0
     @FocusState private var searchFocused: Bool
 
     private var canWrite: Bool { env.session.can(.manageContacts) }
     private var isSearching: Bool { !store.query.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// Measured on the page itself, so a hidden iPad sidebar widens it into a board too.
+    private var isBoard: Bool { paneWidth >= SplitMetrics.detailMinContentWidth }
     private var scopedTasks: [CRMTask] {
         let ids = Set(store.tasks(in: store.scope).map(\.id))
         return store.tasks.filter { ids.contains($0.id) || lingering[$0.id] != nil }
@@ -92,11 +96,12 @@ struct CRMTasksView: View {
                 if canWrite {
                     HeaderPrimaryButton(symbol: "plus", label: "New task") { showCreate = true }
                 }
-                GlassCircleButton(symbol: "xmark", label: "Close tasks") { dismiss() }
+                CoverCloseButton(label: "Close tasks") { dismiss() }
             }
             list
         }
-        .background(WTheme.groupedPage)
+        .background(GroupedSurface.page)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
         .overlay { ConfettiBurst(trigger: celebrate) }
         .sensoryFeedback(.success, trigger: celebrate)
         .sensoryFeedback(.impact(weight: .light), trigger: completedPulse)
@@ -162,22 +167,15 @@ struct CRMTasksView: View {
 
     // MARK: Due-date groups
 
-    private struct TaskBucket: Identifiable {
-        let id: String
-        let title: String
-        var color: Color?
-        var ping = false
-        let tasks: [CRMTask]
+    private var groups: [CRMTasksBucket] {
+        buckets.filter { !$0.tasks.isEmpty }
     }
 
-    private var groups: [TaskBucket] {
-        var result: [TaskBucket] = []
+    /// Every group in order, empty ones included; the board keeps some of those as lanes.
+    private var buckets: [CRMTasksBucket] {
         let scoped = scopedTasks
         let placed = { (task: CRMTask) in lingering[task.id] ?? task }
         let overdue = scoped.filter { placed($0).isOverdue }
-        if !overdue.isEmpty {
-            result.append(TaskBucket(id: "overdue", title: "Overdue", color: WTheme.negative, ping: true, tasks: overdue))
-        }
         let open = scoped.filter { !placed($0).isDone && !placed($0).isOverdue }
         let calendar = Calendar.current
         let today = open.filter { $0.dueDate.map(calendar.isDateInToday) ?? false }
@@ -187,13 +185,34 @@ struct CRMTasksView: View {
             return !calendar.isDateInToday(due) && !calendar.isDateInTomorrow(due)
         }
         let undated = open.filter { $0.dueDate == nil }
-        if !today.isEmpty { result.append(TaskBucket(id: "today", title: "Today", color: WTheme.accent, tasks: today)) }
-        if !tomorrow.isEmpty { result.append(TaskBucket(id: "tomorrow", title: "Tomorrow", color: WTheme.special, tasks: tomorrow)) }
-        if !later.isEmpty { result.append(TaskBucket(id: "later", title: "Upcoming", color: WTheme.paused, tasks: later)) }
-        if !undated.isEmpty { result.append(TaskBucket(id: "undated", title: "No due date", tasks: undated)) }
         let done = scoped.filter { placed($0).isDone }
-        if !done.isEmpty { result.append(TaskBucket(id: "done", title: "Done", color: WTheme.positive, tasks: done)) }
-        return result
+        return [
+            CRMTasksBucket(kind: .overdue, title: "Overdue", color: WTheme.negative, ping: true, tasks: overdue),
+            CRMTasksBucket(kind: .today, title: "Today", color: WTheme.accent, tasks: today),
+            CRMTasksBucket(kind: .tomorrow, title: "Tomorrow", color: WTheme.special, tasks: tomorrow),
+            CRMTasksBucket(kind: .later, title: "Upcoming", color: WTheme.paused, tasks: later),
+            CRMTasksBucket(kind: .undated, title: "No due date", tasks: undated),
+            CRMTasksBucket(kind: .done, title: "Done", color: WTheme.positive, tasks: done),
+        ]
+    }
+
+    // MARK: Board
+
+    private var board: some View {
+        CRMTasksBoard(
+            store: store,
+            buckets: buckets,
+            isEmpty: scopedTasks.isEmpty,
+            isSearching: isSearching,
+            canWrite: canWrite,
+            shown: shown,
+            celebrate: celebrate,
+            onToggle: { task in Task { await toggle(task) } }
+        ) {
+            emptyState
+        }
+        .refreshable { await store.load(env.api) }
+        .onAppear { shown = true }
     }
 
     // MARK: List
@@ -206,6 +225,8 @@ struct CRMTasksView: View {
             ErrorStateView(title: "Couldn't load tasks", message: error) {
                 await store.load(env.api)
             }
+        } else if isBoard {
+            board
         } else {
             List {
                 Section {
@@ -330,7 +351,7 @@ struct CRMTasksView: View {
         }
         .padding(.vertical, 2)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: task.isDone)
-        .listRowBackground(WTheme.groupedCard)
+        .listRowBackground(Rectangle().fill(GroupedSurface.card))
         .listRowInsets(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 14))
         .alignmentGuide(.listRowSeparatorLeading) { _ in 50 }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {

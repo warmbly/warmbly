@@ -22,6 +22,7 @@ import type APIPermission from "@/lib/api/models/app/apikeys/APIPermission";
 import type { OAuthApplicationWithSecret } from "@/lib/api/models/app/oauth/OAuthApp";
 import { APP_URL } from "@/lib/information";
 import { cn } from "@/lib/utils";
+import { hasBits, toggleBits } from "@/lib/bitmask";
 
 import { CopyButton, EventPicker } from "./parts";
 
@@ -82,7 +83,7 @@ export default function RegisterAppDialog({ onClose }: { onClose: () => void }) 
     // Key management is never offered to an app, so only the scopes an app may hold are listed.
     const appScopes = perms.data?.app_scopes ?? 0;
     const appPerms = React.useMemo(
-        () => (perms.data?.permissions ?? []).filter((p) => (appScopes & p.value) === p.value),
+        () => (perms.data?.permissions ?? []).filter((p) => hasBits(appScopes, p.value)),
         [perms.data, appScopes],
     );
     React.useEffect(() => {
@@ -328,7 +329,7 @@ export default function RegisterAppDialog({ onClose }: { onClose: () => void }) 
                                                     <PermissionList
                                                         permissions={appPerms}
                                                         mask={scopes}
-                                                        onToggle={(v) => setScopes((m) => (m & v ? m & ~v : m | v))}
+                                                        onToggle={(v) => setScopes((m) => toggleBits(m, v))}
                                                     />
                                                 ) : (
                                                     <p className="mt-2 text-[11.5px] text-slate-500">
@@ -484,7 +485,7 @@ export default function RegisterAppDialog({ onClose }: { onClose: () => void }) 
 }
 
 function summarize(permissions: APIPermission[], mask: number): string {
-    const on = permissions.filter((p) => (mask & p.value) === p.value);
+    const on = permissions.filter((p) => hasBits(mask, p.value));
     if (on.length === 0) return "";
     const reads = on.filter((p) => p.category === "read").length;
     const writes = on.length - reads;
@@ -503,7 +504,7 @@ function PermissionList({ permissions, mask, onToggle }: { permissions: APIPermi
                 <div key={cat}>
                     <div className="px-2.5 py-1.5 bg-slate-50/60 text-[10px] uppercase tracking-[0.14em] text-slate-500 font-medium">{cat}</div>
                     {list.map((p) => {
-                        const on = (mask & p.value) === p.value;
+                        const on = hasBits(mask, p.value);
                         return (
                             <button
                                 key={p.name}
@@ -537,7 +538,7 @@ function Credentials({
     onDone: () => void;
 }) {
     const scope = perms
-        .filter((p) => (app.scopes & p.value) === p.value)
+        .filter((p) => hasBits(app.scopes, p.value))
         .map((p) => p.name.toLowerCase())
         .join(" ");
     const authorizeUrl = `${APP_URL}/oauth/authorize?response_type=code&client_id=${encodeURIComponent(app.client_id)}&redirect_uri=${encodeURIComponent(redirect ?? "")}&scope=${encodeURIComponent(scope)}&state=YOUR_STATE`;

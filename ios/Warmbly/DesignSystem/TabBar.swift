@@ -41,6 +41,7 @@ final class TabBarState {
 
 private struct TabBarHiddenModifier: ViewModifier {
     @Environment(TabBarState.self) private var state: TabBarState?
+    @Environment(\.closeDetail) private var closeDetail
     let hidden: Bool
     @State private var key = UUID().uuidString
 
@@ -53,7 +54,8 @@ private struct TabBarHiddenModifier: ViewModifier {
 
     private func apply(_ value: Bool) {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-            state?.set(value, by: key)
+            // A detail beside its list shares the screen with the tab, which keeps its bar.
+            state?.set(value && closeDetail == nil, by: key)
         }
     }
 }
@@ -109,6 +111,8 @@ struct WTabBar: View {
     let items: [WTabItem]
     @Binding var selection: AppTab
     var action: TabBarAction?
+    /// On an iPad with the sidebar hidden, a leading button brings it back.
+    var onShowSidebar: (() -> Void)?
     var onReselect: (AppTab) -> Void = { _ in }
 
     @Namespace private var activeNS
@@ -117,6 +121,21 @@ struct WTabBar: View {
     var body: some View {
         GlassEffectContainer(spacing: 14) {
             HStack(spacing: 10) {
+                if let onShowSidebar {
+                    Button(action: onShowSidebar) {
+                        Image(systemName: "sidebar.leading")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(WTheme.ink)
+                            .frame(width: 56, height: 56)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(TabPressStyle())
+                    .background(WTheme.glassTint, in: Circle())
+                    .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Circle())
+                    .glassEffectID("sidebar", in: glassNS)
+                    .hoverEffect(.highlight)
+                    .accessibilityLabel("Show sidebar")
+                }
                 HStack(spacing: 2) {
                     ForEach(items) { item in
                         button(item)
@@ -151,6 +170,8 @@ struct WTabBar: View {
                     .accessibilityLabel(action.title)
                 }
             }
+            // A phone-width bar; on a wider window it stays that size, centered.
+            .frame(maxWidth: onShowSidebar == nil ? 440 : 506)
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 4)
@@ -191,9 +212,9 @@ struct WTabBar: View {
     }
 }
 
-/// The tab bar stood on its side for a wide window: the same glass capsule
-/// and round action, stacked along the leading edge and centered on it, where
-/// a thumb holding an unfolded phone or a tablet already rests.
+/// The tab bar stood on its side for iPhone Duo's side strip: the same glass
+/// capsule and round action, anchored at the bottom with the action above the
+/// tabs, as the system stacks its toolbar over its tab bar there.
 struct WTabRail: View {
     let items: [WTabItem]
     @Binding var selection: AppTab
@@ -206,44 +227,53 @@ struct WTabRail: View {
     var body: some View {
         GlassEffectContainer(spacing: 14) {
             VStack(spacing: 10) {
-                VStack(spacing: 2) {
-                    ForEach(items) { item in
-                        button(item)
-                    }
-                }
-                .padding(5)
-                .background(WTheme.glassTint, in: Capsule())
-                .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Capsule())
-                .glassEffectID("rail", in: glassNS)
-
-                if let action {
-                    Button(action: action.perform) {
-                        Group {
-                            if action.mark {
-                                RemieMark(size: 24)
-                            } else {
-                                Image(systemName: action.symbol)
-                                    .font(.system(size: 17, weight: .medium))
-                                    .foregroundStyle(WTheme.ink)
-                            }
-                        }
-                        .transition(.scale(scale: 0.5).combined(with: .opacity))
-                        .frame(width: 56, height: 56)
-                        .contentShape(Circle())
-                    }
-                    .buttonStyle(TabPressStyle())
-                    .background(WTheme.glassTint, in: Circle())
-                    .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Circle())
-                    .glassEffectID("action", in: glassNS)
-                    .hoverEffect(.highlight)
-                    .keyboardShortcut("n", modifiers: .command)
-                    .accessibilityLabel(action.title)
-                }
+                actionButton
+                tabs
             }
         }
+        .padding(.bottom, 8)
         .frame(width: ShellLayout.railWidth)
-        .frame(maxHeight: .infinity)
+        .frame(maxHeight: .infinity, alignment: .bottom)
         .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private var tabs: some View {
+        VStack(spacing: 2) {
+            ForEach(items) { item in
+                button(item)
+            }
+        }
+        .padding(5)
+        .background(WTheme.glassTint, in: Capsule())
+        .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Capsule())
+        .glassEffectID("rail", in: glassNS)
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        if let action {
+            Button(action: action.perform) {
+                Group {
+                    if action.mark {
+                        RemieMark(size: 24)
+                    } else {
+                        Image(systemName: action.symbol)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(WTheme.ink)
+                    }
+                }
+                .transition(.scale(scale: 0.5).combined(with: .opacity))
+                .frame(width: 56, height: 56)
+                .contentShape(Circle())
+            }
+            .buttonStyle(TabPressStyle())
+            .background(WTheme.glassTint, in: Circle())
+            .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Circle())
+            .glassEffectID("action", in: glassNS)
+            .hoverEffect(.highlight)
+            .keyboardShortcut("n", modifiers: .command)
+            .accessibilityLabel(action.title)
+        }
     }
 
     private func button(_ item: WTabItem) -> some View {

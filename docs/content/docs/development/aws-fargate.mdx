@@ -260,8 +260,8 @@ preserves the narrowly scoped attachment setting described below. A deploy:
    service reads.
 3. Runs the dependency validation task, then the migration task on the backend's
    image. Either failing stops the deploy before any service moves.
-4. Rolls backend, then consumer, then forms, tracking and realtime together.
-   Each service is watched for a bake (five minutes by default) after it is
+4. Rolls backend, then consumer, forms, tracking and realtime together.
+   Each service is watched for a bake (two minutes by default) after it is
    stable.
 5. Starts a [canary rollout](/development/warmblyctl/#fleet) of the worker and
    consumer hosts from the `ops` task. The first host moves alone and the rest
@@ -489,6 +489,31 @@ backend, so it serves a certificate you supply, and they trust exactly that
 certificate (`BACKEND_INTERNAL_CA`) rather than any public authority. The
 internal hop stays on the private service-discovery name, so the internal API
 token never leaves the VPC.
+
+### Keep fleet traffic inside the VPC
+
+Fleet workers run in the same VPC but call the backend at its public address,
+so every call leaves AWS through Cloudflare and comes back into the load
+balancer, and AWS bills that transfer out in both directions. Once
+`target_tls` is `both` or later, two settings move them onto the private name
+instead:
+
+1. In the workers root, set `backend_internal_port` to the runtime root's
+   `target_tls_port` (`8443` by default) and apply. Fleet workers and fixed
+   worker hosts may then reach the tasks on that port.
+2. In the runtime root, set `nodes_private_backend = true` and apply. The
+   backend sets `NODE_BACKEND_INTERNAL_URL` to
+   `https://backend.<namespace>:<target_tls_port>` and
+   `NODE_BACKEND_INTERNAL_CA` to `backend_internal_certificate`.
+
+The second step changes every node's rendered env, so nodes that keep their
+env current restart onto it within a few minutes. Each one checks the private
+address when it starts and logs `control plane: using the private address`;
+one that cannot reach it logs why and keeps the public address. Apply them in
+this order, because a node only checks at startup: a node that started before
+the security group rule existed stays on the public address until it restarts.
+Setting `nodes_private_backend` back to `false` returns every refreshed node
+to the public address.
 
 ### Prepare the backend certificate
 

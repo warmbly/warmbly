@@ -124,11 +124,6 @@ func TestZIPDirectoryDescriptors(t *testing.T) {
 	}
 }
 
-func zipLayout(body []byte, start, end, count int) bool {
-	_, ok := zipDirectory(body, start, end, count)
-	return ok
-}
-
 func zipWithHeader(t *testing.T, header zip.FileHeader, payload []byte) []byte {
 	t.Helper()
 	var b bytes.Buffer

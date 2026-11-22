@@ -208,7 +208,7 @@ func (s *Service) Reload(ctx context.Context, orgID uuid.UUID) error {
 		return nil
 	}
 	c, err := s.charges.Create(ctx, &models.SavedCardCharge{
-		OrgID: orgID, Kind: models.SavedCardAutoReload, Amount: amount, AmountCents: amount.Cents(),
+		OrgID: orgID, Kind: models.SavedCardAutoReload, Amount: amount, AmountCents: chargedCents(models.SavedCardAutoReload, amount),
 		Currency: "usd", CustomerID: customerID, PaymentMethodID: pm.ID,
 	})
 	if errors.Is(err, repository.ErrChargeInFlight) {
@@ -218,6 +218,15 @@ func (s *Service) Reload(ctx context.Context, orgID uuid.UUID) error {
 		return err
 	}
 	return s.run(ctx, c, true)
+}
+
+// chargedCents is what a charge puts on the card: a balance top-up adds the processing fee, a store charge pays its order as priced.
+func chargedCents(kind string, amount models.Micro) int64 {
+	if kind == models.SavedCardStore {
+		return amount.Cents()
+	}
+	_, total := models.TopUpCharge(amount.Cents())
+	return total
 }
 
 func (s *Service) paymentMethod(ctx context.Context, orgID uuid.UUID) (string, *stripe.PaymentMethodSummary, error) {
@@ -386,8 +395,11 @@ func (s *Service) SettleChargeInvoice(ctx context.Context, chargeID uuid.UUID, i
 // it, and the others change nothing.
 func (s *Service) settle(ctx context.Context, c *models.SavedCardCharge, invoiceID string) error {
 	reason := "balance_top_up"
-	if c.Kind == models.SavedCardAutoReload {
+	switch c.Kind {
+	case models.SavedCardAutoReload:
 		reason = "auto_reload"
+	case models.SavedCardStore:
+		reason = "store_card_charge"
 	}
 	if _, err := s.credits.GrantPurchased(ctx, c.OrgID, c.Amount, reason, "invoice:"+invoiceID); err != nil {
 		return err
@@ -400,6 +412,12 @@ func (s *Service) settle(ctx context.Context, c *models.SavedCardCharge, invoice
 		return nil
 	}
 	_ = s.settings.RearmNotices(ctx, c.OrgID)
+	if c.Kind == models.SavedCardStore && s.notifier != nil {
+		// Once per charge, whichever of the request, the sweep or the webhook settled it.
+		s.notifier.NotifyOrg(ctx, c.OrgID, models.PermManageBilling, uuid.Nil, models.NotifBillingAlert,
+			fmt.Sprintf("You were charged $%.2f", c.Amount.USD()), chargedCopy(c), "/app/settings/billing",
+			map[string]any{"charge_id": c.ID.String()}, "store_card_charge_"+c.ID.String())
+	}
 	if s.audit != nil {
 		s.audit.LogAction(ctx, c.OrgID, uuid.Nil, models.AuditActionCreate, models.AuditEntityCreditPurchase, nil, "", "", nil, map[string]string{
 			"amount_usd": fmt.Sprintf("%.2f", c.Amount.USD()), "kind": c.Kind,
@@ -407,6 +425,14 @@ func (s *Service) settle(ctx context.Context, c *models.SavedCardCharge, invoice
 	}
 	s.changed(ctx, c.OrgID)
 	return nil
+}
+
+// chargedCopy says what a store card charge paid for.
+func chargedCopy(c *models.SavedCardCharge) string {
+	if c.Description == "" {
+		return fmt.Sprintf("Your card was charged $%.2f for domains and mailboxes. The receipt is with your invoices.", c.Amount.USD())
+	}
+	return fmt.Sprintf("Your card was charged $%.2f for %s. The receipt is with your invoices.", c.Amount.USD(), c.Description)
 }
 
 func (s *Service) changed(ctx context.Context, orgID uuid.UUID) {
@@ -420,34 +446,71 @@ func (s *Service) changed(ctx context.Context, orgID uuid.UUID) {
 type TopUpResult struct {
 	Status string
 	Amount models.Micro
+	// ChargedCents is what the card pays, the processing fee included.
+	ChargedCents int64
 }
 
 // TopUp charges the saved card now, with the buyer present. A refusal comes
 // back as *DeclinedError so the dashboard can offer Checkout instead.
 func (s *Service) TopUp(ctx context.Context, orgID uuid.UUID, amount models.Micro) (*TopUpResult, error) {
+	return s.chargeCard(ctx, &models.SavedCardCharge{OrgID: orgID, Kind: models.SavedCardTopUp, Amount: amount}, false)
+}
+
+// ChargeStore adds amount to the balance from the saved card for a store
+// purchase or renewal, whatever the workspace's automatic reload says. key is
+// the store charge's own key: a retry with it resumes or reports the charge it
+// started instead of charging the card again, which is what makes a crash
+// between the card and the debit safe. offSession is a renewal nobody is
+// present for; the receipt carries description.
+func (s *Service) ChargeStore(ctx context.Context, orgID uuid.UUID, amount models.Micro, key, description string, offSession bool) (*TopUpResult, error) {
+	if key == "" {
+		return nil, errors.New("a store charge needs a key")
+	}
+	return s.chargeCard(ctx, &models.SavedCardCharge{OrgID: orgID, Kind: models.SavedCardStore, Amount: amount,
+		ChargeKey: key, Description: description}, offSession)
+}
+
+// chargeCard runs one saved-card charge to the end it reaches now: paid, still
+// processing (the webhook or the sweep finishes it), or refused.
+func (s *Service) chargeCard(ctx context.Context, in *models.SavedCardCharge, offSession bool) (*TopUpResult, error) {
 	if s.card == nil {
 		return nil, ErrNoPaymentMethod
 	}
-	customerID, pm, err := s.paymentMethod(ctx, orgID)
-	if err != nil {
-		return nil, err
-	}
-	if pm == nil {
-		return nil, ErrNoPaymentMethod
-	}
-	unlock, ok := s.lock(ctx, orgID)
+	unlock, ok := s.lock(ctx, in.OrgID)
 	if !ok {
 		return nil, ErrChargeInFlight
 	}
 	defer unlock()
-	c, err := s.charges.Create(ctx, &models.SavedCardCharge{
-		OrgID: orgID, Kind: models.SavedCardTopUp, Amount: amount, AmountCents: amount.Cents(),
-		Currency: "usd", CustomerID: customerID, PaymentMethodID: pm.ID,
-	})
-	if err != nil {
-		return nil, err
+	var c *models.SavedCardCharge
+	if in.ChargeKey != "" {
+		prior, err := s.charges.GetByKey(ctx, in.OrgID, in.ChargeKey)
+		if err != nil {
+			return nil, err
+		}
+		c = prior
 	}
-	runErr := s.run(ctx, c, false)
+	var runErr error
+	switch {
+	case c == nil:
+		customerID, pm, err := s.paymentMethod(ctx, in.OrgID)
+		if err != nil {
+			return nil, err
+		}
+		if pm == nil {
+			return nil, ErrNoPaymentMethod
+		}
+		in.AmountCents, in.Currency, in.CustomerID, in.PaymentMethodID = chargedCents(in.Kind, in.Amount), "usd", customerID, pm.ID
+		c, err = s.charges.Create(ctx, in)
+		if errors.Is(err, ErrChargeInFlight) && s.supersedeSnoozedReload(ctx, in.OrgID) {
+			c, err = s.charges.Create(ctx, in)
+		}
+		if err != nil {
+			return nil, err
+		}
+		runErr = s.run(ctx, c, offSession)
+	case c.Status == "pending":
+		runErr = s.run(ctx, c, offSession)
+	}
 	var declined *DeclinedError
 	if errors.As(runErr, &declined) {
 		return nil, runErr
@@ -457,18 +520,40 @@ func (s *Service) TopUp(ctx context.Context, orgID uuid.UUID, amount models.Micr
 		return nil, errors.Join(runErr, err)
 	}
 	if done == nil {
-		return nil, errors.Join(runErr, fmt.Errorf("top-up charge %s is gone", c.ID))
+		return nil, errors.Join(runErr, fmt.Errorf("charge %s is gone", c.ID))
 	}
 	switch done.Status {
 	case "succeeded":
-		return &TopUpResult{Status: "paid", Amount: amount}, nil
+		return &TopUpResult{Status: "paid", Amount: done.Amount, ChargedCents: done.AmountCents}, nil
 	case "pending":
 		if runErr != nil {
-			log.Warn().Err(runErr).Str("charge_id", c.ID.String()).Msg("top-up left for the sweep to finish")
+			log.Warn().Err(runErr).Str("charge_id", c.ID.String()).Msg("card charge left for the sweep to finish")
 		}
-		return &TopUpResult{Status: "processing", Amount: amount}, nil
+		return &TopUpResult{Status: "processing", Amount: done.Amount, ChargedCents: done.AmountCents}, nil
+	case "failed":
+		// Final for its key, whatever ended it, so the caller moves on rather than waiting on it.
+		return nil, &DeclinedError{Code: chargeFailureCode(done.FailureCode)}
 	}
-	return nil, errors.Join(runErr, fmt.Errorf("top-up charge %s ended %s", c.ID, done.Status))
+	return nil, errors.Join(runErr, fmt.Errorf("charge %s ended %s", c.ID, done.Status))
+}
+
+// chargeFailureCode is the refusal a failed charge reports: the card's own, or payment_failed.
+func chargeFailureCode(code string) string {
+	switch code {
+	case "", models.ReloadUnavailable, models.ChargeCanceled, models.ChargeExpired:
+		return models.ReloadPaymentFailed
+	}
+	return code
+}
+
+// supersedeSnoozedReload closes an automatic reload waiting out a soft decline, so a
+// charge someone needs now is not held for hours behind it; true when it closed one.
+func (s *Service) supersedeSnoozedReload(ctx context.Context, orgID uuid.UUID) bool {
+	c, err := s.charges.Pending(ctx, orgID)
+	if err != nil || c == nil || c.Legacy || c.Kind != models.SavedCardAutoReload || c.RetryAt == nil || !c.RetryAt.After(time.Now()) {
+		return false
+	}
+	return s.cancel(ctx, c) == nil
 }
 
 // SetAutoReload saves automatic reload. Turning it on needs a saved card, and

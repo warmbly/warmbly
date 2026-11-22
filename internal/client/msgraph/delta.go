@@ -79,11 +79,19 @@ func (c *Client) Sync(ctx context.Context) error {
 	return err
 }
 
+// WakeFolders are what a change notification is checked against: new mail, and junk so spam moves are seen promptly.
+var WakeFolders = []string{FolderInbox, FolderJunk}
+
 // SyncPass reports catch-up only when every tracked folder reaches an unpinned delta link.
 func (c *Client) SyncPass(ctx context.Context) (bool, error) {
+	return c.SyncFolders(ctx, TrackedFolders)
+}
+
+// SyncFolders walks the given folders' delta streams; each folder keeps its own cursor.
+func (c *Client) SyncFolders(ctx context.Context, folders []string) (bool, error) {
 	complete := true
 	var firstErr error
-	for _, folder := range TrackedFolders {
+	for _, folder := range folders {
 		if err := c.syncFolder(ctx, folder); err != nil {
 			if errors.Is(err, ErrStop) {
 				return false, nil
@@ -164,6 +172,13 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 
 		recovering := next == c.initialDelta(folder) || reset || (c.Recovering != nil && c.Recovering(folder))
 		pageCtx := context.WithValue(ctx, recoveryContextKey{}, recovering)
+		if c.OnPage != nil && len(pg.Value) > 0 {
+			ids := make([]string, 0, len(pg.Value))
+			for i := range pg.Value {
+				ids = append(ids, pg.Value[i].ID)
+			}
+			c.OnPage(pageCtx, ids)
+		}
 		complete := true
 		for i := range pg.Value {
 			stored, err := c.applyDelta(pageCtx, folder, &pg.Value[i])

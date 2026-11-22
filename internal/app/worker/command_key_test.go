@@ -53,7 +53,7 @@ func TestCommandConcurrencyDefaultsAndBoundedOverride(t *testing.T) {
 	for _, test := range []struct {
 		env  string
 		want int
-	}{{"", 8}, {"invalid", 8}, {"0", 8}, {"65", 8}, {"1", 1}, {"16", 16}, {"64", 64}} {
+	}{{"", 32}, {"invalid", 32}, {"0", 32}, {"65", 32}, {"1", 1}, {"16", 16}, {"64", 64}} {
 		t.Setenv("WORKER_COMMAND_CONCURRENCY", test.env)
 		if got := CommandConcurrency(); got != test.want {
 			t.Fatalf("env=%q got=%d want=%d", test.env, got, test.want)

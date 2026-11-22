@@ -358,6 +358,8 @@ type OrganizationWithLimits struct {
 	Counts *OrganizationCounts `json:"counts,omitempty"`
 	// Agency is the agency this workspace is a client of, when it is one.
 	Agency *AgencyRef `json:"agency,omitempty"`
+	// Partner is the reseller that bills this workspace, when one does.
+	Partner *PartnerManagedRef `json:"partner,omitempty"`
 }
 
 // OrganizationLimitOverrides is the per-org override row. Each numeric

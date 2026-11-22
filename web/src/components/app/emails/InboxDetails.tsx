@@ -50,6 +50,7 @@ import {
     PowerIcon,
     PowerOffIcon,
     CloudIcon,
+    CalendarXIcon,
     type LucideIcon,
 } from "lucide-react";
 import { relativeTime } from "@/lib/unibox/messageDetails";
@@ -91,6 +92,7 @@ import MailboxGrantDialog from "./import/grants/MailboxGrantDialog";
 import MailboxSigninSection, { SigninPrompt } from "./migration/MailboxSigninSection";
 import ProviderLogo from "./ProviderLogo";
 import MailboxSourceChip from "./MailboxSourceChip";
+import { PartnerEnablementNote } from "./PartnerEnablement";
 import { mailboxSource } from "@/lib/mailboxSource";
 import UpdateCredentialsDialog from "./UpdateCredentialsDialog";
 import MailboxPlacementTab from "@/components/app/placement/MailboxPlacementTab";
@@ -104,6 +106,9 @@ import { utcDay, utcToday } from "@/lib/campaignPeriod";
 import SyncStatusCard from "./SyncStatusCard";
 import SendPauseNotice from "./SendPauseNotice";
 import ServerCertificatesCard from "./ServerCertificatesCard";
+import SubscriptionCard from "@/components/app/store/SubscriptionCard";
+import { useCancelAtPeriodEnd, usePurchasedMailbox, useStorePausedStatus } from "@/components/app/store/usePurchasedMailbox";
+import { PURCHASED_LOCKED, purchaseState, shortDate } from "@/lib/buy/purchased";
 import CloudWarmupCard from "./CloudWarmupCard";
 import WarmupFilterTagField from "./WarmupFilterTagField";
 import WarmupPartnerDiversity from "./WarmupPartnerDiversity";
@@ -542,14 +547,30 @@ function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsume
                         {mailboxSource(mailbox).kind !== "host" && <MailboxSourceChip box={mailbox} labelClassName="inline" />}
                     </div>
                 </div>
-                <span className={cn("h-5 px-2 rounded-full border text-[10px] font-semibold uppercase tracking-wide inline-flex items-center shrink-0", statusTone(mailbox.status))}>
-                    {mailbox.status === "inactive" ? "Off" : mailbox.status}
-                </span>
+                {(() => {
+                    const purchase = purchaseState(mailbox);
+                    if (purchase.kind === "cancelled") {
+                        return (
+                            <span
+                                title={purchase.on ? `Subscription ended ${purchase.on}` : "Subscription ended"}
+                                className="h-5 px-2 rounded-full border text-[10px] font-semibold uppercase tracking-wide inline-flex items-center shrink-0 bg-slate-100 text-slate-600 border-slate-200"
+                            >
+                                Cancelled{purchase.on ? ` · ${purchase.on}` : ""}
+                            </span>
+                        );
+                    }
+                    return (
+                        <span className={cn("h-5 px-2 rounded-full border text-[10px] font-semibold uppercase tracking-wide inline-flex items-center shrink-0", statusTone(mailbox.status))}>
+                            {mailbox.status === "inactive" ? "Off" : mailbox.status}
+                        </span>
+                    );
+                })()}
                 <ResourceViewers resource={mailbox.id ? `mailbox:${mailbox.id}` : null} className="shrink-0" />
                 <button onClick={onClose} aria-label="Close" className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors shrink-0">
                     <XIcon className="w-4 h-4" />
                 </button>
             </div>
+            {mailbox.id && <PartnerEnablementNote emailAccountId={mailbox.id} />}
 
             {/* Tabs */}
             <ScrollStrip activeKey={tab} className="shrink-0 border-b border-slate-200" innerClassName="px-3 gap-1">
@@ -2278,6 +2299,8 @@ function SwitchedOffNotice({ mailbox }: { mailbox: Inbox }) {
 function MailboxPowerCard({ mailbox }: { mailbox: Inbox }) {
     const power = useMailboxSwitch(mailbox.id, mailbox.email);
     if (mailbox.status !== "active" && mailbox.status !== "inactive") return null;
+    // A purchase that ended has no mailbox left to switch back on.
+    if (purchaseState(mailbox).kind === "cancelled") return null;
     const on = mailbox.status === "active";
     return (
         <div className="px-5 py-5 space-y-3">
@@ -2302,6 +2325,47 @@ function MailboxPowerCard({ mailbox }: { mailbox: Inbox }) {
     );
 }
 
+// A purchased mailbox the workspace still pays for is cancelled, not disconnected: removing it would not stop its billing.
+function PurchasedDangerCard({ mailbox }: { mailbox: Inbox }) {
+    const m = usePurchasedMailbox(mailbox.id);
+    const cancel = useCancelAtPeriodEnd();
+    const canBill = usePermission("MANAGE_BILLING");
+    const ending = shortDate(m?.cancels_at);
+    // Cancelling needs GraphKit, so it is not offered while the instance is disconnected from it.
+    const paused = useStorePausedStatus() !== null;
+    return (
+        <div className="px-5 py-5 space-y-3">
+            <Eyebrow>Danger zone</Eyebrow>
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-center border-l-2 border-red-200 pl-3">
+                <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] font-medium text-red-700 leading-tight flex items-center gap-1.5">
+                        <CalendarXIcon className="w-3 h-3" />
+                        Cancel this mailbox
+                    </div>
+                    <div className="text-[11.5px] text-red-700/70 leading-tight mt-0.5">
+                        {ending
+                            ? `Cancelled. It keeps working until ${ending}, then it is deleted, stops being billed and is switched off here. Its history stays until you disconnect it.`
+                            : paused
+                              ? "Cancelling is paused until a GraphKit API key is added to this instance again."
+                              : PURCHASED_LOCKED}
+                        {!canBill && !ending && !paused && " Cancelling needs the Manage billing permission."}
+                    </div>
+                </div>
+                {!ending && !paused && (
+                    <button
+                        type="button"
+                        onClick={() => m && cancel.ask(m)}
+                        disabled={!m || !canBill || cancel.pending}
+                        className="self-start sm:ml-auto h-7 px-2.5 rounded-md border border-red-300 hover:border-red-400 text-red-700 hover:text-red-800 hover:bg-red-100/60 text-[12px] font-medium transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {cancel.pending ? "Cancelling…" : "Cancel subscription…"}
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function DisconnectCard({ mailbox, onDisconnected }: { mailbox: Inbox; onDisconnected: () => void }) {
     const confirm = useConfirm();
     const remove = useRemoveEmail(mailbox.id);
@@ -2309,9 +2373,12 @@ function DisconnectCard({ mailbox, onDisconnected }: { mailbox: Inbox; onDisconn
     const authConfig = useAuthConfig();
     const cloudUnknown = authConfig.isLoading || authConfig.isError || pool.loading || pool.refreshing || pool.unavailable;
     const cloudManaged = pool.rowFor(mailbox.id)?.managed === true;
+    // A purchase that ended was deleted with its sign-in, so there is no access left to revoke.
+    const ended = purchaseState(mailbox).kind === "cancelled";
 
-    const revocation =
-        cloudManaged
+    const revocation = ended
+        ? "The mailbox itself was already deleted when its subscription ended."
+        : cloudManaged
             ? "Cloud warmup sending and receiving stop. Its mailbox, sign-in and history stay in your Warmbly Cloud workspace."
             : mailbox.provider === "gmail"
             ? "Warmbly's access to your Google account is revoked, so it disappears from your third-party access list."
@@ -2324,7 +2391,9 @@ function DisconnectCard({ mailbox, onDisconnected }: { mailbox: Inbox; onDisconn
         confirm.show(
             cloudManaged
                 ? `Disconnect ${mailbox.email} from this instance and stop its Cloud warmup sending and receiving? Imported mail and history on this instance are deleted. Its mailbox, sign-in and history stay in your Warmbly Cloud workspace.`
-                : `Disconnect ${mailbox.email}? This deletes its imported mail, warmup history and credentials, and cannot be undone. Switch the mailbox off instead if you only want it to stop.`,
+                : ended
+                  ? `Disconnect ${mailbox.email}? This deletes its imported mail and warmup history here, and cannot be undone.`
+                  : `Disconnect ${mailbox.email}? This deletes its imported mail, warmup history and credentials, and cannot be undone. Switch the mailbox off instead if you only want it to stop.`,
             async () => {
                 try {
                     await remove.mutateAsync();
@@ -2580,7 +2649,13 @@ function SettingsTab({ form, update, mailbox, onDisconnected }: { form: Inbox; u
 
             <MailboxPowerCard mailbox={mailbox} />
 
-            <DisconnectCard mailbox={mailbox} onDisconnected={onDisconnected} />
+            {mailbox.purchased && <SubscriptionCard emailAccountId={mailbox.id} />}
+
+            {purchaseState(mailbox).kind === "live" ? (
+                <PurchasedDangerCard mailbox={mailbox} />
+            ) : (
+                <DisconnectCard mailbox={mailbox} onDisconnected={onDisconnected} />
+            )}
 
             <div className="flex flex-wrap items-center gap-1.5 px-5 py-3 text-[11px] text-slate-400">
                 <SendIcon className="w-3 h-3" /> Changes apply to new sends. <ReplyIcon className="w-3 h-3 ml-1" /> Signature applies to replies too.

@@ -579,6 +579,10 @@ defmodule RealtimeWeb.OrgChannel do
     has = fn perm -> Auth.has_permission?(%{permissions: permissions}, Auth.permission(perm)) end
 
     cond do
+      # Domains and mailboxes bought in the store: the inventory sits behind manage_emails.
+      String.starts_with?(event_type, "STORE_") ->
+        has.(:manage_emails)
+
       # Billing
       String.contains?(event_type, "SUBSCRIPTION") or String.contains?(event_type, "BILLING") ->
         has.(:manage_billing)

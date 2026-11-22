@@ -138,6 +138,9 @@ func (h *Handler) ReauthEmailOAuth(c *gin.Context) {
 		return
 	}
 
+	if h.refuseLockedMailbox(c, id.String()) {
+		return
+	}
 	resp, xerr := h.EmailService.OAuthReauth(c.Request.Context(), userID, orgID, id, c.GetHeader("Origin"))
 	if xerr != nil {
 		errx.Handle(c, xerr)
@@ -169,6 +172,9 @@ func (h *Handler) UpdateEmailSMTPIMAP(c *gin.Context) {
 		return
 	}
 
+	if h.refuseLockedMailbox(c, id.String()) {
+		return
+	}
 	var req OnboardingSMTPIMAPCredentials
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errx.Handle(c, errx.InvalidBody(err))
@@ -310,6 +316,9 @@ func (h *Handler) SwitchEmailToAppPassword(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		errx.Handle(c, errx.ErrUuid)
+		return
+	}
+	if h.refuseLockedMailbox(c, id.String()) {
 		return
 	}
 	var req appPasswordSwitchRequest

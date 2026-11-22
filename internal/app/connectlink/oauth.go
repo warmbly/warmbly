@@ -55,6 +55,9 @@ func (s *Service) StartOAuth(ctx context.Context, link *models.ClientConnectLink
 	if xerr != nil {
 		return nil, xerr
 	}
+	if s.partner != nil {
+		authURL = withLoginHint(authURL, s.partner.LoginHint(ctx, link.ID))
+	}
 	raw, err := json.Marshal(models.ClientConnectLinkOAuthState{
 		LinkID: link.ID, OrganizationID: link.OrganizationID, Provider: string(provider), CodeVerifier: verifier,
 		ReturnURL: returnURL, RemoteIPHash: ipHash(link.ID, remoteIP), ExpiresAt: s.d.Now().Add(oauthStateTTL),
@@ -100,6 +103,10 @@ func (s *Service) FinishOAuth(ctx context.Context, callbackProvider, code, state
 	}
 	res, xerr := s.finishOAuth(ctx, sess, callbackProvider, code, providerErr)
 	s.leaveResult(ctx, sess, res, xerr)
+	// A partner's link returns the person to the partner, with the outcome in the query.
+	if back := s.partnerReturn(ctx, sess.LinkID, res, xerr); back != "" {
+		return res, back, xerr
+	}
 	return res, sess.ReturnURL, xerr
 }
 

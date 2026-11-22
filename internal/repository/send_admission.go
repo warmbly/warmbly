@@ -121,7 +121,7 @@ func sendAuthority(ctx context.Context, tx pgx.Tx, task, mailbox, org, worker uu
 	var lane string
 	var allowed bool
 	err := tx.QueryRow(ctx, `SELECT t.task_type, ea.status='active' AND ea.organization_id=$3 AND ea.provider::text=$5
-	 AND o.risk_state<>'suspended'
+	 AND o.risk_state<>'suspended' AND `+partnerLaneSQL("ea", "t.task_type::text")+`
 	 AND (NOT ea.send_recovery_hold OR ($6 AND ea.send_recovery_reason='unknown' AND ea.send_recovery_task_id=t.id))
 	 AND (ea.send_cooldown_until IS NULL OR ea.send_cooldown_until<=NOW())
 	 AND ea.worker_id=$4 AND NOT `+instanceExecutedSQL("ea.id")+`
@@ -248,6 +248,9 @@ func (r *taskRepository) ReserveOutbound(ctx context.Context, in OutboundReserva
 			return uuid.Nil, err
 		}
 		if err = checkMailboxSendingPlan(ctx, tx, in.TaskID, in.MailboxID); err != nil {
+			return uuid.Nil, err
+		}
+		if err = checkPartnerDailyCap(ctx, tx, in.TaskID, in.MailboxID); err != nil {
 			return uuid.Nil, err
 		}
 	}

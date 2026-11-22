@@ -326,7 +326,7 @@ func (r *aiDraftRepository) upsertPendingDraftOnce(ctx context.Context, orgID uu
 			    contact_id = $10, campaign_id = $11, email_account_id = $12, owner_user_id = $13, updated_at = NOW()
 			WHERE id = $1 AND organization_id = $14 AND status = 'pending'
 			RETURNING `+aiDraftCols, cur.ID, p.Body, p.Model, p.IntentClass, p.Confidence,
-			in.id, in.sender, draftReplySubject(in.subject), in.messageID, contactID, campaignID, in.emailID, in.ownerID, orgID), &d); err != nil {
+			in.id, in.sender, mailhdr.ReplySubject(in.subject), in.messageID, contactID, campaignID, in.emailID, in.ownerID, orgID), &d); err != nil {
 			return nil, false, err
 		}
 		return &d, false, tx.Commit(ctx)
@@ -340,7 +340,7 @@ func (r *aiDraftRepository) upsertPendingDraftOnce(ctx context.Context, orgID uu
 		ThreadID:        p.ThreadID,
 		SourceMessageID: &in.id,
 		ToAddr:          in.sender,
-		Subject:         draftReplySubject(in.subject),
+		Subject:         mailhdr.ReplySubject(in.subject),
 		InReplyTo:       in.messageID,
 		Body:            p.Body,
 		IntentClass:     p.IntentClass,
@@ -456,16 +456,4 @@ func campaignForDraft(ctx context.Context, tx pgx.Tx, orgID, contactID uuid.UUID
 		return nil
 	}
 	return &id
-}
-
-// draftReplySubject prefixes "Re: " once, as a normal reply subject.
-func draftReplySubject(subject string) string {
-	s := strings.TrimSpace(subject)
-	if s == "" {
-		return "Re:"
-	}
-	if strings.HasPrefix(strings.ToLower(s), "re:") {
-		return s
-	}
-	return "Re: " + s
 }

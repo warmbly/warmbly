@@ -10,10 +10,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -96,7 +98,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	if account.Status != "active" || (!activelyWarming && !inCampaign) {
 		if s.warmupHealth != nil {
 			if account.Status == "active" && account.OrganizationID != nil && s.featureGate != nil {
-				canWarmup, xerr := s.featureGate.CanUseWarmup(ctx, *account.OrganizationID)
+				canWarmup, xerr := feature.CanWarmMailbox(ctx, s.featureGate, *account.OrganizationID, account.ID)
 				switch {
 				case xerr != nil:
 					// Entitlement unknown: leave the membership alone rather than let a blip evict.
@@ -139,7 +141,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 
 	// STEP 3.5: Check if organization can use warmup (only paid orgs)
 	if s.featureGate != nil {
-		canWarmup, entitlementErr := s.featureGate.CanUseWarmup(ctx, *account.OrganizationID)
+		canWarmup, entitlementErr := feature.CanWarmMailbox(ctx, s.featureGate, *account.OrganizationID, account.ID)
 		if !canWarmup {
 			// Only a definite "not entitled" evicts; the send is skipped either way.
 			if s.warmupHealth != nil && entitlementErr == nil {
@@ -386,6 +388,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		emailBody, content.bodyHTML = models.AppendWarmupFilterTag(emailBody, content.bodyHTML, tag)
 	}
 
+	// Lineage keeps the thread's subject; what goes out reads as a reply.
+	wireSubject := subject
+	if shouldReply {
+		wireSubject = mailhdr.ReplySubject(subject)
+	}
+
 	// STEP 9: Generate Message-ID
 	messageID := generateMessageID(account.Email)
 	if err := s.taskRepo.UpdateTaskMessageID(ctx, taskID, messageID); err != nil {
@@ -407,7 +415,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		VariantID:          content.variantID,
 		// The recipient falls back to matching on the subject when the verify
 		// header does not survive delivery (Graph strips it).
-		Subject:   subject,
+		Subject:   wireSubject,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
 	if err := s.warmupRepo.CreateWarmupToken(ctx, tokenRecord); err != nil {
@@ -431,7 +439,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	emailMsg := EmailMessage{
 		From:           account.Email,
 		To:             []string{partner.Email},
-		Subject:        subject,
+		Subject:        wireSubject,
 		BodyHTML:       content.bodyHTML, // only campaign copy carries HTML
 		BodyPlain:      emailBody,
 		UnsubscribeURL: content.unsubscribeURL,

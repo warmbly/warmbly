@@ -23,6 +23,7 @@ import {
 import type { AppError } from "@/lib/api/client/normalizeError";
 import { type AgencyAPIKey, type AgencyAPIKeyWithSecret, type AgencyAPIPermission, agencyKeyLive } from "@/lib/api/models/app/agency/AgencyAPIKey";
 import buildError from "@/lib/helper/buildError";
+import { clearBits, hasBits, orBits } from "@/lib/bitmask";
 import { cn } from "@/lib/utils";
 
 const ORG_HEADER = "Warmbly-Organization";
@@ -89,8 +90,8 @@ function PermissionGroup({ title, perms, value, onChange }: { title: string; per
                         <Checkbox
                             tone="slate"
                             className="mt-0.5"
-                            checked={(value & p.value) === p.value}
-                            onChange={(e) => onChange(e.target.checked ? value | p.value : value & ~p.value)}
+                            checked={hasBits(value, p.value)}
+                            onChange={(e) => onChange(e.target.checked ? orBits(value, p.value) : clearBits(value, p.value))}
                         />
                         <span className="min-w-0">
                             <span className="block text-[12px] text-slate-800 font-mono">{p.name}</span>

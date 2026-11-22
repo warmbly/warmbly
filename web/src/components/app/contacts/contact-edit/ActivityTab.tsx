@@ -68,7 +68,7 @@ import LeadCCBar from "./LeadCCBar";
 import toast from "react-hot-toast/headless";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import { useWriteGuard } from "@/hooks/usePermission";
+import { usePermission, useWriteGuard } from "@/hooks/usePermission";
 import useClickOutside from "@/hooks/useClickOutside";
 import { useFlipAlignment } from "@/hooks/useFlipPlacement";
 import { fmtAbsolute, fmtRelative } from "./format";
@@ -446,6 +446,7 @@ function HoldBar({
     hold: LeadHold;
 }) {
     const write = useWriteGuard("MANAGE_CAMPAIGNS");
+    const canSend = usePermission("SEND_CAMPAIGNS");
     const pause = usePauseLead();
     const [resuming, setResuming] = React.useState(false);
 
@@ -464,11 +465,12 @@ function HoldBar({
                 {holdSummary(hold)}
             </span>
             <div className="ml-auto flex items-center gap-1 shrink-0">
-                {write.allowed && (
+                {(hold.source === "review" ? canSend : write.allowed) && (
                     <ResumeLeadButton
                         campaignId={campaignId}
                         contactId={contactId}
-                        label={hold.source === "cc" ? "Send their own too" : "Resume now"}
+                        approve={hold.source === "review"}
+                        label={hold.source === "cc" ? "Send their own too" : hold.source === "review" ? "Approve" : "Resume now"}
                         confirmText={hold.source === "cc" ? CC_RESUME_CONFIRM : undefined}
                         disabled={pause.isPending}
                         onBusyChange={setResuming}

@@ -108,8 +108,8 @@ func (s *Service) PreviewLink(ctx context.Context, userID uuid.UUID, code string
 	}
 	if s.users != nil {
 		if u, err := s.users.GetUser(ctx, userID); err == nil && u != nil {
-			out.UserEmail = u.Email
-			out.EmailMatches = models.SlackLinkEmailMatches(prof.Email, u.Email)
+			out.UserEmail = u.VisibleEmail()
+			out.EmailMatches = models.SlackLinkEmailMatches(prof.Email, out.UserEmail)
 		}
 	}
 	out.VerifyAvailable = s.VerifyAvailable()

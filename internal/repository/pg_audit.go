@@ -120,7 +120,7 @@ func (r *auditRepository) Search(ctx context.Context, params *models.AuditLogSea
 	query := `
 		SELECT al.id, al.organization_id, al.actor_id, al.action, al.entity_type, al.entity_id,
 			al.ip_address, al.user_agent, al.changes, al.metadata, al.created_at,
-			u.id, u.first_name, u.last_name, u.email
+			u.id, u.first_name, u.last_name, u.email, u.contact_email
 		FROM audit_logs al
 		LEFT JOIN users u ON u.id = al.actor_id
 		` + whereClause + `
@@ -143,16 +143,17 @@ func (r *auditRepository) Search(ctx context.Context, params *models.AuditLogSea
 			changesJSON  []byte
 			metadataJSON []byte
 
-			joinedID   *uuid.UUID
-			firstName  *string
-			lastName   *string
-			actorEmail *string
+			joinedID     *uuid.UUID
+			firstName    *string
+			lastName     *string
+			actorEmail   *string
+			actorContact *string
 		)
 
 		if err := rows.Scan(
 			&log.ID, &log.OrgID, &actorID, &actionStr, &entityType, &log.EntityID,
 			&log.IPAddress, &log.UserAgent, &changesJSON, &metadataJSON, &log.Timestamp,
-			&joinedID, &firstName, &lastName, &actorEmail,
+			&joinedID, &firstName, &lastName, &actorEmail, &actorContact,
 		); err != nil {
 			return nil, err
 		}
@@ -178,7 +179,11 @@ func (r *auditRepository) Search(ctx context.Context, params *models.AuditLogSea
 				log.Actor.LastName = *lastName
 			}
 			if actorEmail != nil {
-				log.Actor.Email = *actorEmail
+				contact := ""
+				if actorContact != nil {
+					contact = *actorContact
+				}
+				log.Actor.Email = models.VisibleEmail(*actorEmail, contact)
 			}
 		}
 

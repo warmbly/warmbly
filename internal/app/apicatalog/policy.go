@@ -21,6 +21,8 @@ var sendOperations = map[string]string{
 	"POST /unibox/agent-drafts/{id}/approve":                 "sends an inbox agent draft; approve it in the inbox",
 	"POST /campaigns/{id}/test-email":                        "sends mail; send a test from the campaign editor",
 	"POST /campaigns/{id}/start":                             "starts sending; use set_campaign_status",
+	"POST /campaigns/{id}/review/approve":                    "starts sending to the approved leads; approve them in the campaign's Review tab",
+	"PUT /campaigns/{id}/review":                             "turning review off approves every waiting lead; change it in the campaign's Review tab",
 	"POST /placement/tests":                                  "sends to seed inboxes; use run_placement_test",
 	"POST /placement/batches":                                "sends to seed inboxes; use run_placement_batch",
 	"POST /integrations/connections/{id}/rotate-inbound-url": "returns a secret inbound URL; rotate it in the dashboard",

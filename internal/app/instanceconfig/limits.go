@@ -2,6 +2,7 @@ package instanceconfig
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
@@ -106,7 +107,12 @@ func Limits() []LimitGroup {
 				{"Live hourly", n(config.SyncHourlyPerMailbox), "messages/hour", "Per mailbox, any clock hour."},
 				{"Backfill pace", n(config.SyncBackfillPerMinute), "messages/minute", "Per mailbox during the initial import of history."},
 				{"Flood threshold", n(config.SyncFloodPerHour), "messages/hour", "New live mail seen in one hour that deactivates the mailbox outright."},
-				{"Chronic overage", n(config.SyncThrottleEscalationDays), "days of 7", "Daily budget exhausted on this many of the last seven days deactivates the mailbox. The daily budgets and the backfill window are editable on Instance settings."},
+				{"Chronic overage", n(config.SyncThrottleEscalationDays), "days of 7", "Daily budget exhausted on this many of the last seven days deactivates the mailbox. The daily budgets, the backfill window and the full check interval are editable on Instance settings."},
+				{"Wake check gap", n(int(config.SyncWakeMinGap / time.Second)), "seconds", "Least time between two checks of one mailbox; a push or IDLE wake inside it waits."},
+				{"Narrow poll", n(int(config.SyncNarrowPollInterval / time.Second)), "seconds", "How often a mailbox without push or IDLE gets the inbox and junk check a wake would run."},
+				{"Push safety check", n(int(config.SyncPushSafetyInterval / time.Second)), "seconds", "How often a mailbox with a live push channel still gets the inbox and junk check, in case notifications stop arriving."},
+				{"Catch-up full check", n(int(config.SyncCatchUpInterval / time.Second)), "seconds", "Full check interval while a mailbox's history import or a folder recovery is unfinished."},
+				{"Seed full check", n(config.SyncFullCheckFastSeconds), "seconds", "Full check interval of placement seeds and pool-linked warmup mailboxes."},
 				{"Unibox page size", n(config.UniboxLimitDefault), "messages", "Default page size, range " + n(config.UniboxLimitMin) + " to " + n(config.UniboxLimitMax) + "."},
 				{"Sequence step delay", n(config.SequenceWaitAfterMax), "days", "The largest per-step wait a sequence can store."},
 				{"Sequence subject", n(config.SequenceSubjectLimit), "characters", "Per step."},

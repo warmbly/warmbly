@@ -1,6 +1,6 @@
 ---
 name: warmbly-api
-description: Operate a running Warmbly instance (hosted or self-hosted) as an agent through the warmblyctl API commands - list/create/start campaigns, manage contacts and mailboxes, read and reply in the unified inbox, change settings, read analytics. Use whenever the task is to interact with Warmbly the product (campaigns, contacts, mailboxes, inbox, warmup, webhooks) rather than to change its source code.
+description: Operate a running Warmbly instance (hosted or self-hosted) as an agent through the warmblyctl API commands - list/create/start campaigns, manage contacts and mailboxes, read and reply in the unified inbox, buy domains and mailboxes in the store, change settings, read analytics. Use whenever the task is to interact with Warmbly the product (campaigns, contacts, mailboxes, inbox, warmup, store, webhooks) rather than to change its source code.
 ---
 
 # Driving Warmbly through warmblyctl
@@ -116,6 +116,42 @@ These commands put real mail on the wire: `campaign start`,
   anyway, and resuming that hold sends them a second thread.
 - If deliverability analytics show rising bounces or complaints, stop the
   campaign first and report; do not push volume into a degrading mailbox.
+
+## The store - buying spends the workspace balance
+
+The store buys domains and Google Workspace or Microsoft 365 mailboxes for the
+workspace and connects them with warmup on. It has no typed family; use the
+passthrough on `/store/*` (the routes are in the docs at
+`/api/endpoints/#domains-and-mailboxes`).
+
+- Scopes: `READ_STORE` (bit 32, 4294967296) reads status, search, orders,
+  domains, DNS checks and mailboxes; `MANAGE_STORE` (bit 33, 8589934592)
+  quotes and changes things. Both act under the member's `manage_emails`.
+- Anything that charges or changes what is charged (`POST /store/orders`,
+  `/domains/:id/renew`, `/domains/:id/transfer-out`, `auto_renew` on
+  `PATCH /store/domains/:id`, cancelling or resuming a mailbox, saving the
+  registrant) also needs the member behind the key to hold `manage_billing`,
+  checked on every call. Without it the answer is `403 forbidden`; do not
+  retry, tell the user.
+- Buying spends the workspace balance, then the saved card for any shortfall.
+  Never place an order, renew, or turn auto-renew on unless the user asked for
+  that purchase and has seen the total.
+- Flow: `GET /store/status` (store on, `plan_active`, registrant saved),
+  `GET /store/domains/search?q=...`, `POST /store/quotes`, show the quote's
+  lines and `due_now_micros` (micro-USD, 1000000 = $1.00), then
+  `POST /store/orders` with `quote_id`, `expected_due_now_micros` set to the
+  total the user saw, and an `--idempotency-key`.
+- `409 price_changed`: nothing was charged. `details.quote` is a fresh quote;
+  show its new `due_now_micros`, and only after the user confirms it order
+  again with that quote's `id` and its total as `expected_due_now_micros`.
+  Never resend the old total.
+- `402 payment_method_required` carries `setup_url`; hand it to the user.
+  `402 plan_required` means the workspace needs a paid plan first.
+- Setup takes minutes for the domain and hours to days for the mailboxes.
+  Poll `GET /store/orders/:id` gently; do not reorder because an order is
+  still `processing`.
+- `POST /store/mailboxes/:id/sign-in` returns a mailbox password. Do not call
+  it unless the user asked for the sign-in, and never log or repeat it.
 
 ## Recovery and instance administration
 

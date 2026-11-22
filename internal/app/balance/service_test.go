@@ -71,10 +71,25 @@ func (f *fakeCharges) Pending(_ context.Context, orgID uuid.UUID) (*models.Saved
 	return nil, nil
 }
 func (f *fakeCharges) Create(_ context.Context, c *models.SavedCardCharge) (*models.SavedCardCharge, error) {
+	// One pending charge per workspace, as the partial unique index holds it.
+	for _, p := range f.rows {
+		if p.OrgID == c.OrgID && p.Status == "pending" {
+			return nil, repository.ErrChargeInFlight
+		}
+	}
 	c.ID, c.Status = uuid.New(), "pending"
 	f.rows[c.ID] = c
 	cp := *c
 	return &cp, nil
+}
+func (f *fakeCharges) GetByKey(_ context.Context, orgID uuid.UUID, key string) (*models.SavedCardCharge, error) {
+	for _, c := range f.rows {
+		if c.OrgID == orgID && c.ChargeKey == key {
+			cp := *c
+			return &cp, nil
+		}
+	}
+	return nil, nil
 }
 func (f *fakeCharges) Get(_ context.Context, id uuid.UUID) (*models.SavedCardCharge, error) {
 	cp := *f.rows[id]
@@ -313,5 +328,115 @@ func TestChargeStripeKeepsFailingIsFailedAfterMaxTries(t *testing.T) {
 	}
 	if st.cfg.AutoReloadEnabled || st.disabled != models.ReloadUnavailable || len(n.titles) != 1 {
 		t.Fatalf("reload on = %v (%q), notices %v; want it off and billing told", st.cfg.AutoReloadEnabled, st.disabled, n.titles)
+	}
+}
+
+func TestStoreChargeIgnoresAutoReloadAndReplaysByKey(t *testing.T) {
+	s, cr, st, ch, card, n := newTestService(0, stripe.SavedCardResult{Paid: true, InvoiceID: "in_store"})
+	st.cfg.AutoReloadEnabled = false
+	org := uuid.New()
+	ctx := context.Background()
+	res, err := s.ChargeStore(ctx, org, 7*models.MicroPerUSD, "store:card:order-1", "Mailboxes · 3 × $3.00 · Dec 2026", false)
+	if err != nil || res.Status != "paid" || cr.balance != 7*models.MicroPerUSD {
+		t.Fatalf("charge = %+v, %v; balance %d", res, err, cr.balance)
+	}
+	if len(n.titles) != 1 || n.titles[0] != "You were charged $7.00" {
+		t.Fatalf("notices = %q", n.titles)
+	}
+	// The same key again, as after a crash before the store's debit, charges nothing more.
+	res, err = s.ChargeStore(ctx, org, 7*models.MicroPerUSD, "store:card:order-1", "Mailboxes · 3 × $3.00 · Dec 2026", false)
+	if err != nil || res.Status != "paid" || len(card.charged) != 1 || len(ch.rows) != 1 || cr.balance != 7*models.MicroPerUSD {
+		t.Fatalf("replay = %+v, %v; charged %v, rows %d, balance %d", res, err, card.charged, len(ch.rows), cr.balance)
+	}
+}
+
+func TestStoreChargeDeclineIsFinalForItsKey(t *testing.T) {
+	s, _, _, _, card, _ := newTestService(0, stripe.SavedCardResult{Declined: models.ReloadCardDeclined, Soft: true, InvoiceID: "in_x"})
+	org := uuid.New()
+	ctx := context.Background()
+	_, err := s.ChargeStore(ctx, org, 5*models.MicroPerUSD, "store:card:renew-1", "Domain renewal", true)
+	var declined *DeclinedError
+	if !errors.As(err, &declined) || declined.Code != models.ReloadCardDeclined {
+		t.Fatalf("decline = %v", err)
+	}
+	// Not snoozed like a reload: the store's own ladder retries under a new key.
+	if _, err := s.ChargeStore(ctx, org, 5*models.MicroPerUSD, "store:card:renew-1", "Domain renewal", true); !errors.As(err, &declined) || len(card.charged) != 1 {
+		t.Fatalf("the same key after a decline = %v, charged %v", err, card.charged)
+	}
+}
+
+// A store charge whose Stripe calls kept failing is final for its key, so the store moves on to a new one.
+func TestStoreChargeGivenUpIsAFinalRefusalForItsKey(t *testing.T) {
+	s, _, _, ch, card, _ := newTestService(0)
+	card.fail = errors.New("stripe: 500")
+	org := uuid.New()
+	ctx := context.Background()
+	var declined *DeclinedError
+	for range maxTries + 2 {
+		if _, err := s.ChargeStore(ctx, org, 5*models.MicroPerUSD, "store:card:mailboxes-1", "Mailboxes", true); errors.As(err, &declined) {
+			break
+		}
+	}
+	if c := onlyCharge(t, ch); c.Status != "failed" || c.FailureCode != models.ReloadUnavailable {
+		t.Fatalf("charge = %+v; want failed after %d tries", c, maxTries)
+	}
+	// Every later call with the key says so, rather than an error the store would wait on forever.
+	_, err := s.ChargeStore(ctx, org, 5*models.MicroPerUSD, "store:card:mailboxes-1", "Mailboxes", true)
+	if !errors.As(err, &declined) || declined.Code != models.ReloadPaymentFailed {
+		t.Fatalf("the same key after giving up = %v, want a payment_failed refusal", err)
+	}
+}
+
+// A store charge is not held for hours behind an automatic reload waiting out a soft decline.
+func TestStoreChargeSupersedesASnoozedReload(t *testing.T) {
+	s, cr, _, ch, card, _ := newTestService(0,
+		stripe.SavedCardResult{InvoiceID: "in_reload", Declined: models.ReloadCardDeclined, Soft: true},
+		stripe.SavedCardResult{Paid: true, InvoiceID: "in_store"})
+	org := uuid.New()
+	ctx := context.Background()
+	if err := s.Reload(ctx, org); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.ChargeStore(ctx, org, 7*models.MicroPerUSD, "store:card:order-1", "Domain registration", false)
+	if err != nil || res.Status != "paid" || cr.balance != 7*models.MicroPerUSD {
+		t.Fatalf("store charge behind a snoozed reload = %+v, %v; balance %d", res, err, cr.balance)
+	}
+	for _, c := range ch.rows {
+		if c.Kind == models.SavedCardAutoReload && (c.Status != "failed" || c.FailureCode != models.ChargeCanceled) {
+			t.Fatalf("snoozed reload = %+v, want it closed", c)
+		}
+	}
+	if len(card.charged) != 2 {
+		t.Fatalf("card attempts = %v", card.charged)
+	}
+}
+
+// A charge actually running is not cut short: the store waits for it.
+func TestStoreChargeWaitsForARunningCharge(t *testing.T) {
+	s, _, _, ch, _, _ := newTestService(0)
+	org := uuid.New()
+	ctx := context.Background()
+	if _, err := ch.Create(ctx, &models.SavedCardCharge{OrgID: org, Kind: models.SavedCardTopUp, Amount: 10 * models.MicroPerUSD}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ChargeStore(ctx, org, 7*models.MicroPerUSD, "store:card:order-1", "Domain registration", false); !errors.Is(err, ErrChargeInFlight) {
+		t.Fatalf("store charge behind a running top-up = %v", err)
+	}
+}
+
+// The store sizes a card charge so its debit leaves the balance at the reload threshold;
+// there the balance's own reload charges nothing, and only below it does it charge.
+func TestReloadAfterAStoreDebitOnlyUnderTheThreshold(t *testing.T) {
+	s, cr, st, _, card, _ := newTestService(0, stripe.SavedCardResult{Paid: true, InvoiceID: "in_1"})
+	org := uuid.New()
+	cr.balance = st.cfg.AutoReloadThreshold
+	s.OnBalanceChanged(org, cr.balance+3*models.MicroPerUSD, cr.balance)
+	if len(card.charged) != 0 {
+		t.Fatalf("a debit leaving the balance at the threshold reloaded: %v", card.charged)
+	}
+	cr.balance = st.cfg.AutoReloadThreshold - 1
+	s.OnBalanceChanged(org, cr.balance+3*models.MicroPerUSD, cr.balance)
+	if len(card.charged) != 1 {
+		t.Fatalf("a debit under the threshold reloaded %v, want once", card.charged)
 	}
 }

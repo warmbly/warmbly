@@ -27,6 +27,9 @@ func TestSealedColumnsCoverEveryInstanceKeySecret(t *testing.T) {
 		"agency_vendor_connections.credentials",
 		"cloud_link.token",
 		"mailbox_erasures.refresh_token",
+		"store_graphkit_connection.api_key",
+		"store_graphkit_connection.webhook_secret",
+		"store_graphkit_connection.webhook_secret_previous",
 	} {
 		if got[want] != DomainInstance {
 			t.Fatalf("%s must be scanned under the instance credential key", want)

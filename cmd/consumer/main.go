@@ -66,6 +66,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/pkg/nodeagent"
 	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
+	"github.com/warmbly/warmbly/internal/pkg/nodebackend"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -127,7 +128,10 @@ func main() {
 		masterKey += "-dev"
 	}
 
-	kmsClient, err := kms.FromEnv(ctx, awscfg, masterKey)
+	// A fleet consumer calls the control plane on its private address when it can reach it.
+	controlPlane := nodebackend.Resolve(ctx, os.Getenv, consumerBackendURL(), log.Printf)
+
+	kmsClient, err := kms.FromEnv(ctx, awscfg, masterKey, kms.WithControlPlane(controlPlane))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -135,6 +139,7 @@ func main() {
 	encryptedKeys, err := encryptedkeys.FromEnv(
 		encryptedkeys.Deps{DB: primaryDB},
 		"postgres",
+		encryptedkeys.WithControlPlane(controlPlane),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -142,7 +147,7 @@ func main() {
 	cipherService := cipher.NewService(kmsClient, redisCache, encryptedKeys)
 
 	// Blob storage (S3 by default, filesystem when BLOB_PROVIDER=filesystem).
-	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main")
+	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main", storage.WithControlPlane(controlPlane))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -543,6 +548,9 @@ func main() {
 
 	cloudLinkC := cloudlink.NewService(repository.NewCloudLinkRepository(primaryDB.Pool, credEncrypter, primaryDB.ConnectSession), emailRepo, nil)
 
+	// Mailboxes bought in the store keep their inbox when the plan lapses.
+	uniboxAccess := feature.WithPurchasedMailboxes(feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
+		feature.StoreMailboxes{Repo: repository.NewStoreRepository(primaryDB)})
 	jobsService := &jobs.JobsService{
 		CampaignIsolationEnabled:    config.CampaignSendIsolationEnabled(),
 		DBConns:                     primaryDB.Pool.Config().MaxConns,
@@ -579,7 +587,7 @@ func main() {
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,
 		Notifier:                    notificationService,
-		UniboxAccess:                feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
+		UniboxAccess:                uniboxAccess,
 		OpsNotifier:                 opsNotifierC,
 		TaskRepo:                    taskRepo,
 		CampaignRepo:                campaignRepo,
@@ -767,7 +775,7 @@ func main() {
 	agentDone := make(chan struct{})
 	go func() {
 		defer close(agentDone)
-		newConsumerAgent().Run(ctx)
+		newConsumerAgent(controlPlane).Run(ctx)
 	}()
 
 	// The consumer's ECS service scales on this; unset on every other deployment.
@@ -801,7 +809,7 @@ func main() {
 // Identity resolution mirrors the worker's: an explicit WARMBLY_NODE_ID wins,
 // otherwise it is derived from the hostname so a container recreate keeps the
 // same identity instead of leaving a dead row behind on every restart.
-func newConsumerAgent() *nodeagent.Agent {
+func newConsumerAgent(controlPlane nodebackend.Backend) *nodeagent.Agent {
 	id := resolveConsumerID()
 	return nodeagent.New(nodeagent.Config{
 		NodeID:            id,
@@ -809,7 +817,8 @@ func newConsumerAgent() *nodeagent.Agent {
 		Name:              os.Getenv("WARMBLY_NODE_NAME"),
 		Region:            os.Getenv("WARMBLY_NODE_REGION"),
 		Version:           os.Getenv("WARMBLY_VERSION"),
-		BaseURL:           consumerBackendURL(),
+		BaseURL:           controlPlane.BaseURL(consumerBackendURL()),
+		HTTPClient:        controlPlane.Client(10 * time.Second),
 		Token:             config.NodeAPIToken(),
 		Credential:        nodeauth.FromEnv().Credential,
 		TargetVersionPath: os.Getenv("WARMBLY_TARGET_VERSION_PATH"),

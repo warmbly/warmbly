@@ -357,6 +357,9 @@ func (h *Handler) DeleteEmail(c *gin.Context) {
 
 	emailAccountID := c.Param("id")
 
+	if h.refuseLockedMailbox(c, emailAccountID) {
+		return
+	}
 	if err := h.EmailService.Delete(c.Request.Context(), orgID.String(), emailAccountID); err != nil {
 		errx.Handle(c, err)
 		return

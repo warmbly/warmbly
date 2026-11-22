@@ -29,6 +29,7 @@ export function MultiPicker({
     onCreate,
     suggestedName,
     createNoun = "item",
+    onBusyChange,
 }: {
     value: string[];
     onChange: (next: string[]) => void;
@@ -41,8 +42,13 @@ export function MultiPicker({
     /** Offered as a one-click create when nothing is typed. */
     suggestedName?: string;
     createNoun?: string;
+    /** Reports a create in flight, so a form can hold its submit until the new id is in. */
+    onBusyChange?: (busy: boolean) => void;
 }) {
     const [creating, setCreating] = React.useState(false);
+    // The selection as it is when a create resolves, so a removal made meanwhile sticks.
+    const valueRef = React.useRef(value);
+    valueRef.current = value;
     // Names of options created here, shown until the list refetches them.
     const [created, setCreated] = React.useState<Record<string, string>>({});
     const [open, setOpen] = React.useState(false);
@@ -72,10 +78,11 @@ export function MultiPicker({
     async function create() {
         if (!onCreate || !canCreate || creating) return;
         setCreating(true);
+        onBusyChange?.(true);
         try {
             const id = await onCreate(createName);
             setCreated((c) => ({ ...c, [id]: createName }));
-            onChange([...value, id]);
+            onChange([...valueRef.current.filter((x) => x !== id), id]);
             setQuery("");
             setOpen(false);
         } catch (err) {
@@ -83,6 +90,7 @@ export function MultiPicker({
             toast.error(typeof msg === "string" && msg ? msg : `The ${createNoun} could not be created.`);
         } finally {
             setCreating(false);
+            onBusyChange?.(false);
         }
     }
 
@@ -228,6 +236,7 @@ export function SegmentMultiPicker({
     allowCreate = false,
     suggestedName,
     placeholder = "Pick segments…",
+    onBusyChange,
 }: {
     value: string[];
     onChange: (next: string[]) => void;
@@ -236,6 +245,7 @@ export function SegmentMultiPicker({
     allowCreate?: boolean;
     suggestedName?: string;
     placeholder?: string;
+    onBusyChange?: (busy: boolean) => void;
 }) {
     const segments = useSegments();
     const createSegment = useCreateSegment();
@@ -255,7 +265,30 @@ export function SegmentMultiPicker({
             onCreate={allowCreate ? async (name) => (await createSegment.mutateAsync({ name, match: "all", conditions: [] })).id : undefined}
             suggestedName={suggestedName}
             createNoun="segment"
+            onBusyChange={onBusyChange}
         />
+    );
+}
+
+/** Read-only chips naming the segments a saved source pins contacts into; deleted ones are left out. */
+export function SegmentChips({ ids }: { ids: readonly string[] | null | undefined }) {
+    const segments = useSegments((ids?.length ?? 0) > 0);
+    const shown = (ids ?? [])
+        .map((id) => segments.data?.find((s) => s.id === id))
+        .filter((s): s is NonNullable<typeof s> => !!s);
+    if (shown.length === 0) return null;
+    return (
+        <>
+            {shown.map((s) => (
+                <span
+                    key={s.id}
+                    className="inline-flex items-center gap-1 h-4 px-1 rounded border border-slate-200 bg-white text-[10px] font-medium text-slate-700 min-w-0"
+                >
+                    <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                    <span className="truncate max-w-[120px]">{s.name}</span>
+                </span>
+            ))}
+        </>
     );
 }
 

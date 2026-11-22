@@ -40,6 +40,10 @@ const (
 type argSpec struct {
 	Name string
 	Help string
+	// Field sends the argument as this body field (a query parameter on a GET) instead of a path segment.
+	Field string
+	// Toggle reads the argument as on or off and sends a boolean.
+	Toggle bool
 }
 
 // flagSpec is one flag. Query flags become query parameters; the rest become
@@ -78,6 +82,9 @@ type endpoint struct {
 
 	// Sends marks a command that puts real mail on the wire. Those confirm.
 	Sends bool
+	// Confirm names what the command does that needs a yes, such as
+	// "charges the workspace balance". It confirms the way Sends does.
+	Confirm string
 	// Paginate offers --all, which walks the cursor.
 	Paginate bool
 	// Idempotent offers --idempotency-key.
@@ -97,6 +104,8 @@ type resource struct {
 	Endpoints []endpoint
 	// Children are nested resources, such as `agency clients`.
 	Children []resource
+	// Commands adds hand-written subcommands the table cannot express.
+	Commands func(*Factory) []*cobra.Command
 }
 
 func resourceCommands(f *Factory) []*cobra.Command {
@@ -124,6 +133,9 @@ func buildResource(f *Factory, r resource, parent string) *cobra.Command {
 	for _, child := range r.Children {
 		cmd.AddCommand(buildResource(f, child, name))
 	}
+	if r.Commands != nil {
+		cmd.AddCommand(r.Commands(f)...)
+	}
 	return cmd
 }
 
@@ -146,6 +158,9 @@ func buildEndpoint(f *Factory, resourceName string, e endpoint) *cobra.Command {
 	}
 	if e.Sends {
 		long += "\n\nThis command sends real mail. It asks before doing so; --yes skips the question."
+	}
+	if e.Confirm != "" {
+		long += "\n\nThis command " + e.Confirm + ". It asks before doing so; --yes skips the question."
 	}
 
 	cmd := &cobra.Command{
@@ -232,6 +247,26 @@ func buildEndpoint(f *Factory, resourceName string, e endpoint) *cobra.Command {
 				return err
 			}
 		}
+		for i, a := range e.Args {
+			if a.Field == "" {
+				continue
+			}
+			var value any = strings.TrimSpace(args[i])
+			if a.Toggle {
+				on, terr := parseToggle(args[i])
+				if terr != nil {
+					return fmt.Errorf("<%s>: %w", a.Name, terr)
+				}
+				value = on
+			}
+			if e.Method == http.MethodGet {
+				query.Set(a.Field, queryString(value))
+				continue
+			}
+			if err := assign(body, a.Field, value); err != nil {
+				return err
+			}
+		}
 
 		raw, err := bodyFromArg(f.IO.In, input)
 		if err != nil {
@@ -268,6 +303,10 @@ func buildEndpoint(f *Factory, resourceName string, e endpoint) *cobra.Command {
 
 		if e.Sends {
 			if err := f.ConfirmSend(fmt.Sprintf("`warmbly %s %s`", resourceName, e.Name)); err != nil {
+				return err
+			}
+		} else if e.Confirm != "" {
+			if err := f.ConfirmConsequence(fmt.Sprintf("`warmbly %s %s`", resourceName, e.Name), e.Confirm); err != nil {
 				return err
 			}
 		} else if e.Method == http.MethodDelete {
@@ -314,8 +353,12 @@ func buildEndpoint(f *Factory, resourceName string, e endpoint) *cobra.Command {
 }
 
 // fillPath substitutes positional arguments into the {} markers, in order.
+// Arguments sent as a field fill no marker.
 func fillPath(path string, specs []argSpec, args []string) (string, error) {
 	for i, spec := range specs {
+		if spec.Field != "" {
+			continue
+		}
 		marker := "{" + spec.Name + "}"
 		if !strings.Contains(path, marker) {
 			return "", fmt.Errorf("internal: path %q has no %s", path, marker)
@@ -330,6 +373,17 @@ func fillPath(path string, specs []argSpec, args []string) (string, error) {
 		return "", fmt.Errorf("internal: path %q still has an unfilled placeholder", path)
 	}
 	return path, nil
+}
+
+// parseToggle reads on/off, the words a person types for a switch.
+func parseToggle(raw string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "on", "true", "yes", "enable", "enabled":
+		return true, nil
+	case "off", "false", "no", "disable", "disabled":
+		return false, nil
+	}
+	return false, fmt.Errorf("say on or off, not %q", raw)
 }
 
 func queryString(v any) string {

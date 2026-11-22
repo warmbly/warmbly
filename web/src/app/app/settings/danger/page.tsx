@@ -54,7 +54,10 @@ export default function DangerSettingsPage() {
     const orgPending = orgDanger.data?.pending_deletion;
     const accPending = accountDanger.data?.pending_deletion;
 
-    const agency = useCurrentOrganization().data?.agency;
+    const currentOrgData = useCurrentOrganization().data;
+    const agency = currentOrgData?.agency;
+    // A reseller's workspace is created and ended by the reseller, never deleted from here.
+    const partner = currentOrgData?.partner;
     const leaveAgency = useLeaveAgency();
     const confirm = useConfirm();
     const askLeaveAgency = () => {
@@ -101,6 +104,14 @@ export default function DangerSettingsPage() {
                 )}
             </Section>
 
+            {partner ? (
+                <Section eyebrow="Workspace" description="Affects only the workspace you're viewing.">
+                    <p className="text-[12.5px] text-slate-600 leading-relaxed max-w-md">
+                        {partner.display_name} manages this workspace. It is ended or restored there, so it cannot be
+                        deleted from here.
+                    </p>
+                </Section>
+            ) : (
             <Section
                 eyebrow="Workspace"
                 description="Affects only the workspace you're viewing."
@@ -122,6 +133,7 @@ export default function DangerSettingsPage() {
                     />
                 )}
             </Section>
+            )}
 
             {agency && (
                 <Section

@@ -5,6 +5,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -74,9 +75,6 @@ func awaitConcurrent(t *testing.T, ch <-chan struct{}) {
 }
 
 func TestConcurrentConsumerOrdersMailboxAndFencesOffsets(t *testing.T) {
-	if messageLane("a", 2) == messageLane("b", 2) {
-		t.Fatal("test requires separate lanes")
-	}
 	c := &concurrentConsumer{queue: []*ckf.Message{
 		concurrentMessage(10, 0, "a"), concurrentMessage(12, 0, "b"), concurrentMessage(18, 0, "a"),
 	}, acked: make(chan struct{}, 5)}
@@ -162,11 +160,12 @@ func TestConcurrentConsumerFailureKeepsPartitionReplayAndStopsLane(t *testing.T)
 	}
 }
 
-func TestConcurrentConsumerBoundsReadAheadBehindSlowMailbox(t *testing.T) {
-	c := &concurrentConsumer{acked: make(chan struct{}, 100)}
+// A command stuck on one mailbox must not stall every other mailbox on the worker.
+func TestConcurrentConsumerKeepsOtherMailboxesMovingBehindSlowMailbox(t *testing.T) {
+	c := &concurrentConsumer{}
 	c.queue = append(c.queue, concurrentMessage(0, 0, "a"))
-	for i := 1; i < 200; i++ {
-		c.queue = append(c.queue, concurrentMessage(i, 0, "b"))
+	for i := 1; i < 2000; i++ {
+		c.queue = append(c.queue, concurrentMessage(i, 0, fmt.Sprintf("m%d", i%300)))
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -182,17 +181,61 @@ func TestConcurrentConsumerBoundsReadAheadBehindSlowMailbox(t *testing.T) {
 			return nil
 		})
 	}()
-	deadline := time.After(3 * time.Second)
-	for handled.Load() < 2*(laneBuffer+1)-1 {
+	deadline := time.After(5 * time.Second)
+	for handled.Load() < 1999 {
 		select {
 		case <-deadline:
-			t.Fatal("did not process independent messages")
+			t.Fatalf("other mailboxes stalled behind one slow command: handled %d of 1999", handled.Load())
 		default:
 			time.Sleep(time.Millisecond)
 		}
 	}
-	if read := c.reads.Load(); read > 2*(laneBuffer+1) {
-		t.Fatalf("unbounded read-ahead: %d", read)
+	c.mu.Lock()
+	stored := len(c.stored)
+	c.mu.Unlock()
+	if stored != 0 {
+		t.Fatal("stored an offset beyond an unfinished command")
+	}
+	cancel()
+	close(release)
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
+func TestConcurrentConsumerBoundsReadAheadBehindSlowMailbox(t *testing.T) {
+	limit := readAheadLimit(2)
+	c := &concurrentConsumer{}
+	for i := 0; i < limit+500; i++ {
+		c.queue = append(c.queue, concurrentMessage(i, 0, "a"))
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	release := make(chan struct{})
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- (&Consumer{c: c}).ConsumeConcurrent(ctx, 2, mailboxKey, func(msg *ckf.Message) error {
+			if msg.TopicPartition.Offset == 0 {
+				close(started)
+				<-release
+			}
+			return nil
+		})
+	}()
+	awaitConcurrent(t, started)
+	deadline := time.After(5 * time.Second)
+	for c.reads.Load() < int64(limit) {
+		select {
+		case <-deadline:
+			t.Fatalf("read only %d of %d", c.reads.Load(), limit)
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	if read := c.reads.Load(); read > int64(limit) {
+		t.Fatalf("unbounded read-ahead: %d > %d", read, limit)
 	}
 	cancel()
 	close(release)

@@ -69,6 +69,7 @@ type pushChannel struct {
 
 // ApplyPush takes the push settings from a republished ADD_EMAIL.
 func (w *WMail) ApplyPush(data *models.AddWorkerEmailPushData) {
+	defer w.signalChanged()
 	w.push.mu.Lock()
 	defer w.push.mu.Unlock()
 	w.push.want = data
@@ -90,19 +91,37 @@ func (w *WMail) Wake(renew bool) {
 	}
 }
 
-// pollInterval is the wait between passes: long when the provider announces
-// the mailbox's changes, short when only polling finds them.
-func (w *WMail) pollInterval() time.Duration {
+// liveSignal reports whether the provider announces this mailbox's changes
+// now (IDLE held, or a push channel the control plane still asks for and that
+// has not lapsed), and when a push channel lapses.
+func (w *WMail) liveSignal() (bool, time.Time) {
 	if w.push.imapIdle.Load() {
-		return config.SyncImapWatchedInterval
+		return true, time.Time{}
 	}
 	w.push.mu.Lock()
 	defer w.push.mu.Unlock()
 	if s, want := w.push.state, w.push.want; s != nil && want != nil && s.ExpiresAt.After(time.Now()) &&
 		(s.Provider == models.MailboxPushGraph && want.GraphNotificationURL != "" || s.Provider == models.MailboxPushGmail && want.GmailTopic != "") {
-		return config.SyncPushFallbackInterval()
+		return true, s.ExpiresAt
 	}
-	return ImapCheckInterval
+	return false, time.Time{}
+}
+
+// signalChanged tells the sync loop to work its timers out again.
+func (w *WMail) signalChanged() {
+	select {
+	case w.signal <- struct{}{}:
+	default:
+	}
+}
+
+// setImapIdle records whether IDLE holds INBOX and reports whether it changed.
+func (w *WMail) setImapIdle(held bool) bool {
+	if w.push.imapIdle.Swap(held) == held {
+		return false
+	}
+	w.signalChanged()
+	return true
 }
 
 // pushTarget names the channel the control plane asked for, so a changed topic or endpoint is tried at once.
@@ -335,12 +354,13 @@ func (w *WMail) runImapWatcher(ctx context.Context) {
 		}
 		started := time.Now()
 		err := conn.WatchInbox(ctx, func() {
-			if !w.push.imapIdle.Swap(true) {
+			if w.setImapIdle(true) {
 				// Anything that arrived while the watch was down is picked up now.
 				w.Wake(false)
 			}
 		})
-		w.push.imapIdle.Store(false)
+		// The narrow poll takes over at once while the watch is down.
+		w.setImapIdle(false)
 		_ = conn.Close()
 		if ctx.Err() != nil {
 			return

@@ -70,7 +70,7 @@ func (s *Service) Save(ctx context.Context, orgID, id uuid.UUID, data []byte) er
 	if s == nil || s.store == nil {
 		return nil
 	}
-	body, err := normalise(data)
+	body, err := Normalise(data)
 	if err != nil {
 		return err
 	}
@@ -128,9 +128,9 @@ func keyOf(u string) string {
 	return key
 }
 
-// normalise decodes a PNG or JPEG and re-encodes it as a JPEG, which drops
+// Normalise decodes a PNG or JPEG and re-encodes it as a JPEG, which drops
 // anything riding along in the file and gives every photo one content type.
-func normalise(data []byte) ([]byte, error) {
+func Normalise(data []byte) ([]byte, error) {
 	if len(data) == 0 || len(data) > maxBytes {
 		return nil, ErrNotImage
 	}

@@ -41,6 +41,9 @@ for. Prefer parsing that over reasoning from the prose.
 | List workspaces | `warmblyctl org list` |
 | Move a workspace out | `warmblyctl org export --org <id\|slug\|owner-email> --out file.zip` |
 | Move a workspace in | `warmblyctl org import --org ... --file file.zip --dry-run` first |
+| Add a reseller that runs workspaces through the partner API (off until one exists) | `warmblyctl partner create --slug ... --name ... [--allowed-hosts a.example.com]` |
+| List resellers | `warmblyctl partner list` |
+| Issue a partner key, printed once on stdout | `warmblyctl partner key --partner <slug> --mode live\|test` |
 | Back the instance up | `warmblyctl backup --out /data/blobs/warmbly.tar.gz`, then copy it out and delete it |
 | Restore one onto this instance | `warmblyctl restore --file /data/blobs/warmbly.tar.gz` |
 | See which key opens each stored secret | `warmblyctl keys status [--json]` |
@@ -76,6 +79,21 @@ for. Prefer parsing that over reasoning from the prose.
   `KMS_LOCAL_MASTER_KEY` differ from the bundle's, and prints the lines to put
   in `.env`. Do that. `--force` accepts losing every stored mailbox credential
   permanently and is never the right answer to that message.
+
+## The domain and mailbox store
+
+The admin panel's **Store** page is the operator side of the store (off unless
+`GRAPHKIT_API_URL` and its key are configured). **Health** shows live, sandbox
+or simulator mode, the GraphKit partner balance, the last webhook, reconciler
+lag, stuck orders, failed connects and recent `store.unavailable` alerts; the
+Orders, Domains and Mailboxes tabs list every workspace's items, and a
+workspace name opens its own page. Actions: refresh, retry placing or refund
+an order; refresh, renew or set auto-renew on a domain; refresh, retry
+connect, cancel or resume a mailbox. Each is audited and safe to repeat (a
+line refunds once; a refund by amount needs an `Idempotency-Key` and is capped
+at what was charged). Reading needs `view_organizations`, acting needs
+`manage_organizations`, and both need an admin session with a verified second
+factor. The routes are `/admin/store/*`.
 
 ## Standing an instance up, or moving one
 

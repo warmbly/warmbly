@@ -32,7 +32,7 @@ func (h *Handler) GetIdentity(c *gin.Context) {
 
 	resp := models.Identity{
 		UserID:    u.ID,
-		Email:     u.Email,
+		Email:     u.VisibleEmail(),
 		FirstName: u.FirstName,
 		LastName:  u.LastName,
 		Name:      strings.TrimSpace(u.FirstName + " " + u.LastName),

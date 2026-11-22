@@ -14,7 +14,7 @@ const { createHash } = require("node:crypto");
 const { readFileSync } = require("node:fs");
 
 const SERVICES = ["backend", "consumer", "forms", "tracking", "realtime"];
-const WAVES = [["backend"], ["consumer"], ["forms", "tracking", "realtime"]];
+const WAVES = [["backend"], ["consumer", "forms", "tracking", "realtime"]];
 const MODES = ["deploy", "rollback", "redeploy", "refresh-secrets"];
 const RELEASE_TAG = "warmbly-release";
 const VARIANT_TAG = "warmbly-image-variant";
@@ -46,7 +46,7 @@ function configuration(env) {
     }
     if (mode !== "refresh-secrets") throw new Error("DEPLOY_SECRET_VERSIONS is only accepted with refresh-secrets");
   }
-  const bake = Number(String(env.DEPLOY_BAKE_SECONDS ?? "").trim() || 300);
+  const bake = Number(String(env.DEPLOY_BAKE_SECONDS ?? "").trim() || 120);
   if (!Number.isInteger(bake) || bake < 0 || bake > 3600) throw new Error("DEPLOY_BAKE_SECONDS must be 0 through 3600");
   const fleetBake = Number(String(env.DEPLOY_FLEET_BAKE_SECONDS ?? "").trim() || 300);
   if (!Number.isInteger(fleetBake) || fleetBake < 300 || fleetBake > 3600) throw new Error("DEPLOY_FLEET_BAKE_SECONDS must be 300 through 3600");

@@ -2,6 +2,7 @@
 // are the same {{.Sender.*}} fields a campaign email uses, but a stored
 // signature is appended verbatim after templating, so they are filled in here,
 // per mailbox, with the values internal/tasks/template_sender.go would render.
+import { signatureToPlain } from "./signaturePlain";
 
 export type SignatureField = "FirstName" | "LastName" | "Name" | "Email";
 
@@ -53,6 +54,19 @@ function escapeHtml(v: string): string {
 export function resolveSignature(template: string, sender: SignatureSender, opts: { html: boolean }): string {
     const fields = senderFields(sender);
     return template.replace(TOKEN, (_m, field: SignatureField) => (opts.html ? escapeHtml(fields[field]) : fields[field]));
+}
+
+/** A signature template as the editor holds it: the HTML, and the plain text unless it follows the HTML. */
+export interface SignatureTemplate {
+    html: string;
+    plain: string;
+    plainSync: boolean;
+}
+
+/** One mailbox's finished signature: the HTML filled in, and the plain text rendered from it or filled on its own. */
+export function fillSignature(t: SignatureTemplate, sender: SignatureSender): { html: string; plain: string } {
+    const html = resolveSignature(t.html, sender, { html: true });
+    return { html, plain: t.plainSync ? signatureToPlain(html) : resolveSignature(t.plain, sender, { html: false }) };
 }
 
 /** Template tokens a signature cannot fill, such as a contact field; they are sent as written. */

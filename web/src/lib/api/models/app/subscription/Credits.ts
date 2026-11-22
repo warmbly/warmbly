@@ -31,6 +31,8 @@ export interface TopUpBounds {
     max_usd: number;
     presets_usd: number[];
     default_usd: number;
+    /** The card processing fee charged on top of the amount, in basis points; absent from an older backend. */
+    fee_bps?: number;
 }
 
 // GET /subscription/balance. With billing off only `unlimited: true` is sent.
@@ -51,6 +53,22 @@ export interface Balance {
     low_balance_usd?: number;
     payment_method?: PaymentMethod | null;
     charge_in_progress?: boolean;
+    /** What the balance pays for a day; absent from an older backend. */
+    burn?: BalanceBurn;
+    /** Loads Stripe.js to save a card in the page; absent without Stripe billing. */
+    stripe_publishable_key?: string;
+}
+
+/** The balance's daily draw: a month of bought mailboxes over 30 days, renewals due in 60 days, and AI's daily average. */
+export interface BalanceBurn {
+    per_day_usd: number;
+    mailboxes_per_day_usd: number;
+    renewals_per_day_usd: number;
+    ai_per_day_usd: number;
+    mailboxes_monthly_usd: number;
+    renewals_due_usd: number;
+    /** The day of the month bought mailboxes are billed; null before the first one. */
+    billing_day: number | null;
 }
 
 export interface AutoReloadPatch {
@@ -116,6 +134,10 @@ export interface AISpendSettings {
     member_limit_monthly_usd: number | null;
     low_balance_usd: number;
     auto_reload_enabled: boolean;
+    /** Whether AI may use money you added once the plan's included usage is spent; absent from an older backend. */
+    ai_overage_enabled?: boolean;
+    /** The most AI may take from that money per calendar month; null is no cap. */
+    ai_overage_monthly_limit_usd?: number | null;
 }
 
 export interface CreditUsagePoint {
@@ -140,6 +162,8 @@ export interface CreditUsageOverview {
     limit_daily_usd: number | null;
     limit_weekly_usd: number | null;
     limit_monthly_usd: number | null;
+    /** What AI took from money you added this calendar month, past the included usage; absent from an older backend. */
+    ai_from_balance_month_usd?: number;
     series: CreditUsagePoint[];
     by_reason: CreditUsageBucket[];
     by_model: CreditUsageBucket[];

@@ -1,8 +1,8 @@
-// A button gated by a write permission. When the member has the permission it
-// behaves like a normal button; when they don't, it renders visibly locked (a
-// lock icon, muted, not-allowed cursor) and clicking it pops the permission
-// dialog instead of running the action — so edits are blocked BEFORE any
-// request, with a clear explanation. Use across the dashboard for edit / save /
+// A button gated by a write permission and by the workspace taking writes. When
+// both allow it, it behaves like a normal button; otherwise it renders visibly
+// locked (a lock icon, muted, not-allowed cursor) and clicking it pops the
+// permission dialog with the reason instead of running the action — so edits
+// are blocked BEFORE any request, with a clear explanation. Use across the dashboard for edit / save /
 // delete / create affordances.
 
 import React from "react";
@@ -27,7 +27,7 @@ export default function PermissionButton({
     title,
     ...rest
 }: Props) {
-    const { locked, guard } = useWriteGuard(permission);
+    const { locked, reason, guard } = useWriteGuard(permission);
     return (
         <button
             {...rest}
@@ -36,7 +36,7 @@ export default function PermissionButton({
             // truly-disabled button would swallow the click silently.
             disabled={locked ? undefined : disabled}
             aria-disabled={locked || disabled || undefined}
-            title={locked ? "You don't have permission for this" : title}
+            title={locked ? reason : title}
             onClick={guard(onClick)}
             className={cn(className, locked && "opacity-60 cursor-not-allowed")}
         >
