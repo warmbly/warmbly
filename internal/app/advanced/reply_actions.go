@@ -146,8 +146,8 @@ func (s *service) fireInstantActions(ctx context.Context, campaignID, contactID,
 		// hand back to the scheduler: they run only through the scheduler path,
 		// where the provider + credit ledger live (the node is NOT stamped sent
 		// here, so the scheduler routes to it and runs it at the next
-		// boundary). "end" terminates the chain.
-		if cfg.Type == "wait" || cfg.Type == "switch" || cfg.Type == "ai_step" {
+		// boundary). Social steps reserve through the scheduler too. "end" terminates the chain.
+		if cfg.Type == "wait" || cfg.Type == "switch" || cfg.Type == "ai_step" || cfg.Type == models.ActionSocial {
 			return
 		}
 		if cfg.Type == "end" || cfg.Type == "" {

@@ -133,6 +133,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/settings"
 	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
+	"github.com/warmbly/warmbly/internal/app/social"
 	"github.com/warmbly/warmbly/internal/app/socialauth"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/store"
@@ -436,6 +437,7 @@ func main() {
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
 	var leadFinderServiceForHandler *leadfinder.Service
+	var socialServiceForHandler *social.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2211,6 +2213,20 @@ func main() {
 			storeService.WireSignIns(connectLinkService, repository.NewStoreSignInLinkRepository(primaryDB.Pool))
 			connectLinkService.WirePartnerLinks(storeService.SignInLinks())
 		}
+		// Social accounts ride the store's GraphKit connection; its seats are billed in the store's run.
+		socialServiceForHandler = social.New(social.Deps{
+			Store: storeService, Repo: repository.NewSocialRepository(primaryDB), Credits: creditService,
+			Subscriptions: subscriptionRepository, Publisher: streamingPublisher, Contacts: contactService, Cipher: cipherService,
+			Replies: advancedService, Campaigns: campaignService, CampaignLogs: campaignLogRepository,
+		})
+		storeService.WireSocial(socialServiceForHandler)
+		// Social steps in campaigns: queued by the task handler, scheduled without a mailbox when a campaign has none.
+		if aware, ok := tasksService.(tasks.SocialAware); ok {
+			aware.WireSocial(socialServiceForHandler)
+		}
+		if aware, ok := schedulerService.(scheduler.SocialAware); ok {
+			aware.WireSocial(repository.NewSocialRepository(primaryDB))
+		}
 		delegationService.WirePurchasedTokens(storeService)
 		delegationService.WireConsentWaker(storeService.WakeMicrosoftConsent)
 		// A card saved after a refused store charge pays what is unpaid at once.
@@ -2692,6 +2708,10 @@ func main() {
 				},
 			})
 			go jobrun.Loop(ctx, "lead_enrichment_runs", time.Minute, true, leadFinderServiceForHandler.RunPendingEnrichment)
+			if socialServiceForHandler != nil {
+				// A LinkedIn import with find_emails looks addresses up through the lead finder.
+				socialServiceForHandler.WireFinder(leadFinderServiceForHandler)
+			}
 		}
 
 		// HubSpot as the workspace CRM: write-through for the CRM service, the
@@ -3037,6 +3057,7 @@ func main() {
 		CreditService:    creditService,
 		BalanceService:   balanceService,
 		StoreService:     storeService,
+		SocialService:    socialServiceForHandler,
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		TypeSafe:         typeSafeAsker(typeSafeClient),

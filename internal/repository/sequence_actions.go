@@ -86,6 +86,15 @@ func validateActionConfig(a *models.ActionConfig) *errx.Error {
 			}
 		}
 		return nil
+	case models.ActionSocial:
+		// A social node picked but not set up yet is a draft; once it names a channel it must be one that runs.
+		if a.Social == nil {
+			return nil
+		}
+		if err := a.Social.Validate(); err != nil {
+			return errx.NewWithIdentifier(errx.BadRequest, "invalid_social_step", "Invalid social step: "+err.Error()+".")
+		}
+		return nil
 	default:
 		return errx.ErrSequenceAction
 	}

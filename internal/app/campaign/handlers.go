@@ -2,6 +2,7 @@ package campaign
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog/log"
@@ -557,6 +558,26 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 			))
 		}
 	}
+	socialChannels := map[string]bool{}
+	for i, seq := range seqs {
+		if seq.Kind != "action" {
+			continue
+		}
+		var cfg models.ActionConfig
+		_ = json.Unmarshal(seq.Action, &cfg)
+		if cfg.Type != models.ActionSocial {
+			continue
+		}
+		if cfg.Social == nil || !models.IsSocialChannel(cfg.Social.Channel) {
+			return errx.NewWithIdentifier(errx.BadRequest, "social_step_incomplete", fmt.Sprintf(
+				"Step %d is a social step with no channel or action picked. Set it up before starting.", i+1))
+		}
+		socialChannels[cfg.Social.Channel] = true
+		if why := cfg.Social.Incomplete(); why != "" {
+			return errx.NewWithIdentifier(errx.BadRequest, "social_step_incomplete", fmt.Sprintf(
+				"Step %d, a %s step, %s. Finish it before starting.", i+1, models.SocialChannelLabel(cfg.Social.Channel), why))
+		}
+	}
 
 	// Refuse a launch whose list is known to be largely undeliverable. Only
 	// KNOWN-invalid addresses count: a list nobody has verified is not evidence
@@ -608,6 +629,21 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 			EventType:  "started",
 			Message:    "Campaign started",
 		})
+	}
+	// A warning, not a refusal: a lead with no handle on a channel passes over (or stops at) that channel's steps.
+	if len(socialChannels) > 0 && s.campaignLogRepo != nil {
+		if counts, cerr := s.campaignRepository.CountLeadsWithoutSocial(ctx, cID); cerr == nil {
+			for _, ch := range models.SocialChannels {
+				if n := counts[ch]; socialChannels[ch] && n > 0 {
+					s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+						CampaignID: cID,
+						EventType:  "social_missing_handles",
+						Message:    fmt.Sprintf("%d lead(s) have no %s handle, so their %s steps will not reach them", n, models.SocialChannelLabel(ch), models.SocialChannelLabel(ch)),
+						Metadata:   map[string]interface{}{"count": n, "channel": ch},
+					})
+				}
+			}
+		}
 	}
 
 	// Publish realtime event

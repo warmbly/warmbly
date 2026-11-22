@@ -41,6 +41,15 @@ var branchConditionFields = map[string]bool{
 	// (campaign_contact_progress.reply_intent). Pairs with "is"; decides
 	// instantly off the stored value, so no model call at schedule time.
 	"reply_intent": true,
+	// Social signals. Connected and replied take within_days/ever like opened;
+	// replied may name a channel. invite_pending and open_profile are LinkedIn states now.
+	"social_connected":        true,
+	"not_social_connected":    true,
+	"social_replied":          true,
+	"not_social_replied":      true,
+	"social_invite_pending":   true,
+	"social_open_profile":     true,
+	"not_social_open_profile": true,
 }
 
 var branchConditionOperators = map[string]bool{
@@ -112,6 +121,9 @@ func validateBranchConditions(bc *models.BranchConditions) *errx.Error {
 					return errx.ErrSequenceBranch
 				}
 			} else if cond.Operator == "is" {
+				return errx.ErrSequenceBranch
+			}
+			if cond.Channel != "" && (!strings.HasSuffix(cond.Field, "social_replied") || !models.IsSocialChannel(cond.Channel)) {
 				return errx.ErrSequenceBranch
 			}
 		}
@@ -201,9 +213,40 @@ func conditionState(cond models.BranchCondition, prog *CampaignContactProgress, 
 		return BranchNoMatch, time.Time{}
 	}
 
+	switch cond.Field {
+	case "social_invite_pending":
+		if prog.SocialInvitePending && prog.SocialConnectedAt == nil {
+			return BranchMatch, time.Time{}
+		}
+		return BranchNoMatch, time.Time{}
+	case "social_open_profile", "not_social_open_profile":
+		open := prog.SocialOpenProfile
+		if open == nil {
+			// The profile lookup runs in the background; past a day without an answer it reads as not open.
+			giveUp := sentAt.Add(openProfileWait)
+			if now.Before(giveUp) {
+				return BranchUndecided, minTime(now.Add(openProfileRecheck), giveUp)
+			}
+			f := false
+			open = &f
+		}
+		if *open == (cond.Field == "social_open_profile") {
+			return BranchMatch, time.Time{}
+		}
+		return BranchNoMatch, time.Time{}
+	}
+
 	var ts *time.Time
 	negate := false
 	switch cond.Field {
+	case "social_connected":
+		ts = prog.SocialConnectedAt
+	case "not_social_connected":
+		ts, negate = prog.SocialConnectedAt, true
+	case "social_replied":
+		ts = prog.socialRepliedAt(cond.Channel)
+	case "not_social_replied":
+		ts, negate = prog.socialRepliedAt(cond.Channel), true
 	case "opened":
 		ts = prog.OpenedAt
 	case "clicked":
@@ -414,4 +457,35 @@ func randomHolds(cond models.BranchCondition, contactID uuid.UUID, branchID stri
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(contactID.String() + ":" + branchID))
 	return int(h.Sum32()%100) < pct
+}
+
+// How long an open_profile branch waits for the background profile lookup, and how often it looks again.
+const (
+	openProfileWait    = 24 * time.Hour
+	openProfileRecheck = 15 * time.Minute
+)
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+// socialRepliedAt is when the contact replied on a channel since entering the campaign, the earliest channel's for "".
+func (p *CampaignContactProgress) socialRepliedAt(channel string) *time.Time {
+	if channel != "" {
+		if at, ok := p.SocialReplied[channel]; ok {
+			return &at
+		}
+		return nil
+	}
+	var out *time.Time
+	for _, at := range p.SocialReplied {
+		if out == nil || at.Before(*out) {
+			v := at
+			out = &v
+		}
+	}
+	return out
 }

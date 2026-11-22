@@ -168,6 +168,8 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 		 SELECT $2, folder_id FROM campaign_folders WHERE campaign_id = $1`,
 		`INSERT INTO campaign_senders (campaign_id, email_account_id, weight, enabled)
 		 SELECT $2, email_account_id, weight, enabled FROM campaign_senders WHERE campaign_id = $1`,
+		`INSERT INTO campaign_social_accounts (campaign_id, social_account_id)
+		 SELECT $2, social_account_id FROM campaign_social_accounts WHERE campaign_id = $1`,
 		`INSERT INTO campaign_advanced_settings (campaign_id, settings, updated_at)
 		 SELECT $2, settings, NOW() FROM campaign_advanced_settings WHERE campaign_id = $1`,
 	} {

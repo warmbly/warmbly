@@ -86,6 +86,8 @@ You must map at least one column to **Email**.
 | First name, Last name, Company, Phone | Standard identity fields |
 | Subscribed | `yes`, `true`, `1`, `subscribed` and their opposites (`no`, `false`, `0`, `unsubscribed`). Applies to new contacts and to existing ones you update; a value the importer cannot read fails only that row |
 | Labels | Label names, separated by commas or semicolons. Names you do not have yet are created, up to 100 new names per import |
+| LinkedIn, Instagram, WhatsApp, Telegram, Facebook | The contact's handle on that channel, in a form the channel accepts (see [social on contacts](/guides/social/#social-on-contacts)). A handle that does not fit fails only that row |
+| LinkedIn consent, Instagram consent, and so on | The [consent basis](/guides/social/#consent) for that channel: `opt_in`, `existing_conversation`, `imported_with_consent` or, on Facebook, `friend`. WhatsApp, Telegram and Facebook steps only reach contacts that have one |
 | Custom field | Anything else: one of your existing custom fields, or a new one you name |
 
 ### Mapping into your custom fields
@@ -232,7 +234,7 @@ Every bulk action reads the selection: **Edit**, **Segment**, **Remove from segm
 
 ## Editing one contact
 
-Clicking a row opens the contact's panel. Its **Details** tab edits the fields the contact is made of: name, email address, company, phone, subscription, campaigns, labels and custom fields. Nothing is sent until **Save**, **Discard** puts the panel back to the stored values, and closing it with unsaved edits asks first.
+Clicking a row opens the contact's panel. Its **Details** tab edits the fields the contact is made of: name, email address, company, phone, subscription, campaigns, labels and custom fields. Its **Social** tab holds the contact's handle on each social channel with its consent basis, and the [social steps](/guides/sequences/#social-steps) and conversations they have had. Nothing is sent until **Save**, **Discard** puts the panel back to the stored values, and closing it with unsaved edits asks first.
 
 The email address can be changed here, which is the right move when someone's address was mistyped on import or they moved to a new domain. It is stored lowercased and stripped of any display name, and it has to be free: an address another contact already holds is refused, because merging two people's campaign history is not something the edit could undo. A new address also clears the contact's [verification](/guides/deliverability/#address-verification) verdict and everything the platform had observed about the old mailbox, so the background check starts the new address from scratch on its next pass, and the recipient provider Warmbly matches senders against is worked out again from the new domain. Emails already sent went to the old address and stay in the timeline as they happened.
 

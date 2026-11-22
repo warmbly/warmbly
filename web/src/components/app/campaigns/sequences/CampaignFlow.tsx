@@ -73,7 +73,11 @@ import {
     reachableSteps,
     routePort,
 } from "./campaignGraph";
-import { entryView, pickerItems, stepIssue, stepView } from "./campaignSteps";
+import { SOCIAL_CONDITIONS, SOCIAL_CONDITION_PREFIX, SOCIAL_FLOW_KEY, entryView, pickerItems, stepIssue, stepView } from "./campaignSteps";
+import { preferredChannels, socialPickFromQuery } from "./socialStep";
+import { useSocialAccounts, useSocialChannels, useSocialStatus } from "@/lib/api/hooks/app/social/useSocial";
+import { isSocialAction } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
 
 const MAX_STEPS = 50;
 const MAX_WAIT_DAYS = 60;
@@ -107,6 +111,14 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // A restricted member edits emails, waits and paths; steps that act outside the campaign stay as set.
     const restricted = useAccessRestricted();
     const canEditStep = (s: Sequence) => canEdit && (!restricted || s.kind !== "action" || SCOPE_STEP_ACTIONS.has(s.action?.type ?? ""));
+    const socialStatus = useSocialStatus();
+    const social = !!socialStatus.data?.available || steps.some((s) => isSocialAction(s.action?.type));
+    const socialCatalog = useSocialChannels(social);
+    const socialAccounts = useSocialAccounts(social);
+    const accountChannels = React.useMemo(
+        () => [...new Set((socialAccounts.data?.data ?? []).filter((a) => a.status !== "removed").map((a) => a.channel))] as SocialChannel[],
+        [socialAccounts.data],
+    );
 
     const [selection, setSelection] = React.useState<Selection>(null);
     const [picker, setPicker] = React.useState<{ at: InsertPoint; anchor: DOMRect } | null>(null);
@@ -270,11 +282,11 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
 
     // A new step, typed and pre-wired before anything points at it, so the
     // canvas never shows it unconnected.
-    const createStep = async (choice: Choice, branches: SequenceBranch[]): Promise<string> => {
+    const createStep = async (choice: Choice, branches: SequenceBranch[], socialPick?: { channel: SocialChannel; action: string }): Promise<string> => {
         const created = (await createSequence.mutateAsync()) as Sequence;
         const patch: Parameters<typeof updateSequence>[2] = {};
         if (choice === "router") Object.assign(patch, { kind: "wait", name: "Condition" });
-        else if (choice !== "email") Object.assign(patch, { kind: "action", action: defaultActionFor(choice) });
+        else if (choice !== "email") Object.assign(patch, { kind: "action", action: defaultActionFor(choice, socialPick) });
         if (branches.length) patch.conditions = { branches: normalize(branches) };
         if (Object.keys(patch).length) {
             patchCache(created.id, patch as Partial<Sequence>);
@@ -304,7 +316,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         return !!s && !isSwitchStep(s) && at.port === ELSE_PORT;
     };
 
-    const insert = async (at: InsertPoint, item: PickerItem) => {
+    const insert = async (at: InsertPoint, item: PickerItem, query = "") => {
         if (busy) return;
         const from = at.from === ENTRY_ID ? null : byId.get(at.from);
         setBusy(true);
@@ -313,10 +325,24 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 if (from) await saveBranches(from.id, routePort(from, at.port, item.key.slice("goto:".length)));
                 return;
             }
-            if (item.key === "condition" || item.key === "reply") {
+            if (item.key === SOCIAL_FLOW_KEY) {
+                // Built leaves first, so every step is wired before anything points at it.
+                const message = await createStep("social", [], { channel: "linkedin", action: "message" });
+                const email = await createStep("email", []);
+                const router = await createStep("router", [
+                    { branch_id: newBranchId(), target_step_id: message, conditions: [{ field: "social_connected", operator: "within_days", value: 7 }] },
+                    { branch_id: newBranchId(), target_step_id: email, conditions: [] },
+                ]);
+                const invite = await createStep("social", [{ branch_id: newBranchId(), target_step_id: router, conditions: [] }], { channel: "linkedin", action: "invite" });
+                if (from) await saveBranches(from.id, routePort(from, at.port, invite));
+                setSelection({ kind: "step", id: invite });
+                return;
+            }
+            const socialCond = item.key.startsWith(SOCIAL_CONDITION_PREFIX) ? SOCIAL_CONDITIONS[item.key.slice(SOCIAL_CONDITION_PREFIX.length)] : undefined;
+            if (item.key === "condition" || item.key === "reply" || socialCond) {
                 // A new condition is a draft until it is saved in the path panel, so
                 // nothing routes on a default the user never chose.
-                const draft = draftCondition(item.key === "reply" ? REPLY_CONDITION : DEFAULT_CONDITION);
+                const draft = draftCondition(socialCond ?? (item.key === "reply" ? REPLY_CONDITION : DEFAULT_CONDITION));
                 if (from && canAttachCondition(at)) {
                     setSelection({ kind: "path", stepId: from.id, port: `b:${draft.branch_id}`, draft });
                     return;
@@ -327,7 +353,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 return;
             }
             const choice: Choice = item.key === "email" ? "email" : (item.key.slice("action:".length) as SequenceActionType);
-            const id = await createStep(choice, continueTo(at.before));
+            const socialPick = choice === "social" ? socialPickFromQuery(query, socialCatalog.data, preferredChannels(accountChannels)) : undefined;
+            const id = await createStep(choice, continueTo(at.before), socialPick);
             if (from) await saveBranches(from.id, routePort(from, at.port, id));
             setSelection({ kind: "step", id });
         } catch (err) {
@@ -478,6 +505,8 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         ? pickerItems({
               atEnd: pickerAtEnd && picker.at.from !== ENTRY_ID,
               full: steps.length >= MAX_STEPS,
+              social,
+              roomFor: MAX_STEPS - steps.length,
               canCondition: canAttachCondition(picker.at),
               gotoCandidates: pickerAtEnd
                   ? gotoCandidates(steps, picker.at.from)
@@ -488,6 +517,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
           })
               .filter((i) => picker.at.from !== ENTRY_ID || i.key === "email" || i.key.startsWith("action:"))
               .filter((i) => !restricted || !i.key.startsWith("action:") || SCOPE_STEP_ACTIONS.has(i.key.slice("action:".length)))
+              .filter((i) => !restricted || !i.key.startsWith("flow:"))
         : [];
 
     const activeEdge = selection?.kind === "path" ? (layout.edges.find((e) => e.from === selection.stepId && e.port === selection.port)?.key ?? null) : null;
@@ -619,10 +649,10 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     clearance={STEP_W / 2}
                     items={items}
                     title="Add a step"
-                    onPick={(item) => {
+                    onPick={(item, query) => {
                         const at = picker.at;
                         setPicker(null);
-                        void insert(at, item);
+                        void insert(at, item, query);
                     }}
                     onClose={() => setPicker(null)}
                 />

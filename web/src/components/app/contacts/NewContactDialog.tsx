@@ -12,6 +12,11 @@ import toast from "react-hot-toast/headless";
 import useAddContacts from "@/lib/api/hooks/app/contacts/useAddContacts";
 import type { AddContact } from "@/components/app/AddContacts";
 import { Label, TextInput } from "@/components/ui/field";
+import { SelectMenu } from "@/components/ui/select-menu";
+import ChannelMark from "@/components/app/social/ChannelMark";
+import { useSocialChannels } from "@/lib/api/hooks/app/social/useSocial";
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
+import { CHANNELS, HANDLE_HINT, HANDLE_PLACEHOLDER, channelLabel, consentLabel, handleProblem, orderedCatalog } from "@/lib/social/channels";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import CategoryPicker from "./CategoryPicker";
@@ -37,6 +42,12 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
     const [lastName, setLastName] = React.useState("");
     const [company, setCompany] = React.useState("");
     const [phone, setPhone] = React.useState("");
+    const [socialChannel, setSocialChannel] = React.useState<SocialChannel>("linkedin");
+    const [socialHandle, setSocialHandle] = React.useState("");
+    const [socialBasis, setSocialBasis] = React.useState("");
+    const catalog = useSocialChannels(open);
+    const specs = orderedCatalog(catalog.data);
+    const spec = specs.find((c) => c.channel === socialChannel);
     const [categories, setCategories] = React.useState<string[]>([]);
     const [customFields, setCustomFields] = React.useState<CustomField[]>([]);
     const add = useAddContacts();
@@ -48,6 +59,8 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             setLastName("");
             setCompany("");
             setPhone("");
+            setSocialHandle("");
+            setSocialBasis("");
             setCategories([]);
             setCustomFields([]);
         }
@@ -64,7 +77,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             return;
         }
         const fields = recordFromCF(customFields);
-        const problem = customFieldsProblem(customFields, fields);
+        const problem = customFieldsProblem(customFields, fields) ?? handleProblem(socialChannel, socialHandle);
         if (problem) {
             toast.error(problem);
             return;
@@ -75,6 +88,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             last_name: lastName.trim(),
             company: company.trim(),
             phone: phone.trim(),
+            ...(socialHandle.trim() ? { social: { [socialChannel]: { handle: socialHandle.trim(), consent_basis: socialBasis || null } } } : {}),
             campaigns: campaign ? [campaign.id] : [],
             categories,
             segments: segment ? [segment.id] : undefined,
@@ -175,6 +189,46 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
                             <div>
                                 <Label>Phone</Label>
                                 <TextInput value={phone} onChange={setPhone} className="w-full" />
+                            </div>
+                            <div>
+                                <Label>Social profile</Label>
+                                <div className="flex items-center gap-1.5">
+                                    <SelectMenu
+                                        value={socialChannel}
+                                        onChange={(v) => {
+                                            setSocialChannel(v as SocialChannel);
+                                            setSocialBasis("");
+                                        }}
+                                        options={(specs.length ? specs.map((c) => c.channel) : CHANNELS).map((c) => ({
+                                            value: c,
+                                            label: channelLabel(c, catalog.data),
+                                            icon: <ChannelMark channel={c} className="size-3.5" />,
+                                        }))}
+                                        minWidth={160}
+                                        aria-label="Channel"
+                                    />
+                                    <TextInput value={socialHandle} onChange={setSocialHandle} className="w-full" maxLength={300} placeholder={HANDLE_PLACEHOLDER[socialChannel]} aria-label={`${channelLabel(socialChannel)} handle`} />
+                                </div>
+                                {socialHandle.trim() ? (
+                                    handleProblem(socialChannel, socialHandle) && <p className="mt-1 text-[11px] text-rose-600">{handleProblem(socialChannel, socialHandle)}</p>
+                                ) : (
+                                    <p className="mt-1 text-[11px] text-slate-500">{HANDLE_HINT[socialChannel]}</p>
+                                )}
+                                {spec?.consent_required && socialHandle.trim() && (
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                        <span className="shrink-0 text-[11.5px] text-slate-500">Consent</span>
+                                        <SelectMenu
+                                            value={socialBasis}
+                                            onChange={setSocialBasis}
+                                            options={[{ value: "", label: "No consent recorded" }, ...spec.consent_bases.map((b) => ({ value: b, label: consentLabel(b) }))]}
+                                            aria-label="Consent basis"
+                                            fullWidth
+                                        />
+                                    </div>
+                                )}
+                                {spec?.consent_required && socialHandle.trim() && !socialBasis && (
+                                    <p className="mt-1 text-[11px] text-amber-700">Campaigns on {spec.label} only reach contacts with a consent basis.</p>
+                                )}
                             </div>
                             <div>
                                 <Label>Labels</Label>

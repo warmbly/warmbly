@@ -18,6 +18,7 @@ import type { GeocodeResult, LatLng, LeadArea, LeadCategory, LeadFinderConfig, L
 import { cn } from "@/lib/utils";
 import LocationSearch from "./LocationSearch";
 import SourceLogo from "./SourceLogo";
+import ChannelMark from "@/components/app/social/ChannelMark";
 import { describeArea } from "./geo";
 import type { MapTool } from "./LeadMap";
 import { fmtUsdCost } from "@/lib/money";
@@ -37,6 +38,7 @@ export default function SearchPanel({
     near,
     provider,
     onProvider,
+    onLinkedIn,
     area,
     onClearArea,
     onTool,
@@ -55,6 +57,8 @@ export default function SearchPanel({
     near: LatLng | null;
     provider: LeadProvider;
     onProvider: (p: LeadProvider) => void;
+    // Set when LinkedIn search is on: switches the page to the LinkedIn finder.
+    onLinkedIn?: () => void;
     area: LeadArea | null;
     onClearArea: () => void;
     onTool: (t: MapTool) => void;
@@ -178,6 +182,15 @@ export default function SearchPanel({
                                 {p.name}
                             </PopoverMenuItem>
                         ))}
+                        {onLinkedIn && (
+                            <>
+                                <PopoverMenuSeparator />
+                                <PopoverMenuLabel>People</PopoverMenuLabel>
+                                <PopoverMenuItem icon={<ChannelMark channel="linkedin" className="size-3.5" />} onSelect={onLinkedIn} description="Search LinkedIn, Sales Navigator or Recruiter with a connected account">
+                                    LinkedIn
+                                </PopoverMenuItem>
+                            </>
+                        )}
                         <PopoverMenuSeparator />
                         <div className="px-2.5 py-1.5">
                             <Link to="/app/integrations/$" params={{ _splat: "category/data" }} className="text-[11.5px] text-sky-700 hover:underline">

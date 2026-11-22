@@ -27,7 +27,7 @@ export const contactFiltersSchema = z.object({
     engagement: z.enum(["opened", "not_opened", "clicked", "not_clicked", "replied", "not_replied", "bounced"]).optional(),
 });
 export type ContactBrowseFilters = z.infer<typeof contactFiltersSchema>;
-export const contactTabSchema = z.enum(["overview", "activity", "deals", "notes", "details", "research"]);
+export const contactTabSchema = z.enum(["overview", "activity", "social", "deals", "notes", "details", "research"]);
 export const contactExtrasSchema = z.array(z.enum(["created", "updated", "campaign_count", "lead_status", "engagement", "verification", "provider"])).refine(unique);
 export const contactGeneralExtrasSchema = z.array(z.enum(["created", "updated", "campaign_count", "verification", "provider"])).refine(unique);
 export const daySchema = z.iso.date();

@@ -31,6 +31,7 @@ import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import BookACallButton from "@/components/app/integrations/BookACallButton";
+import { SocialLinks } from "@/components/app/social/SocialLinks";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import NewMeetingDialog from "@/components/app/meetings/NewMeetingDialog";
@@ -40,6 +41,7 @@ import ActivityTab from "./contact-edit/ActivityTab";
 import DealsTab from "./contact-edit/DealsTab";
 import NotesTab from "./contact-edit/NotesTab";
 import ResearchTab from "./contact-edit/ResearchTab";
+import SocialTab from "./contact-edit/SocialTab";
 import DetailsTab from "./contact-edit/DetailsTab";
 import { type CustomField, customFieldsPatch, customFieldsProblem } from "./customFields";
 import {
@@ -107,8 +109,9 @@ function ContactEditPanel({
     // teammate editing the same person sees the live-viewer pill up top.
     usePresenceResource(`contact:${contact.id}`, "editing");
 
-    const [tab, setTab] = useBrowseState<ContactSlideTab>(`contacts:${contact.id}:panel:tab`, "overview", contactTabSchema,
+    const [storedTab, setTab] = useBrowseState<ContactSlideTab>(`contacts:${contact.id}:panel:tab`, "overview", contactTabSchema,
         initialTab ? { initialOverride: initialTab } : undefined);
+    const tab: ContactSlideTab = storedTab;
 
     const [firstName, setFirstName] = React.useState(contact.first_name);
     const [lastName, setLastName] = React.useState(contact.last_name);
@@ -282,6 +285,7 @@ function ContactEditPanel({
                             defaultName={contact.company || (firstName || lastName ? displayName : contact.email)}
                         />
                     )}
+                    {tab === "social" && <SocialTab contact={detail.data ?? contact} />}
                     {tab === "notes" && <NotesTab contactId={contact.id} />}
                     {tab === "research" && <ResearchTab contactId={contact.id} />}
                     {tab === "details" && (
@@ -392,6 +396,7 @@ function ContactHeader({
                     <h2 className="text-[14px] font-semibold text-slate-900 truncate leading-tight">
                         {displayName}
                     </h2>
+                    <SocialLinks social={contact.social} label={displayName} className="shrink-0" />
                     {statusPill}
                     <ResourceViewers resource={`contact:${contact.id}`} className="shrink-0" />
                     {dirty && (

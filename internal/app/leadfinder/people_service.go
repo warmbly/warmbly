@@ -540,3 +540,49 @@ func (s *Service) DeletePerson(ctx context.Context, orgID, leadID, id uuid.UUID)
 	}
 	return nil
 }
+
+// FindWorkEmail works out a person's confirmed address at a company's website or domain, charged and refunded
+// as a person email search is: one UnitLeadPersonEmail up front under key, given back when no confirmed address
+// turned up. "" with a nil error is no address.
+func (s *Service) FindWorkEmail(ctx context.Context, orgID uuid.UUID, first, last, website, key string) (string, error) {
+	_, domain := NormalizeWebsite(website)
+	if domain == "" || (strings.TrimSpace(first) == "" && strings.TrimSpace(last) == "") {
+		return "", nil
+	}
+	pctx, cancel := context.WithTimeout(ctx, personFindTimeout)
+	defer cancel()
+	metered := s.metered()
+	if metered {
+		if _, err := s.Credits.ChargeUpfront(pctx, orgID, credits.UnitUsage(instancesettings.UnitLeadPersonEmail, 1), "lead_person_email", key); err != nil {
+			return "", creditErr(err)
+		}
+	}
+	p := models.LeadPerson{FirstName: strings.TrimSpace(first), LastName: strings.TrimSpace(last)}
+	p.Name = strings.TrimSpace(p.FirstName + " " + p.LastName)
+	f := s.newAddressFinder(orgID, &models.Lead{Domain: domain}, true, probesPerPerson)
+	found := f.find(pctx, &p) && p.EmailStatus == string(emailverify.StatusValid)
+	if found {
+		one := []models.LeadPerson{p}
+		f.markSuppressed(pctx, one)
+		found = one[0].EmailStatus == string(emailverify.StatusValid)
+	}
+	if !found {
+		if metered {
+			if _, err := s.Credits.RefundCharge(context.WithoutCancel(pctx), orgID, key, "lead_person_email_refund"); err != nil {
+				log.Warn().Err(err).Msg("leadfinder: could not refund a work email search that found nothing")
+			}
+		}
+		return "", nil
+	}
+	return strings.ToLower(p.Email), nil
+}
+
+// RefundWorkEmail gives back a FindWorkEmail charge whose address was not used.
+func (s *Service) RefundWorkEmail(ctx context.Context, orgID uuid.UUID, key string) {
+	if !s.metered() {
+		return
+	}
+	if _, err := s.Credits.RefundCharge(context.WithoutCancel(ctx), orgID, key, "lead_person_email_refund"); err != nil {
+		log.Warn().Err(err).Msg("leadfinder: could not refund an unused work email search")
+	}
+}

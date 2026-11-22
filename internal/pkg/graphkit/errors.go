@@ -45,6 +45,22 @@ const (
 	// CodePartnerSuspended refuses every key of a partner GraphKit suspended.
 	CodePartnerSuspended   = "partner_suspended"
 	CodeSendingUnavailable = "sending_unavailable"
+	// Social accounts.
+	CodeSocialUnavailable      = "social_unavailable"
+	CodeSocialModeConflict     = "social_mode_conflict"
+	CodeSocialCheckoutRequired = "social_checkout_required"
+	CodeSignInFailed           = "sign_in_failed"
+	CodeTooManyFailedSignIns   = "too_many_failed_sign_ins"
+	CodeSessionExpired         = "session_expired"
+	CodeLicenceRequired        = "licence_required"
+	CodeSearchLimitReached     = "search_limit_reached"
+	CodeSearchBusy             = "search_busy"
+	CodeStaleCursor            = "stale_cursor"
+	CodeRecipientInvalid       = "recipient_invalid"
+	CodeAccountUnavailable     = "account_unavailable"
+	CodeAIUnavailable          = "ai_unavailable"
+	CodeCapabilityUnavailable  = "capability_unavailable"
+	CodeConsentRequired        = "consent_required"
 	// CodeTransport is client-side: no answer at all (a timeout, a refused connection).
 	CodeTransport = "transport"
 )
@@ -73,6 +89,11 @@ func (e *Error) Unwrap() error { return e.cause }
 // A provider that is not offered right now is not retried.
 func (e *Error) Retryable() bool {
 	if e.UnavailableProvider() != "" {
+		return false
+	}
+	switch e.Code {
+	// Answered to the caller with Retry-After instead of being waited out in the client.
+	case CodeTooManyFailedSignIns, CodeSearchBusy, CodeSocialUnavailable, CodeAIUnavailable:
 		return false
 	}
 	return e.Status == 0 || e.Status == http.StatusTooManyRequests || e.Status >= 500
@@ -150,6 +171,28 @@ func (e *Error) Conflicts() []DNSConflict {
 		_ = json.Unmarshal(e.Details, &d)
 	}
 	return d.Conflicts
+}
+
+// CheckoutURL is details.url, GraphKit's billing page on a social_checkout_required refusal.
+func (e *Error) CheckoutURL() string {
+	var d struct {
+		URL string `json:"url"`
+	}
+	if len(e.Details) > 0 {
+		_ = json.Unmarshal(e.Details, &d)
+	}
+	return d.URL
+}
+
+// Quote is details.quote, what a linked workspace's plan would charge for a seat.
+func (e *Error) Quote() json.RawMessage {
+	var d struct {
+		Quote json.RawMessage `json:"quote"`
+	}
+	if len(e.Details) > 0 {
+		_ = json.Unmarshal(e.Details, &d)
+	}
+	return d.Quote
 }
 
 // AccountLevel reports a refusal of the instance's partner account itself

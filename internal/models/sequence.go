@@ -91,7 +91,7 @@ func StepSubject(seqs []Sequence, i int) string {
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type
 // is the switch the task executes on; the remaining fields are type-scoped.
 type ActionConfig struct {
-	Type string `json:"type"` // wait | add_tag | remove_tag | add_to_segment | remove_from_segment | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | ai_step | end
+	Type string `json:"type"` // wait | add_tag | remove_tag | add_to_segment | remove_from_segment | label_email | unsubscribe | notify | create_task | create_deal | move_deal_stage | run_automation | fire_event | switch | ai_step | end | social
 
 	// wait
 	WaitMinutes *int `json:"wait_minutes,omitempty"`
@@ -197,7 +197,13 @@ type ActionConfig struct {
 	AIRemoveTags      []AITagRef `json:"ai_remove_tags,omitempty"`
 	AILabels          []AITagRef `json:"ai_labels,omitempty"`
 	AIAllowCreateTags bool       `json:"ai_allow_create_tags,omitempty"`
+
+	// social runs one action on one channel from one of the campaign's social accounts.
+	Social *SocialStep `json:"social,omitempty"`
 }
+
+// ActionSocial is the one step type for every social channel and action.
+const ActionSocial = "social"
 
 // AITagRef is one tag in an AI agent step's add/remove pool (id + display name).
 type AITagRef struct {
@@ -337,4 +343,36 @@ type BranchCondition struct {
 	// Label is the AI-step label an "ai_label" condition compares against
 	// (case-insensitive). Empty for every other field.
 	Label string `json:"label,omitempty"`
+	// Channel narrows a social_* condition to one channel; empty is any channel.
+	Channel string `json:"channel,omitempty"`
+}
+
+// UnmarshalJSON also reads a social condition's channel given as a string value.
+func (c *BranchCondition) UnmarshalJSON(b []byte) error {
+	type plain BranchCondition
+	var raw struct {
+		plain
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*c = BranchCondition(raw.plain)
+	c.Value = nil
+	if len(raw.Value) == 0 || string(raw.Value) == "null" {
+		return nil
+	}
+	var s string
+	if json.Unmarshal(raw.Value, &s) == nil {
+		if c.Channel == "" {
+			c.Channel = s
+		}
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(raw.Value, &n); err != nil {
+		return err
+	}
+	c.Value = &n
+	return nil
 }

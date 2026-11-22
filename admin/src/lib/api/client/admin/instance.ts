@@ -225,6 +225,12 @@ export interface StoreSettings {
     mailbox_bill_lead_days?: number;
     /** The least a store charge puts on a card, topping the balance up, in micro-USD. */
     min_card_charge_micros?: number;
+    /** A connected social account's monthly price, on any channel, on every plan but the agency ones, in micro-USD. Absent from an older backend. */
+    social_seat_monthly_micros?: number;
+    /** The same price on the Agency plan and its client workspaces. */
+    social_seat_agency_micros?: number;
+    /** The same price on the Agency Pro plan and its client workspaces. */
+    social_seat_agency_pro_micros?: number;
 }
 
 export interface UsageSettings {

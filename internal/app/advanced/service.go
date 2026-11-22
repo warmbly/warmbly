@@ -41,6 +41,8 @@ import (
 )
 
 type Service interface {
+	// ProcessSocialReply runs an inbound social message through the reply path.
+	ProcessSocialReply(ctx context.Context, in models.SocialReply) *errx.Error
 	GetOrganizationSettings(ctx context.Context, organizationID uuid.UUID) (*models.AdvancedOutreachSettings, *errx.Error)
 	UpdateOrganizationSettings(ctx context.Context, organizationID, updatedBy uuid.UUID, settings *models.AdvancedOutreachSettings) *errx.Error
 

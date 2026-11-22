@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -329,4 +330,25 @@ type ContactImportRowOutcome struct {
 type ContactImportList struct {
 	Data       []ContactImport `json:"data"`
 	Pagination Pagination      `json:"pagination"`
+}
+
+// SocialImportTarget reads a "social.<channel>" or "social.<channel>.consent" import target or export field.
+func SocialImportTarget(t string) (channel string, consent, ok bool) {
+	rest, found := strings.CutPrefix(t, "social.")
+	if !found {
+		return "", false, false
+	}
+	if ch, isConsent := strings.CutSuffix(rest, ".consent"); isConsent {
+		return ch, true, IsSocialChannel(ch)
+	}
+	return rest, false, IsSocialChannel(rest)
+}
+
+// ImportConsentBasis reads a consent cell ("opt-in", "Opt in", "opt_in") as a basis the channel accepts, "" when none.
+func ImportConsentBasis(channel, raw string) string {
+	b := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToLower(strings.TrimSpace(raw)))
+	if ConsentBasisFor(channel, b) {
+		return b
+	}
+	return ""
 }

@@ -83,6 +83,8 @@ type CampaignAnalytics struct {
 	// Engagement is where and on what people opened and clicked, from the
 	// per-event logs. Human events only.
 	Engagement *CampaignEngagementBreakdown `json:"engagement,omitempty"`
+	// Social is the campaign's social steps over all time; absent when it has run none.
+	Social *SocialCampaignStats `json:"social,omitempty"`
 }
 
 // EngagementBucket is one slice of a breakdown: how many distinct contacts

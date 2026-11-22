@@ -583,6 +583,22 @@ defmodule RealtimeWeb.OrgChannel do
       String.starts_with?(event_type, "STORE_") ->
         has.(:manage_emails)
 
+      # Social conversations are inbox content; accounts, connects and the GraphKit link sit with the mailboxes.
+      String.starts_with?(event_type, "SOCIAL_MESSAGE") ->
+        has.(:access_unibox)
+
+      String.starts_with?(event_type, "SOCIAL_ACCOUNT") or
+        String.starts_with?(event_type, "SOCIAL_CONNECTION") or
+          String.starts_with?(event_type, "SOCIAL_LINK") ->
+        has.(:manage_emails)
+
+      # A background LinkedIn import writes contacts; a social step's outcome is campaign activity.
+      String.starts_with?(event_type, "SOCIAL_IMPORT") ->
+        has.(:view_contacts)
+
+      String.starts_with?(event_type, "SOCIAL_ACTION") ->
+        has.(:view_campaigns)
+
       # Billing
       String.contains?(event_type, "SUBSCRIPTION") or String.contains?(event_type, "BILLING") ->
         has.(:manage_billing)

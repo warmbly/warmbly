@@ -1,27 +1,70 @@
 // Per-action defaults, labels and one-line summaries shared by the campaign
 // step builder's cards, picker and editors.
 
+import type React from "react";
 import {
     ArrowRightLeftIcon,
     BellOffIcon,
+    AwardIcon,
     CheckSquareIcon,
+    EyeIcon,
     HandshakeIcon,
+    HeartIcon,
     LayersIcon,
+    MailIcon,
+    MessageCircleIcon,
+    MessageSquareIcon,
+    MessagesSquareIcon,
+    MicIcon,
     SendIcon,
     SparklesIcon,
     SplitIcon,
     TagIcon,
     TagsIcon,
+    UserCheckIcon,
+    UserMinusIcon,
+    UserPlusIcon,
     ZapIcon,
+    type LucideIcon,
 } from "lucide-react";
+import ChannelMark from "@/components/app/social/ChannelMark";
 import type { SelectOption } from "@/components/ui/select-menu";
-import type { SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SequenceAction, SequenceActionType, SocialStepConfig } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
+import { cn } from "@/lib/utils";
+import { defaultSocialConfig, socialSummary } from "./socialStep";
+
+type ActionIcon = React.ComponentType<{ className?: string }>;
+
+const SOCIAL_ACTION_ICON: Record<string, LucideIcon> = {
+    invite: UserPlusIcon,
+    message: MessageSquareIcon,
+    inmail: MailIcon,
+    voice_note: MicIcon,
+    profile_visit: EyeIcon,
+    follow: UserCheckIcon,
+    like_post: HeartIcon,
+    comment_post: MessageCircleIcon,
+    endorse: AwardIcon,
+    withdraw_invite: UserMinusIcon,
+};
+
+// A social step's icon: what it does, with its channel's mark in the corner so the channel reads at a glance.
+export function SocialStepIcon({ social, className }: { social?: SocialStepConfig | null; className?: string }) {
+    const Base = (social && SOCIAL_ACTION_ICON[social.action]) || MessagesSquareIcon;
+    return (
+        <span className={cn("relative inline-flex", className)}>
+            <Base className="size-full" />
+            {social?.channel && <ChannelMark channel={social.channel} className="absolute -bottom-1 -right-1 !size-[9px] rounded-[2px] bg-white" />}
+        </span>
+    );
+}
 
 // Personalization tokens a deal name can use, the same ones campaign copy offers.
 export const DEAL_NAME_VARIABLES = ["{{.FirstName}}", "{{.LastName}}", "{{.Company}}", "{{.Email}}"];
 
 // Per-type chrome for action nodes (icon + label + accent).
-export const ACTION_META: Record<string, { label: string; Icon: typeof TagIcon; tint: string }> = {
+export const ACTION_META: Record<string, { label: string; Icon: ActionIcon; tint: string }> = {
     add_tag: { label: "Add label", Icon: TagIcon, tint: "text-emerald-600" },
     remove_tag: { label: "Remove label", Icon: TagIcon, tint: "text-amber-600" },
     add_to_segment: { label: "Add to segment", Icon: LayersIcon, tint: "text-emerald-600" },
@@ -35,6 +78,16 @@ export const ACTION_META: Record<string, { label: string; Icon: typeof TagIcon; 
     fire_event: { label: "Fire event", Icon: SendIcon, tint: "text-sky-600" },
     switch: { label: "Switch", Icon: SplitIcon, tint: "text-purple-600" },
     ai_step: { label: "AI step", Icon: SparklesIcon, tint: "text-purple-600" },
+    social: { label: "Social step", Icon: MessagesSquareIcon, tint: "text-sky-600" },
+};
+
+// The one picker item for every social channel and action.
+export const SOCIAL_OPTION = {
+    type: "social" as SequenceActionType,
+    label: "Social",
+    description: "LinkedIn, Instagram, WhatsApp, Telegram or Facebook: messages, invites, voice notes, follows, likes, comments…",
+    keywords:
+        "social linkedin instagram insta ig whatsapp wa telegram tg facebook fb messenger dm direct message chat invite connect connection request note inmail sales navigator recruiter voice note audio recording visit view profile follow like react reaction post comment endorse skills withdraw cancel",
 };
 
 // actionSummary is the one-line subtitle shown on an action node.
@@ -76,6 +129,8 @@ export function actionSummary(a?: SequenceAction | null): string {
             if (n === 0) return "Pick actions the agent may take…";
             return `Agent · ${n} action${n === 1 ? "" : "s"}`;
         }
+        case "social":
+            return socialSummary(a.social);
         default:
             return "Action";
     }
@@ -103,6 +158,13 @@ export const BRANCH_PATH_OPTIONS: SelectOption[] = [
     { value: "reply_neutral", label: "if replied: neutral", group: "Reply intent" },
     { value: "reply_automated", label: "if auto-reply / out of office", group: "Reply intent" },
     { value: "reply_intent", label: "if reply intent is…", group: "Reply intent" },
+    { value: "social_replied", label: "if replied on social", group: "Social" },
+    { value: "not_social_replied", label: "if didn't reply on social", group: "Social" },
+    { value: "social_connected", label: "if accepted the LinkedIn invite", group: "Social" },
+    { value: "not_social_connected", label: "if didn't accept the LinkedIn invite", group: "Social" },
+    { value: "social_invite_pending", label: "if the LinkedIn invite is still pending", group: "Social" },
+    { value: "social_open_profile", label: "if they have an Open Profile", group: "Social" },
+    { value: "not_social_open_profile", label: "if they have no Open Profile", group: "Social" },
     { value: "random", label: "random split" },
 ];
 
@@ -128,7 +190,7 @@ export const SWITCH_OPTION = { type: "switch" as SequenceActionType, label: "Swi
 export const AI_STEP_OPTION = { type: "ai_step" as SequenceActionType, label: "AI step (agent)" };
 
 // defaultActionFor returns a fresh action config for a newly-picked type.
-export function defaultActionFor(type: SequenceActionType): SequenceAction {
+export function defaultActionFor(type: SequenceActionType, social?: { channel: SocialChannel; action: string }): SequenceAction {
     if (type === "create_task") {
         return { type, task_priority: "medium", task_due_offset_days: 1 };
     }
@@ -153,6 +215,9 @@ export function defaultActionFor(type: SequenceActionType): SequenceAction {
     }
     if (type === "ai_step") {
         return { type, ai_instruction: "", ai_allowed_actions: [] };
+    }
+    if (type === "social") {
+        return { type, social: defaultSocialConfig(social?.channel ?? "linkedin", social?.action ?? "message") };
     }
     return { type };
 }

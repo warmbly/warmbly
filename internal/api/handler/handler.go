@@ -85,6 +85,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/sequence"
 	"github.com/warmbly/warmbly/internal/app/skills"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
+	"github.com/warmbly/warmbly/internal/app/social"
 	"github.com/warmbly/warmbly/internal/app/socket"
 	"github.com/warmbly/warmbly/internal/app/store"
 	"github.com/warmbly/warmbly/internal/app/stripe"
@@ -287,7 +288,9 @@ type Handler struct {
 	CreditService  credits.CreditService
 	BalanceService *balance.Service
 	// StoreService sells domains and mailboxes; nil or disabled when GraphKit is not configured.
-	StoreService     *store.Service
+	StoreService *store.Service
+	// SocialService is the social add-on on the store's GraphKit connection; nil when not wired.
+	SocialService    *social.Service
 	WritingGenerator generation.WritingGenerator
 
 	// AI provider layer (RunAgent tool-loop backend) + pluggable web search,

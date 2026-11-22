@@ -20,6 +20,7 @@ import {
     ReplyIcon,
 } from "lucide-react";
 import toast from "react-hot-toast/headless";
+import { SocialLinks } from "@/components/app/social/SocialLinks";
 import type ContactDetail from "@/lib/api/models/app/contacts/ContactDetail";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import { useConfirm } from "@/hooks/context/confirm";
@@ -220,6 +221,9 @@ export default function OverviewTab({
                         value={contact.company || "—"}
                     />
                     <ProfileRow label="Phone" value={contact.phone || "—"} />
+                    {contact.social && Object.keys(contact.social).length > 0 && (
+                        <ProfileRow label="Social" value={<SocialLinks social={contact.social} label={contact.first_name || contact.email} />} />
+                    )}
                     <ProfileRow
                         label="Labels"
                         value={

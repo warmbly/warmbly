@@ -33,6 +33,10 @@ import { isIdleCampaign } from "@/components/app/campaigns/status";
 import { entryDelayLabel } from "@/components/app/campaigns/schedule/entryDelay";
 import type { StartCampaignResult } from "@/lib/api/client/app/campaigns/startCampaign";
 import { useAccessRestricted } from "@/hooks/usePermission";
+import { Link } from "@tanstack/react-router";
+import { isSocialAction } from "@/lib/api/models/app/campaigns/sequences/Action";
+import { useCampaignSocialAccounts, useSocialAccounts, useSocialChannels } from "@/lib/api/hooks/app/social/useSocial";
+import { channelLabel } from "@/lib/social/channels";
 
 type Phase = "idle" | "launching" | "done";
 
@@ -119,6 +123,21 @@ export default function LaunchCampaignDialog({
         enabled: !!campaign,
     });
     const stepCount = steps.data?.length;
+
+    // Each social step runs from the campaign's senders on its channel; a channel with none would only skip its steps.
+    const stepChannels = [...new Set((steps.data ?? []).flatMap((s) => (s.kind === "action" && isSocialAction(s.action?.type ?? "") && s.action?.social?.channel ? [s.action.social.channel] : [])))];
+    const hasSocialSteps = stepChannels.length > 0;
+    const socialSenders = useCampaignSocialAccounts(campaign?.id ?? "", hasSocialSteps && !!campaign && c?.social_account_ids === undefined);
+    const socialAccounts = useSocialAccounts(hasSocialSteps);
+    const catalog = useSocialChannels(hasSocialSteps);
+    const socialIds = c?.social_account_ids ?? socialSenders.data;
+    const missingChannels =
+        hasSocialSteps && socialIds !== undefined && socialAccounts.data
+            ? stepChannels.filter((ch) => !socialAccounts.data!.data.some((a) => a.channel === ch && socialIds.includes(a.id)))
+            : [];
+    const socialBlocked = missingChannels.length > 0;
+    const missingChannelNames = missingChannels.map((ch) => channelLabel(ch, catalog.data));
+    const missingSocialHandle = hasSocialSteps ? (c?.social_missing_handle_count ?? 0) : 0;
 
     // The platform's own pre-send checks, run fresh each time the dialog opens.
     // Advisory: a failure is shown, never used to disable Launch, because the
@@ -295,6 +314,45 @@ export default function LaunchCampaignDialog({
                                         </div>
                                     )}
 
+                                    {socialBlocked && (
+                                        <div className="px-5 pt-3">
+                                            <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2">
+                                                <AlertTriangleIcon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-500" />
+                                                <div className="min-w-0 text-[12px] leading-snug text-rose-700">
+                                                    <p>
+                                                        This campaign has {listNames(missingChannelNames)} steps but no {listNames(missingChannelNames, "or")} account to run them.
+                                                    </p>
+                                                    <p className="mt-0.5 text-[11.5px] text-rose-600/90">
+                                                        Pick one in the{" "}
+                                                        <Link to="/app/campaigns/$id/preferences" params={{ id: c.id }} hash="social" onClick={onClose} className="font-medium underline underline-offset-2">
+                                                            campaign settings
+                                                        </Link>
+                                                        , or{" "}
+                                                        <Link
+                                                            to="/app/settings/social"
+                                                            search={{ connect: missingChannels.length === 1 ? missingChannels[0] : "any" }}
+                                                            onClick={onClose}
+                                                            className="font-medium underline underline-offset-2"
+                                                        >
+                                                            connect {missingChannels.length === 1 ? `a ${missingChannelNames[0]} account` : "an account"}
+                                                        </Link>{" "}
+                                                        first.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {missingSocialHandle > 0 && (
+                                        <div className="px-5 pt-3">
+                                            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                                                <AlertTriangleIcon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                                                <p className="text-[12px] leading-snug text-amber-900">
+                                                    {missingSocialHandle === 1 ? "1 contact has" : `${missingSocialHandle.toLocaleString()} contacts have`} no handle on a channel this campaign uses and will skip those steps.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Pre-send checks */}
                                     {preflight.isFetching ? (
                                         <div className="px-5 pt-3 flex items-center gap-2 text-[11.5px] text-slate-400">
@@ -393,7 +451,8 @@ export default function LaunchCampaignDialog({
                                         <button
                                             type="button"
                                             onClick={() => launch()}
-                                            disabled={phase === "launching"}
+                                            disabled={phase === "launching" || socialBlocked}
+                                            title={socialBlocked ? `Add a ${listNames(missingChannelNames, "or")} account to the campaign first` : undefined}
                                             className="h-8 px-3.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-medium inline-flex items-center gap-2 transition-colors disabled:opacity-80"
                                         >
                                             {phase === "launching" ? (
@@ -417,4 +476,10 @@ export default function LaunchCampaignDialog({
             )}
         </AnimatePresence>
     );
+}
+
+// "LinkedIn, WhatsApp and Telegram"
+function listNames(names: string[], joiner = "and"): string {
+    if (names.length <= 1) return names[0] ?? "";
+    return `${names.slice(0, -1).join(", ")} ${joiner} ${names[names.length - 1]}`;
 }

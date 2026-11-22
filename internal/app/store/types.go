@@ -71,9 +71,11 @@ const (
 
 // NextBundle is the next mailbox charge: on charge_on, for mailboxes, of amount_micros.
 type NextBundle struct {
-	ChargeOn     time.Time `json:"charge_on"`
-	Mailboxes    int       `json:"mailboxes"`
-	AmountMicros int64     `json:"amount_micros"`
+	ChargeOn  time.Time `json:"charge_on"`
+	Mailboxes int       `json:"mailboxes"`
+	// SocialSeats are the social accounts collected in the same charge.
+	SocialSeats  int   `json:"social_seats"`
+	AmountMicros int64 `json:"amount_micros"`
 }
 
 // Offer is one domain search result at retail.

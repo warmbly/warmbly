@@ -347,7 +347,10 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		return xerr
 	}
 
-	if s.advanced != nil {
+	// A contact with no address has nothing for the address gates to read; their email steps are skipped below.
+	emailless := strings.TrimSpace(contact.Email) == ""
+
+	if s.advanced != nil && !emailless {
 		suppressed, reason, sxerr := s.advanced.ShouldSuppressRecipient(ctx, orgID, contact.Email)
 		if sxerr != nil {
 			return sxerr
@@ -400,7 +403,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 				CampaignID: campaign.ID,
 				EventType:  "paused_lead",
-				Message:    fmt.Sprintf("Paused lead skipped: %s", contact.Email),
+				Message:    fmt.Sprintf("Paused lead skipped: %s", contactLabel(contact)),
 				Metadata:   map[string]interface{}{"reason": hold.Reason, "source": hold.Source},
 			})
 		}
@@ -414,7 +417,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// bounce. 'invalid' is always dropped; 'risky' is dropped only when the
 	// campaign's "send to risky emails" toggle is off (see the next gate).
 	// 'unknown'/'valid' always send.
-	if contact.VerificationStatus == "invalid" {
+	if !emailless && contact.VerificationStatus == "invalid" {
 		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
 		if s.campaignLogRepo != nil {
 			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
@@ -433,7 +436,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// addresses verification flagged 'risky' (catch-all / role / low-quality),
 	// which raise bounce risk. Enforces the campaign.RiskyEmails toggle that the
 	// settings UI exposes — without this the toggle is stored but inert.
-	if !campaign.RiskyEmails && contact.VerificationStatus == "risky" {
+	if !emailless && !campaign.RiskyEmails && contact.VerificationStatus == "risky" {
 		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
 		if s.campaignLogRepo != nil {
 			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
@@ -466,7 +469,17 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		if len(sequence.Action) > 0 {
 			_ = json.Unmarshal(sequence.Action, &cfg)
 		}
+		if cfg.Type == models.ActionSocial {
+			s.runSocialStep(ctx, campaign, contact, sequence, &cfg, taskID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+		}
 		aerr := s.executeActionNode(ctx, campaign, contact, sequence.ID, &cfg)
+		if errors.Is(aerr, errUnknownAction) {
+			s.holdUnknownStep(ctx, campaign, contact, sequence.ID, cfg.Type, taskID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+		}
 		if aerr != nil {
 			log.Warn().Err(aerr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Str("action", cfg.Type).Msg("Action node execution failed")
 		}
@@ -494,6 +507,12 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 			})
 		}
 		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+		executionStatus = "completed"
+		return nil
+	}
+
+	if emailless {
+		s.skipEmaillessStep(ctx, campaign, contact, sequence, taskID, accountID, nextTime)
 		executionStatus = "completed"
 		return nil
 	}
@@ -1684,10 +1703,18 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		return nil
 	case "switch":
 		return s.execSequenceSwitchStep(ctx, campaign, contact, sequenceID, cfg)
-	default:
+	case "notify":
 		return nil
+	default:
+		return errUnknownAction
 	}
 }
+
+// errUnknownAction is a step type this release does not run; the contact is held on it rather than moved past it.
+var errUnknownAction = errors.New("this step type needs a newer Warmbly release")
+
+// unknownActionRetry is how long a contact waits on a step type this release does not know before it is offered again.
+const unknownActionRetry = 15 * time.Minute
 
 // createCampaignTask creates a new campaign task in GCP Cloud Tasks
 func (s *tasksService) createCampaignTask(ctx context.Context, campaignID, accountID uuid.UUID, scheduleTime time.Time) error {
