@@ -56,10 +56,18 @@ func (s *sequenceService) WireAttachments(repo repository.AttachmentRepository, 
 // branches and only its fall-through catch-all is re-pointed. The order must be
 // a permutation of the campaign's steps, and must not create a routing cycle.
 func (s *sequenceService) ReorderSteps(ctx context.Context, orgID, campaignID string, order []string) (*models.Sequence, *errx.Error) {
-	steps, xerr := s.sequenceRepository.Get(ctx, orgID, campaignID)
-	if xerr != nil {
-		return nil, xerr
+	// plan is handed the steps read under the campaign lock, so the order is
+	// validated against the state the write will replace.
+	plan := func(steps []models.Sequence) ([]repository.SequenceReorder, *errx.Error) {
+		return buildReorder(steps, order)
 	}
+	return s.sequenceRepository.Reorder(ctx, orgID, campaignID, plan)
+}
+
+// buildReorder validates that order is a permutation of steps, reconnects each
+// step's catch-all to the next step in the new order while preserving its
+// conditional branches, and refuses an order that would create a routing cycle.
+func buildReorder(steps []models.Sequence, order []string) ([]repository.SequenceReorder, *errx.Error) {
 	if len(steps) == 0 {
 		return nil, errx.ErrNotFound
 	}
@@ -104,14 +112,7 @@ func (s *sequenceService) ReorderSteps(ctx context.Context, orgID, campaignID st
 	if xerr := reorderCreatesCycle(steps, updates); xerr != nil {
 		return nil, xerr
 	}
-
-	if xerr := s.sequenceRepository.Reorder(ctx, orgID, campaignID, updates); xerr != nil {
-		return nil, xerr
-	}
-
-	// The entry step is the first step in the new order.
-	entry := byID[order[0]]
-	return &entry, nil
+	return updates, nil
 }
 
 // reconnectCatchAll returns the step's branches with every conditional branch

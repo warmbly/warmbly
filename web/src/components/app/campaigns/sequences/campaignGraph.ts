@@ -249,3 +249,28 @@ export function emailBodyEmpty(html: string): boolean {
     if (/<img\b/i.test(html)) return false;
     return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
 }
+
+// Rewrite a step's branches so its single catch-all points at nextId, keeping
+// every conditional branch untouched. Mirrors the server's reconnectCatchAll so
+// an optimistic reorder draws the chain it will actually be saved as. A null
+// nextId (the last step) drops the catch-all, ending the sequence there.
+export function reconnectCatchAll(branches: SequenceBranch[], nextId: string | null): SequenceBranch[] {
+    const conds = branches.filter(isCond);
+    if (!nextId) return normalize(conds);
+    const existing = branches.find((b) => !isCond(b));
+    return normalize([...conds, { branch_id: existing?.branch_id ?? newBranchId(), target_step_id: nextId, conditions: [] }]);
+}
+
+// Apply a new order to the steps and rewire each catch-all to the step after it,
+// which is what the server does on a reorder. Conditional branches are kept, so
+// the canvas shows the new chain before the request lands rather than the old one.
+export function reorderSteps(steps: Sequence[], order: string[]): Sequence[] {
+    const byId = new Map(steps.map((s) => [s.id, s]));
+    const ordered = order.map((id) => byId.get(id)).filter((s): s is Sequence => !!s);
+    const rest = steps.filter((s) => !order.includes(s.id));
+    const all = [...ordered, ...rest];
+    return all.map((s, i) => ({
+        ...s,
+        conditions: { branches: reconnectCatchAll(s.conditions?.branches ?? [], all[i + 1]?.id ?? null) },
+    }));
+}

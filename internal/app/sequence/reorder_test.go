@@ -33,10 +33,37 @@ func (r *mockSequenceRepo) Get(_ context.Context, orgID, campaign string) ([]mod
 	return out, nil
 }
 
-func (r *mockSequenceRepo) Reorder(_ context.Context, _, _ string, updates []repository.SequenceReorder) *errx.Error {
+func (r *mockSequenceRepo) Reorder(_ context.Context, orgID, campaign string, plan repository.ReorderPlan) (*models.Sequence, *errx.Error) {
+	if orgID != r.orgID || campaign != r.campaign {
+		return nil, errx.ErrNotFound
+	}
+	// Read the steps under the same lock the real repository takes, then run the
+	// service's plan against that snapshot.
+	snapshot := make([]models.Sequence, len(r.steps))
+	copy(snapshot, r.steps)
+	updates, xerr := plan(snapshot)
+	if xerr != nil {
+		return nil, xerr
+	}
 	r.reordered = true
 	r.updates = updates
-	return nil
+
+	// Return the step now at position 1, with its rewritten conditions, the way
+	// the real UPDATE ... RETURNING does.
+	var entry models.Sequence
+	for _, u := range updates {
+		if u.Position != 1 {
+			continue
+		}
+		for _, st := range snapshot {
+			if st.ID == u.ID {
+				entry = st
+				entry.Position = 1
+				entry.Conditions = u.Conditions
+			}
+		}
+	}
+	return &entry, nil
 }
 
 func uuidPtr(u uuid.UUID) *uuid.UUID { return &u }

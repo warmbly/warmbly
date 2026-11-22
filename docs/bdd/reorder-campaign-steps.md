@@ -33,19 +33,19 @@ So that **I can control the sequence in which contacts receive messages.**
 
 ---
 
-### Scenario 2: Reordering preserves conditional branches
+### Scenario 2: Reordering preserves conditional branches and rewrites the catch-all
 
 **Given** a campaign where Step A has a conditional branch:
 - If the recipient opens A → go to Step B (conditional branch)
 - Otherwise → go to Step C (catch-all / "go there next")
 
-**When** I reorder the steps so that C comes before A
+**When** I reorder the steps so that the order becomes C, A, B
 
 **Then** the conditional branch on A still routes an opener to B
 
-**And** the catch-all on A still routes a non-opener to C
+**And** the catch-all on A now routes a non-opener to B, the step that follows A in the new order
 
-**And** the steps are now ordered C, A, B (positions updated)
+**And** Step B is last in the order, so it carries no catch-all
 
 **And** no branch is lost, duplicated, or pointed at a non-existent step
 
@@ -143,7 +143,7 @@ So that **I can control the sequence in which contacts receive messages.**
 
 ---
 
-### Scenario 10: Reordering a branching sequence does not change its routing
+### Scenario 10: Reordering a branching sequence keeps conditions and rewires the catch-all
 
 **Given** a campaign with conditional branches and a catch-all chain
 

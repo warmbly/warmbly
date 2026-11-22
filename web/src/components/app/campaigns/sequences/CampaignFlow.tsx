@@ -72,6 +72,7 @@ import {
     normalize,
     planRemoval,
     reachableSteps,
+    reorderSteps,
     routePort,
 } from "./campaignGraph";
 import { entryView, pickerItems, stepIssue, stepView } from "./campaignSteps";
@@ -99,7 +100,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const steps = React.useMemo(() => sequences ?? [], [sequences]);
     const createSequence = useCreateSequence(campaignId);
     const deleteSequence = useDeleteSequence(campaignId);
-    const reorderSteps = useReorderSteps(campaignId);
+    const reorderMutation = useReorderSteps(campaignId);
     const { data: campaign } = useCampaign(campaignId);
     const updateCampaign = useUpdateCampaign(campaignId);
     const { data: variants } = useCampaignABVariants(campaignId);
@@ -212,18 +213,13 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         (id: string, patch: Partial<Sequence>) => qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => old?.map((s) => (s.id === id ? { ...s, ...patch } : s))),
         [qc, campaignId],
     );
-    // Reorder the cached steps into the given order, keeping any step the list
-    // omits at the end. The server is the source of truth; this just makes the
-    // canvas move before the response lands.
+    // Reorder the cached steps into the given order, rewiring each step's
+    // catch-all to the next step the way the server does. Without that the
+    // canvas keeps drawing the old chain (and can warn about detached steps)
+    // until the refetch lands. The server is still the source of truth.
     const reorderCache = React.useCallback(
         (stepIds: string[]) => {
-            qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => {
-                if (!old) return old;
-                const byId = new Map(old.map((s) => [s.id, s]));
-                const ordered = stepIds.map((id) => byId.get(id)).filter((s): s is Sequence => !!s);
-                const remaining = old.filter((s) => !stepIds.includes(s.id));
-                return [...ordered, ...remaining];
-            });
+            qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => (old ? reorderSteps(old, stepIds) : old));
         },
         [campaignId, qc],
     );
@@ -249,10 +245,19 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     // Move a step up or down one position in the sequence. The whole new order
     // is committed at once so the server repositions every step and reconnects
     // the linear chain to follow it; conditional branches are left untouched.
+    // A second move is refused while one is in flight: two concurrent reorders
+    // can land out of order and the earlier one silently wins.
+    const reorderPending = React.useRef(false);
+    const [reorderBusy, setReorderBusy] = React.useState(false);
     const reorder = React.useCallback(
         async (fromIndex: number, direction: -1 | 1) => {
+            if (reorderPending.current) return;
             const toIndex = fromIndex + direction;
             if (toIndex < 0 || toIndex >= steps.length) return;
+            // Set synchronously, before the first await, so a second click cannot
+            // slip past the guard while the first request is still starting.
+            reorderPending.current = true;
+            setReorderBusy(true);
             const original = steps.map((s) => s.id);
             const next = steps.slice();
             [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
@@ -261,16 +266,18 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             await qc.cancelQueries({ queryKey: SEQ_KEY(campaignId) });
             reorderCache(stepIds);
             try {
-                await reorderSteps.mutateAsync(stepIds);
+                await reorderMutation.mutateAsync(stepIds);
             } catch (err) {
                 toast.error(buildError(err as AppError));
                 reorderCache(original);
                 throw err;
             } finally {
+                reorderPending.current = false;
+                setReorderBusy(false);
                 void invalidate();
             }
         },
-        [campaignId, steps, reorderSteps, reorderCache, qc, invalidate],
+        [campaignId, steps, reorderMutation, reorderCache, qc, invalidate],
     );
 
     const saveWait = React.useCallback(
@@ -505,6 +512,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     label: "Move up",
                     icon: <ArrowUpIcon className="size-3.5" />,
                     onSelect: () => void reorder(index, -1),
+                    disabled: reorderBusy,
                 });
             }
             if (index < steps.length - 1) {
@@ -512,6 +520,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                     label: "Move down",
                     icon: <ArrowDownIcon className="size-3.5" />,
                     onSelect: () => void reorder(index, 1),
+                    disabled: reorderBusy,
                 });
             }
         }

@@ -31,10 +31,11 @@ type SequenceRepository interface {
 	// change. Cosmetic and unaudited.
 	UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error
 	// Reorder repositions the campaign's steps to the given order and rewrites
-	// each step's conditions (position + branch tree) in one transaction. The
-	// caller has already validated the order; the repository only enforces the
-	// org/campaign scope here.
-	Reorder(ctx context.Context, orgID, campaignID string, updates []SequenceReorder) *errx.Error
+	// each step's conditions (position + branch tree) in one transaction. plan
+	// runs with the campaign's steps read under the campaign lock, so a step
+	// created or a branch edited while the reorder is in flight cannot be
+	// validated against a stale snapshot. Returns the step now at position 1.
+	Reorder(ctx context.Context, orgID, campaignID string, plan ReorderPlan) (*models.Sequence, *errx.Error)
 	Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error
 }
 
@@ -46,6 +47,10 @@ type SequenceReorder struct {
 	Position   int
 	Conditions json.RawMessage
 }
+
+// ReorderPlan turns the campaign's steps, read under the campaign lock, into the
+// updates to write. Returning an error aborts the transaction unchanged.
+type ReorderPlan func(steps []models.Sequence) ([]SequenceReorder, *errx.Error)
 
 type sequenceRepository struct {
 	DB      *db.DB
@@ -393,59 +398,113 @@ func (r *sequenceRepository) UpdateLayout(ctx context.Context, orgID, campaignID
 }
 
 // Reorder repositions the campaign's steps and rewrites their conditions in one
-// transaction. It does not touch the branch tree's meaning beyond position: the
-// service has already reconnected the catch-all chain and preserved conditional
+// transaction. It does not touch the branch tree's meaning beyond position: plan
+// has already reconnected the catch-all chain and preserved conditional
 // branches, so here it only writes position + conditions atomically. The
-// campaign row is locked FOR UPDATE so two concurrent reorders cannot take the
-// same positions.
-func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID string, updates []SequenceReorder) *errx.Error {
+// campaign row is locked FOR UPDATE before the steps are read, so two concurrent
+// reorders cannot take the same positions and a step created or branch edited
+// mid-flight is never dropped from the validated order.
+func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID string, plan ReorderPlan) (*models.Sequence, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
-		return errx.InternalError()
+		return nil, errx.InternalError()
 	}
 	defer tx.Rollback(ctx)
 
-	query := `
+	lockQuery := `
 		SELECT id
 		FROM campaigns WHERE id = $1 AND organization_id = $2
 		FOR UPDATE
 	`
 	var locked uuid.UUID
-	if err := tx.QueryRow(ctx, query, campaignID, orgID).Scan(&locked); err != nil {
+	if err := tx.QueryRow(ctx, lockQuery, campaignID, orgID).Scan(&locked); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return errx.ErrNotFound
+			return nil, errx.ErrNotFound
 		}
-		db.CaptureError(err, query, []any{campaignID, orgID}, "queryrow")
-		return errx.InternalError()
+		db.CaptureError(err, lockQuery, []any{campaignID, orgID}, "queryrow")
+		return nil, errx.InternalError()
 	}
 
+	// Read the steps under the campaign lock. Locking the sequence rows too holds
+	// a concurrent branch edit until this transaction commits, so the conditions
+	// written below are computed from state nothing else changed underneath.
+	lockStepsQuery := `SELECT id FROM sequences WHERE campaign_id = $1 ORDER BY position ASC, created_at ASC FOR UPDATE`
+	if _, err := tx.Exec(ctx, lockStepsQuery, campaignID); err != nil {
+		db.CaptureError(err, lockStepsQuery, []any{campaignID}, "exec")
+		return nil, errx.InternalError()
+	}
+
+	readQuery := fmt.Sprintf(`
+		SELECT %s
+		FROM sequences s
+		WHERE s.campaign_id = $1
+		ORDER BY s.position ASC, s.created_at ASC`, SequenceSelectJoin)
+	rows, err := tx.Query(ctx, readQuery, campaignID)
+	if err != nil {
+		db.CaptureError(err, readQuery, []any{campaignID}, "query")
+		return nil, errx.InternalError()
+	}
+	steps := make([]models.Sequence, 0)
+	for rows.Next() {
+		var seq models.Sequence
+		if err := GetSequence(rows, &seq); err != nil {
+			rows.Close()
+			db.CaptureError(err, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		steps = append(steps, seq)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, readQuery, []any{campaignID}, "rows")
+		return nil, errx.InternalError()
+	}
+
+	updates, xerr := plan(steps)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if len(updates) == 0 {
+		return nil, errx.ErrNotFound
+	}
+
+	// SequenceSelectJoin is a column list, not a bind value: format it into the
+	// statement rather than passing it as an argument.
+	updateQuery := fmt.Sprintf(`
+		UPDATE sequences s
+		SET position = $3, conditions = $4
+		FROM campaigns c
+		WHERE c.organization_id = $1
+		 AND c.id = $2
+		 AND s.campaign_id = c.id
+		 AND s.id = $5
+		RETURNING %s`, SequenceSelectJoin)
+
+	var entry *models.Sequence
 	for _, u := range updates {
-		row := tx.QueryRow(ctx,
-			`UPDATE sequences s
-			 SET position = $3, conditions = $4
-			 FROM campaigns c
-			 WHERE c.organization_id = $1
-			  AND c.id = $2
-			  AND s.campaign_id = c.id
-			  AND s.id = $5
-			 RETURNING %s`, SequenceSelectJoin,
-			orgID, campaignID, u.Position, u.Conditions, u.ID)
+		row := tx.QueryRow(ctx, updateQuery, orgID, campaignID, u.Position, u.Conditions, u.ID)
 		var seq models.Sequence
 		if err := GetSequence(row, &seq); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return errx.ErrNotFound
+				return nil, errx.ErrNotFound
 			}
 			db.CaptureError(err, "", nil, "scan")
-			return errx.InternalError()
+			return nil, errx.InternalError()
 		}
+		if seq.Position == 1 {
+			entry = &seq
+		}
+	}
+	if entry == nil {
+		return nil, errx.InternalError()
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		db.CaptureError(err, "", nil, "commit")
-		return errx.InternalError()
+		return nil, errx.InternalError()
 	}
-	return nil
+	return entry, nil
 }
 
 func (r *sequenceRepository) Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error {

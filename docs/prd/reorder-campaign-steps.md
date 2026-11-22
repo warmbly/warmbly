@@ -41,11 +41,23 @@ So position's only real jobs are:
 - pick the **entry step** (lowest position),
 - **order the canvas** (`GetSequences` returns `ORDER BY position ASC, created_at ASC`; frontend treats `steps[0]` as entry).
 
-Reordering therefore **cannot change routing behavior** for any step that has branches.
-For a linear step (no branches), position+1 is the next step — so reordering a linear
-sequence *does* change which step follows which. That is exactly the behavior the user
-wants, and it is the only place reordering has a routing effect. This is the one thing
-the implementation must make explicit and test.
+Reordering changes routing in exactly two ways, and the implementation must make
+both explicit and test them:
+
+- **Conditional branches are preserved, not rewritten.** A step's branches that carry
+  conditions keep pointing at the same target steps, whatever the new positions are.
+- **The catch-all is rewritten.** A step's fall-through branch (the one with no
+  conditions) is re-pointed at the next step in the new order, so the linear chain
+  follows the reorder. The last step in the order carries no catch-all.
+
+Concretely: with `A → B` conditional and `A → C` catch-all, reordering to `C, A, B`
+leaves A's conditional branch pointing at B and rewrites A's catch-all to B. A step
+whose preserved conditional branch would then lead back to a step it already reaches
+is refused (`step_order_cycle`) rather than left to loop a contact forever.
+
+There is no implicit `position+1` routing: the scheduler follows branches only, so the
+catch-all rewrite above is what actually moves a contact to the next email. Position
+itself still only picks the entry step (lowest) and orders the canvas.
 
 **Invariant to preserve:** after any reorder, `position` must remain a **strict, gap-free,
 contiguous** sequence of integers starting at 1, with no duplicates. This is what the

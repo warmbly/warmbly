@@ -92,20 +92,21 @@ type ScopeAction struct {
 
 // scopeActionRoutes are the writes a restricted member may make through a role that acts in scope.
 var scopeActionRoutes = map[string]ScopeAction{
-	"PUT /v1/unibox/thread/labels":         {models.PermAccessUnibox, ScopeCheckMailbox},
-	"PATCH /v1/unibox/seen":                {models.PermAccessUnibox, ScopeCheckMailbox},
-	"PATCH /v1/unibox/folder":              {models.PermAccessUnibox, ScopeCheckMailbox},
-	"POST /v1/unibox/reply":                {models.PermAccessUnibox, ScopeCheckMailbox},
-	"POST /v1/unibox/snooze":               {models.PermAccessUnibox, ScopeCheckMailbox},
-	"DELETE /v1/unibox/snooze":             {models.PermAccessUnibox, ScopeCheckOwnRows},
-	"DELETE /v1/unibox/scheduled/:task_id": {models.PermAccessUnibox, ScopeCheckMailbox},
-	"PATCH /v1/campaigns/:id":              {models.PermManageCampaigns, ScopeCheckCampaignParam},
-	"POST /v1/campaigns/:id/steps":         {models.PermManageCampaigns, ScopeCheckCampaignParam},
-	"PATCH /v1/campaigns/:id/steps/:sid":   {models.PermManageCampaigns, ScopeCheckCampaignParam},
-	"DELETE /v1/campaigns/:id/steps/:sid":  {models.PermManageCampaigns, ScopeCheckCampaignParam},
-	"PATCH /v1/campaigns/:id/step-layout":  {models.PermManageCampaigns, ScopeCheckCampaignParam},
-	"POST /v1/campaigns/:id/start":         {models.PermSendCampaigns, ScopeCheckCampaignParam},
-	"POST /v1/campaigns/:id/stop":          {models.PermSendCampaigns, ScopeCheckCampaignParam},
+	"PUT /v1/unibox/thread/labels":          {models.PermAccessUnibox, ScopeCheckMailbox},
+	"PATCH /v1/unibox/seen":                 {models.PermAccessUnibox, ScopeCheckMailbox},
+	"PATCH /v1/unibox/folder":               {models.PermAccessUnibox, ScopeCheckMailbox},
+	"POST /v1/unibox/reply":                 {models.PermAccessUnibox, ScopeCheckMailbox},
+	"POST /v1/unibox/snooze":                {models.PermAccessUnibox, ScopeCheckMailbox},
+	"DELETE /v1/unibox/snooze":              {models.PermAccessUnibox, ScopeCheckOwnRows},
+	"DELETE /v1/unibox/scheduled/:task_id":  {models.PermAccessUnibox, ScopeCheckMailbox},
+	"PATCH /v1/campaigns/:id":               {models.PermManageCampaigns, ScopeCheckCampaignParam},
+	"POST /v1/campaigns/:id/steps":          {models.PermManageCampaigns, ScopeCheckCampaignParam},
+	"PATCH /v1/campaigns/:id/steps/:sid":    {models.PermManageCampaigns, ScopeCheckCampaignParam},
+	"PATCH /v1/campaigns/:id/steps/reorder": {models.PermManageCampaigns, ScopeCheckCampaignParam},
+	"DELETE /v1/campaigns/:id/steps/:sid":   {models.PermManageCampaigns, ScopeCheckCampaignParam},
+	"PATCH /v1/campaigns/:id/step-layout":   {models.PermManageCampaigns, ScopeCheckCampaignParam},
+	"POST /v1/campaigns/:id/start":          {models.PermSendCampaigns, ScopeCheckCampaignParam},
+	"POST /v1/campaigns/:id/stop":           {models.PermSendCampaigns, ScopeCheckCampaignParam},
 }
 
 // ScopeAwareRoutes lists grant-aware and target-authorized routes for the route-table test.
