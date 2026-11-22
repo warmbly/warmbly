@@ -28,18 +28,18 @@ type SearchResult struct {
 
 // SearchClient is the pluggable web-search backend the search_web tool (M2)
 // calls. Kept an interface so the hosted product and self-hosters can swap
-// backends (Serper, SearXNG, DDGS, Jina, Brave, Tavily) without touching the tool.
+// backends (Serper, SearXNG, DDGS, Jina, Brave, Tavily, Keenable) without touching the tool.
 type SearchClient interface {
 	Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
 }
 
 // SearchProviders are the web-search backends NewSearchClient speaks.
-var SearchProviders = []string{"serper", "searxng", "ddgs", "jina", "brave", "tavily"}
+var SearchProviders = []string{"serper", "searxng", "ddgs", "jina", "brave", "tavily", "keenable"}
 
 // NewSearchClient builds the configured search backend, or nil when search is
 // disabled (empty provider). apiURL overrides the backend endpoint (required for
 // the self-hosted searxng and ddgs); apiKey is the backend key (serper, brave
-// and tavily need one, jina search does too).
+// and tavily need one, jina search does too; keenable works without one).
 func NewSearchClient(provider, apiURL, apiKey string) SearchClient {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	endpoint := strings.TrimRight(strings.TrimSpace(apiURL), "/")
@@ -88,6 +88,14 @@ func NewSearchClient(provider, apiURL, apiKey string) SearchClient {
 			return nil
 		}
 		return &tavilyClient{endpoint: endpoint, apiKey: apiKey, http: hc}
+	case "keenable":
+		if endpoint == "" {
+			endpoint = "https://api.keenable.ai/v1/search/public"
+			if apiKey != "" {
+				endpoint = "https://api.keenable.ai/v1/search"
+			}
+		}
+		return &keenableClient{endpoint: endpoint, apiKey: apiKey, http: hc}
 	default:
 		return nil
 	}
@@ -457,6 +465,47 @@ func (c *tavilyClient) Search(ctx context.Context, query string, limit int) ([]S
 	out := make([]SearchResult, 0, limit)
 	for _, r := range parsed.Results {
 		out = append(out, SearchResult{Title: r.Title, URL: r.URL, Snippet: r.Content})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// keenableClient calls Keenable's search API, keyless unless a key is set.
+type keenableClient struct {
+	endpoint string
+	apiKey   string
+	http     *http.Client
+}
+
+func (c *keenableClient) Search(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	limit = clampSearchLimit(limit)
+	body, _ := json.Marshal(map[string]any{"query": query, "max_results": limit})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Keenable-Title", "Warmbly")
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
+	var parsed struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Snippet string `json:"snippet"`
+		} `json:"results"`
+	}
+	if err := searchJSON(c.http, req, "keenable", &parsed); err != nil {
+		return nil, err
+	}
+	out := make([]SearchResult, 0, limit)
+	for _, r := range parsed.Results {
+		// The snippet is raw page text, often thousands of characters.
+		snip := truncateRunes(strings.Join(strings.Fields(r.Snippet), " "), 500)
+		out = append(out, SearchResult{Title: r.Title, URL: r.URL, Snippet: snip})
 		if len(out) >= limit {
 			break
 		}

@@ -175,7 +175,7 @@ var table = []Entry{
 	},
 	{
 		Key: "SEARCH_PROVIDER", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "Web search for the assistant, research and the lead finder: serper, searxng, ddgs, jina, brave or tavily, comma-separated to fall back in order. Empty runs without it.",
+		Effect:     "Web search for the assistant, research and the lead finder: serper, searxng, ddgs, jina, brave, tavily or keenable, comma-separated to fall back in order. Empty runs without it.",
 		DocsAnchor: docsAI,
 		Resolve:    envValue("SEARCH_PROVIDER"),
 	},
