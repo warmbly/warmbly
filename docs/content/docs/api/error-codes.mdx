@@ -658,6 +658,7 @@ A search through a source the instance pays for, or a person's email found on re
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
+| `bad_request` | 400 | `organization_ids` named no workspace, or `POST /templates/copy-to` named no template in `template_ids`, once repeats and nil ids are dropped |
 | `copy_destinations_limit` | 400 | `organization_ids` named more than 10 workspaces |
 | `copy_templates_limit` | 400 | `template_ids` named more than 50 templates |
 | `cross_workspace_copy_requires_session` | 403 | An API key or OAuth token asked to copy into a workspace other than its own. Copy from the dashboard, signed in as a member of both |

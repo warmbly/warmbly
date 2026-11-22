@@ -2475,8 +2475,8 @@
               }
             }
           },
-          "429": {
-            "description": "Rate limited.",
+          "403": {
+            "description": "Forbidden.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2485,8 +2485,8 @@
               }
             }
           },
-          "403": {
-            "description": "Forbidden.",
+          "429": {
+            "description": "Rate limited.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2894,11 +2894,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Success.",
+            "description": "The stored tracking-domain state and the records to publish.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/MailboxTrackingDomain"
                 }
               }
             }
@@ -3415,7 +3415,7 @@
       "post": {
         "operationId": "mailboxes_refresh_email_auth_check",
         "summary": "Refresh email auth check",
-        "description": "Refresh email auth check. Scope WRITE_EMAILS, org permission manage_emails.",
+        "description": "Refresh email auth check. Repeating it recomputes the verdict from DNS, so it needs no Idempotency-Key; a key sent with it replays the first answer for 24 hours. Scope WRITE_EMAILS, org permission manage_emails.",
         "tags": [
           "mailboxes"
         ],
@@ -23653,7 +23653,7 @@
             }
           },
           "400": {
-            "description": "Validation error. `400 copy_destinations_limit` over 10 workspaces, `400 copy_templates_limit` over 50 templates, `400 no_organization` with no workspace selected.",
+            "description": "Validation error. `400 copy_destinations_limit` over 10 workspaces, `400 copy_templates_limit` over 50 templates, `400 no_organization` with no workspace selected, `400 bad_request` when `organization_ids` names no workspace or `template_ids` names no template, once repeats and nil ids are dropped.",
             "content": {
               "application/json": {
                 "schema": {
@@ -32457,7 +32457,7 @@
       "delete": {
         "operationId": "ai_delete_skill",
         "summary": "Delete skill",
-        "description": "Delete skill. Scope A_I_AGENT, org permission manage_settings.",
+        "description": "Delete skill. Scope AI_AGENT, org permission manage_settings.",
         "tags": [
           "ai"
         ],
@@ -32545,7 +32545,7 @@
       "patch": {
         "operationId": "ai_update_skill",
         "summary": "Update skill",
-        "description": "Update skill. Scope A_I_AGENT, org permission manage_settings.",
+        "description": "Update skill. Scope AI_AGENT, org permission manage_settings.",
         "tags": [
           "ai"
         ],
@@ -32658,8 +32658,8 @@
     "/api-keys/self": {
       "delete": {
         "operationId": "api_keys_revoke_own_a_p_i_key",
-        "summary": "Revoke own a p i key",
-        "description": "Revoke own a p i key. Requires a signed-in user or a key with access to the workspace.",
+        "summary": "Revoke own API key",
+        "description": "Revoke own API key. Requires a signed-in user or a key with access to the workspace.",
         "tags": [
           "api-keys"
         ],
@@ -34391,8 +34391,8 @@
     "/oauth/applications/{id}": {
       "delete": {
         "operationId": "oauth_delete_o_auth_application",
-        "summary": "Delete o auth application",
-        "description": "Delete o auth application. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Delete OAuth application",
+        "description": "Delete OAuth application. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -34479,8 +34479,8 @@
       },
       "get": {
         "operationId": "oauth_get_o_auth_application",
-        "summary": "Get o auth application",
-        "description": "Get o auth application. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Get OAuth application",
+        "description": "Get OAuth application. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -34564,8 +34564,8 @@
       },
       "patch": {
         "operationId": "oauth_update_o_auth_application",
-        "summary": "Update o auth application",
-        "description": "Update o auth application. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Update OAuth application",
+        "description": "Update OAuth application. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -34702,8 +34702,8 @@
     "/oauth/applications/{id}/listing": {
       "delete": {
         "operationId": "oauth_delete_o_auth_app_listing",
-        "summary": "Delete o auth app listing",
-        "description": "Delete o auth app listing. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Delete OAuth app listing",
+        "description": "Delete OAuth app listing. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -34790,8 +34790,8 @@
       },
       "get": {
         "operationId": "oauth_get_o_auth_app_listing",
-        "summary": "Get o auth app listing",
-        "description": "Get o auth app listing. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Get OAuth app listing",
+        "description": "Get OAuth app listing. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -34875,8 +34875,8 @@
       },
       "put": {
         "operationId": "oauth_put_o_auth_app_listing",
-        "summary": "Put o auth app listing",
-        "description": "Put o auth app listing. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Put OAuth app listing",
+        "description": "Put OAuth app listing. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -34998,8 +34998,8 @@
     "/oauth/applications/{id}/logo": {
       "delete": {
         "operationId": "oauth_delete_o_auth_application_logo",
-        "summary": "Delete o auth application logo",
-        "description": "Delete o auth application logo. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Delete OAuth application logo",
+        "description": "Delete OAuth application logo. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -35086,8 +35086,8 @@
       },
       "post": {
         "operationId": "oauth_upload_o_auth_application_logo",
-        "summary": "Upload o auth application logo",
-        "description": "Upload o auth application logo. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Upload OAuth application logo",
+        "description": "Upload OAuth application logo. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -35956,7 +35956,7 @@
       "get": {
         "operationId": "ai_list_skills",
         "summary": "List skills",
-        "description": "List skills. Scope A_I_AGENT, org permission manage_settings.",
+        "description": "List skills. Scope AI_AGENT, org permission manage_settings.",
         "tags": [
           "ai"
         ],
@@ -36031,7 +36031,7 @@
       "post": {
         "operationId": "ai_create_skill",
         "summary": "Create skill",
-        "description": "Create skill. Scope A_I_AGENT, org permission manage_settings.",
+        "description": "Create skill. Scope AI_AGENT, org permission manage_settings.",
         "tags": [
           "ai"
         ],
@@ -37026,7 +37026,7 @@
       "get": {
         "operationId": "contacts_list_contact_research",
         "summary": "List contact research",
-        "description": "List contact research. Scope A_I_RESEARCH, org permission view_contacts.",
+        "description": "List contact research. Scope AI_RESEARCH, org permission view_contacts.",
         "tags": [
           "contacts"
         ],
@@ -37119,7 +37119,7 @@
       "post": {
         "operationId": "contacts_research_contact",
         "summary": "Research contact",
-        "description": "Research contact. Scope A_I_RESEARCH, org permission manage_contacts.",
+        "description": "Research contact. Scope AI_RESEARCH, org permission manage_contacts.",
         "tags": [
           "contacts"
         ],
@@ -37305,8 +37305,8 @@
     "/crm/backfill": {
       "get": {
         "operationId": "crm_get_c_r_m_backfill",
-        "summary": "Get c r m backfill",
-        "description": "Get c r m backfill. Scope INTEGRATIONS, org permission manage_settings.",
+        "summary": "Get CRM backfill",
+        "description": "Get CRM backfill. Scope INTEGRATIONS, org permission manage_settings.",
         "tags": [
           "crm"
         ],
@@ -37380,8 +37380,8 @@
       },
       "post": {
         "operationId": "crm_start_c_r_m_backfill",
-        "summary": "Start c r m backfill",
-        "description": "Start c r m backfill. Scope INTEGRATIONS, org permission manage_settings.",
+        "summary": "Start CRM backfill",
+        "description": "Start CRM backfill. Scope INTEGRATIONS, org permission manage_settings.",
         "tags": [
           "crm"
         ],
@@ -37483,8 +37483,8 @@
     "/crm/contacts/{id}": {
       "get": {
         "operationId": "crm_get_c_r_m_contact",
-        "summary": "Get c r m contact",
-        "description": "Get c r m contact. Scope READ_C_R_M, org permission view_contacts.",
+        "summary": "Get CRM contact",
+        "description": "Get CRM contact. Scope READ_CRM, org permission view_contacts.",
         "tags": [
           "crm"
         ],
@@ -37568,8 +37568,8 @@
       },
       "patch": {
         "operationId": "crm_update_c_r_m_contact",
-        "summary": "Update c r m contact",
-        "description": "Update c r m contact. Scope WRITE_C_R_M, org permission manage_contacts.",
+        "summary": "Update CRM contact",
+        "description": "Update CRM contact. Scope WRITE_CRM, org permission manage_contacts.",
         "tags": [
           "crm"
         ],
@@ -37679,8 +37679,8 @@
     "/crm/lists": {
       "get": {
         "operationId": "crm_list_c_r_m_lists",
-        "summary": "List c r m lists",
-        "description": "List c r m lists. Scope READ_C_R_M, org permission manage_contacts.",
+        "summary": "List CRM lists",
+        "description": "List CRM lists. Scope READ_CRM, org permission manage_contacts.",
         "tags": [
           "crm"
         ],
@@ -37782,8 +37782,8 @@
     "/crm/metadata": {
       "get": {
         "operationId": "crm_get_c_r_m_metadata",
-        "summary": "Get c r m metadata",
-        "description": "Get c r m metadata. Scope READ_C_R_M, org permission view_contacts.",
+        "summary": "Get CRM metadata",
+        "description": "Get CRM metadata. Scope READ_CRM, org permission view_contacts.",
         "tags": [
           "crm"
         ],
@@ -37859,8 +37859,8 @@
     "/crm/owners": {
       "get": {
         "operationId": "crm_list_c_r_m_owners",
-        "summary": "List c r m owners",
-        "description": "List c r m owners. Scope READ_C_R_M, org permission view_contacts.",
+        "summary": "List CRM owners",
+        "description": "List CRM owners. Scope READ_CRM, org permission view_contacts.",
         "tags": [
           "crm"
         ],
@@ -37936,8 +37936,8 @@
     "/crm/settings": {
       "get": {
         "operationId": "crm_get_c_r_m_settings",
-        "summary": "Get c r m settings",
-        "description": "Get c r m settings. Scope READ_C_R_M, org permission view_contacts.",
+        "summary": "Get CRM settings",
+        "description": "Get CRM settings. Scope READ_CRM, org permission view_contacts.",
         "tags": [
           "crm"
         ],
@@ -38011,8 +38011,8 @@
       },
       "put": {
         "operationId": "crm_update_c_r_m_settings",
-        "summary": "Update c r m settings",
-        "description": "Update c r m settings. Scope INTEGRATIONS, org permission manage_settings.",
+        "summary": "Update CRM settings",
+        "description": "Update CRM settings. Scope INTEGRATIONS, org permission manage_settings.",
         "tags": [
           "crm"
         ],
@@ -38118,8 +38118,8 @@
     "/crm/sync": {
       "get": {
         "operationId": "crm_get_c_r_m_sync_health",
-        "summary": "Get c r m sync health",
-        "description": "Get c r m sync health. Scope READ_C_R_M, org permission view_contacts.",
+        "summary": "Get CRM sync health",
+        "description": "Get CRM sync health. Scope READ_CRM, org permission view_contacts.",
         "tags": [
           "crm"
         ],
@@ -38193,8 +38193,8 @@
       },
       "post": {
         "operationId": "crm_sync_c_r_m_now",
-        "summary": "Sync c r m now",
-        "description": "Sync c r m now. Scope INTEGRATIONS, org permission manage_settings.",
+        "summary": "Sync CRM now",
+        "description": "Sync CRM now. Scope INTEGRATIONS, org permission manage_settings.",
         "tags": [
           "crm"
         ],
@@ -40942,8 +40942,8 @@
     "/oauth/applications": {
       "get": {
         "operationId": "oauth_list_o_auth_applications",
-        "summary": "List o auth applications",
-        "description": "List o auth applications. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "List OAuth applications",
+        "description": "List OAuth applications. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -41017,8 +41017,8 @@
       },
       "post": {
         "operationId": "oauth_create_o_auth_application",
-        "summary": "Create o auth application",
-        "description": "Create o auth application. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Create OAuth application",
+        "description": "Create OAuth application. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -41147,8 +41147,8 @@
     "/oauth/applications/{id}/webhook-deliveries": {
       "get": {
         "operationId": "oauth_list_o_auth_app_webhook_deliveries",
-        "summary": "List o auth app webhook deliveries",
-        "description": "List o auth app webhook deliveries. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "List OAuth app webhook deliveries",
+        "description": "List OAuth app webhook deliveries. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -41266,8 +41266,8 @@
     "/oauth/applications/{id}/webhook-endpoints": {
       "get": {
         "operationId": "oauth_list_o_auth_app_webhook_endpoints",
-        "summary": "List o auth app webhook endpoints",
-        "description": "List o auth app webhook endpoints. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "List OAuth app webhook endpoints",
+        "description": "List OAuth app webhook endpoints. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -41353,8 +41353,8 @@
     "/oauth/applications/{id}/webhook-secret": {
       "get": {
         "operationId": "oauth_get_o_auth_app_webhook_secret",
-        "summary": "Get o auth app webhook secret",
-        "description": "Get o auth app webhook secret. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Needs a fresh authentication. Refused for OAuth access tokens.",
+        "summary": "Get OAuth app webhook secret",
+        "description": "Get OAuth app webhook secret. Scope API_KEYS, org permission manage_api_keys. Needs a fresh authentication. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -43616,7 +43616,7 @@
             }
           },
           "400": {
-            "description": "Validation error. `400 copy_destinations_limit` over 10 workspaces, `400 copy_templates_limit` over 50 templates, `400 no_organization` with no workspace selected.",
+            "description": "Validation error. `400 copy_destinations_limit` over 10 workspaces, `400 copy_templates_limit` over 50 templates, `400 no_organization` with no workspace selected, `400 bad_request` when `organization_ids` names no workspace once repeats and nil ids are dropped.",
             "content": {
               "application/json": {
                 "schema": {
@@ -43682,7 +43682,7 @@
       "post": {
         "operationId": "contacts_batch_research",
         "summary": "Batch research",
-        "description": "Batch research. Scope A_I_RESEARCH, org permission manage_contacts.",
+        "description": "Batch research. Scope AI_RESEARCH, org permission manage_contacts.",
         "tags": [
           "contacts"
         ],
@@ -43773,8 +43773,8 @@
     "/crm/contacts/{id}/link": {
       "post": {
         "operationId": "crm_link_c_r_m_contact",
-        "summary": "Link c r m contact",
-        "description": "Link c r m contact. Scope WRITE_C_R_M, org permission manage_contacts.",
+        "summary": "Link CRM contact",
+        "description": "Link CRM contact. Scope WRITE_CRM, org permission manage_contacts.",
         "tags": [
           "crm"
         ],
@@ -43863,8 +43863,8 @@
     "/crm/contacts/{id}/refresh": {
       "post": {
         "operationId": "crm_refresh_c_r_m_contact",
-        "summary": "Refresh c r m contact",
-        "description": "Refresh c r m contact. Scope READ_C_R_M, org permission view_contacts.",
+        "summary": "Refresh CRM contact",
+        "description": "Refresh CRM contact. Scope READ_CRM, org permission view_contacts.",
         "tags": [
           "crm"
         ],
@@ -43953,8 +43953,8 @@
     "/crm/lists/import": {
       "post": {
         "operationId": "crm_import_c_r_m_list",
-        "summary": "Import c r m list",
-        "description": "Import c r m list. Scope WRITE_CONTACTS, org permission manage_contacts.",
+        "summary": "Import CRM list",
+        "description": "Import CRM list. Scope WRITE_CONTACTS, org permission manage_contacts.",
         "tags": [
           "crm"
         ],
@@ -44056,8 +44056,8 @@
     "/crm/lists/preview": {
       "post": {
         "operationId": "crm_preview_c_r_m_import",
-        "summary": "Preview c r m import",
-        "description": "Preview c r m import. Scope WRITE_CONTACTS, org permission manage_contacts.",
+        "summary": "Preview CRM import",
+        "description": "Preview CRM import. Scope WRITE_CONTACTS, org permission manage_contacts.",
         "tags": [
           "crm"
         ],
@@ -44159,8 +44159,8 @@
     "/crm/sync/discard": {
       "post": {
         "operationId": "crm_discard_c_r_m_sync_failures",
-        "summary": "Discard c r m sync failures",
-        "description": "Discard c r m sync failures. Scope INTEGRATIONS, org permission manage_settings.",
+        "summary": "Discard CRM sync failures",
+        "description": "Discard CRM sync failures. Scope INTEGRATIONS, org permission manage_settings.",
         "tags": [
           "crm"
         ],
@@ -44260,8 +44260,8 @@
     "/crm/sync/retry": {
       "post": {
         "operationId": "crm_retry_c_r_m_sync_failures",
-        "summary": "Retry c r m sync failures",
-        "description": "Retry c r m sync failures. Scope INTEGRATIONS, org permission manage_settings.",
+        "summary": "Retry CRM sync failures",
+        "description": "Retry CRM sync failures. Scope INTEGRATIONS, org permission manage_settings.",
         "tags": [
           "crm"
         ],
@@ -44399,11 +44399,51 @@
         },
         "responses": {
           "200": {
-            "description": "Success.",
+            "description": "One row per mailbox. A refused mailbox (for example `purchased_mailbox`) is a row with `ok: false`; the status stays 200 and the other mailboxes are still deleted.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "required": [
+                    "succeeded",
+                    "failed",
+                    "results"
+                  ],
+                  "properties": {
+                    "succeeded": {
+                      "type": "integer"
+                    },
+                    "failed": {
+                      "type": "integer"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "ok"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "code": {
+                            "type": "string",
+                            "description": "Present when ok is false: the code the single delete route would answer."
+                          },
+                          "message": {
+                            "type": "string",
+                            "description": "Present when ok is false."
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -44949,7 +44989,7 @@
       "post": {
         "operationId": "mailboxes_verify_email_tracking_domain",
         "summary": "Verify email tracking domain",
-        "description": "Verify email tracking domain. Scope WRITE_EMAILS, org permission manage_emails.",
+        "description": "Verify email tracking domain. Repeating it re-resolves the saved domain, so it needs no Idempotency-Key; a key sent with it replays the first answer for 24 hours. Scope WRITE_EMAILS, org permission manage_emails.",
         "tags": [
           "mailboxes"
         ],
@@ -44973,11 +45013,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Success.",
+            "description": "The re-resolved tracking-domain state.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/MailboxTrackingDomain"
                 }
               }
             }
@@ -48327,8 +48367,8 @@
     "/oauth/application-logo": {
       "post": {
         "operationId": "oauth_upload_o_auth_app_logo",
-        "summary": "Upload o auth app logo",
-        "description": "Upload o auth app logo. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Refused for OAuth access tokens.",
+        "summary": "Upload OAuth app logo",
+        "description": "Upload OAuth app logo. Scope API_KEYS, org permission manage_api_keys. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -48429,8 +48469,8 @@
     "/oauth/applications/{id}/rotate-secret": {
       "post": {
         "operationId": "oauth_rotate_o_auth_application_secret",
-        "summary": "Rotate o auth application secret",
-        "description": "Rotate o auth application secret. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Needs a fresh authentication. Refused for OAuth access tokens.",
+        "summary": "Rotate OAuth application secret",
+        "description": "Rotate OAuth application secret. Scope API_KEYS, org permission manage_api_keys. Needs a fresh authentication. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -48519,8 +48559,8 @@
     "/oauth/applications/{id}/webhook-secret/rotate": {
       "post": {
         "operationId": "oauth_rotate_o_auth_app_webhook_secret",
-        "summary": "Rotate o auth app webhook secret",
-        "description": "Rotate o auth app webhook secret. Scope A_P_I_KEYS, org permission manage_a_p_i_keys. Needs a fresh authentication. Refused for OAuth access tokens.",
+        "summary": "Rotate OAuth app webhook secret",
+        "description": "Rotate OAuth app webhook secret. Scope API_KEYS, org permission manage_api_keys. Needs a fresh authentication. Refused for OAuth access tokens.",
         "tags": [
           "oauth"
         ],
@@ -49384,11 +49424,82 @@
         },
         "responses": {
           "200": {
-            "description": "Success.",
+            "description": "A draft in `text`, or a clarifying `question` when the purpose of the email is unclear; never both.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "required": [
+                    "grounding",
+                    "tokens_used",
+                    "model",
+                    "credits_charged",
+                    "credits_remaining",
+                    "charged_usd",
+                    "balance_usd"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "description": "The drafted email body. Absent when `question` is set."
+                    },
+                    "question": {
+                      "type": "string",
+                      "description": "One question to ask the user before drafting. Absent when `text` is set."
+                    },
+                    "grounding": {
+                      "type": "object",
+                      "required": [
+                        "contact",
+                        "history",
+                        "voice_profile"
+                      ],
+                      "properties": {
+                        "contact": {
+                          "type": "boolean",
+                          "description": "A contact record for the recipient fed the draft."
+                        },
+                        "history": {
+                          "type": "integer",
+                          "description": "Messages of earlier correspondence with the recipient that fed the draft."
+                        },
+                        "voice_profile": {
+                          "type": "boolean",
+                          "description": "The workspace voice profile fed the draft."
+                        }
+                      }
+                    },
+                    "tokens_used": {
+                      "type": "integer"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "credits_charged": {
+                      "type": "integer"
+                    },
+                    "credits_remaining": {
+                      "type": "integer"
+                    },
+                    "charged_usd": {
+                      "type": "number"
+                    },
+                    "balance_usd": {
+                      "type": "number"
+                    }
+                  },
+                  "oneOf": [
+                    {
+                      "required": [
+                        "text"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "question"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -49721,8 +49832,8 @@
     "/crm/owners/{externalId}": {
       "put": {
         "operationId": "crm_map_c_r_m_owner",
-        "summary": "Map c r m owner",
-        "description": "Map c r m owner. Scope INTEGRATIONS, org permission manage_settings.",
+        "summary": "Map CRM owner",
+        "description": "Map CRM owner. Scope INTEGRATIONS, org permission manage_settings.",
         "tags": [
           "crm"
         ],
@@ -49843,21 +49954,38 @@
                 "type": "object",
                 "properties": {
                   "thread_id": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 998
                   },
                   "body": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000,
+                    "description": "Plain text reply."
                   },
                   "source": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[A-Za-z0-9._-]+$",
+                    "description": "Short label naming the tool that wrote the draft, kept as the draft's model."
                   },
                   "intent_class": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 40
                   },
                   "confidence": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
                   }
-                }
+                },
+                "required": [
+                  "thread_id",
+                  "body",
+                  "source"
+                ]
               }
             }
           }
@@ -54916,7 +55044,7 @@
       "post": {
         "operationId": "campaigns_approve_review_leads",
         "summary": "Approve waiting leads",
-        "description": "Releases leads waiting for review, so their first email goes out under the campaign's schedule and limits. Send contact_ids (up to 500) or all. Approving a lead that is not waiting changes nothing, so retrying the same contact_ids is safe. all approves whoever is waiting when it runs, so a repeated all also approves leads that started waiting since the first call; retry with the contact_ids you meant instead. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
+        "description": "Releases leads waiting for review, so their first email goes out under the campaign's schedule and limits. Send contact_ids (up to 500) or all. Each listed contact is approved if it is waiting when the request runs, and a contact that is not waiting is left as it is. A repeated call therefore also approves a listed contact put back into review since the first call; send an Idempotency-Key so a retry replays the first answer instead of running again, and on 409 idempotency_outcome_unknown read the leads back before approving again. all approves whoever is waiting when it runs, so a repeated all also approves leads that started waiting since the first call; to approve a fixed set, send the contact_ids you meant rather than rebuilding them from the current waiting list. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -55682,6 +55810,16 @@
               }
             }
           },
+          "409": {
+            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limited, or usage_cap_exceeded past a spend limit.",
             "content": {
@@ -55694,16 +55832,6 @@
           },
           "503": {
             "description": "ai_unavailable (no AI provider; nothing is charged) or ai_generation_failed (the failed block is not charged, though a web lookup it made can be; blocks written before it stay written and charged).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "lead_step_sent: this lead already received this email, or it is being sent now, so its copy can no longer change.",
             "content": {
               "application/json": {
                 "schema": {
@@ -55776,7 +55904,7 @@
             }
           },
           "404": {
-            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "description": "Not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -56215,7 +56343,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/StoreOrderConflict"
                 }
               }
             }
@@ -56307,7 +56435,7 @@
             }
           },
           "404": {
-            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "description": "Not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -56395,7 +56523,7 @@
             }
           },
           "404": {
-            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "description": "Not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -56493,7 +56621,7 @@
             }
           },
           "404": {
-            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "description": "Not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -57874,7 +58002,7 @@
             }
           },
           "404": {
-            "description": "Not found, or store_disabled when the instance has no GraphKit API key.",
+            "description": "Not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -58614,7 +58742,7 @@
         "name": "Idempotency-Key",
         "in": "header",
         "required": false,
-        "description": "Optional client-generated key (1-255 chars). A retried request with the same key, method, path, and body replays the original response instead of acting twice.",
+        "description": "Optional client-generated key (1-255 visible ASCII characters), kept for 24 hours. A retry with the same key from the same credential, with the same method, path, query and body, replays the original response with X-Idempotent-Replayed: true instead of acting twice; the same key on any other request answers 409. A request that ended in a server error, was abandoned by its caller or never finished has an unknown outcome: its key answers 409 idempotency_outcome_unknown and does not run it again, so retry with a new key only once you know the change did not happen.",
         "schema": {
           "type": "string",
           "maxLength": 255
@@ -58731,7 +58859,7 @@
       },
       "Error": {
         "type": "object",
-        "description": "Standard error envelope returned for every 4xx/5xx response.",
+        "description": "Standard error envelope returned for every 4xx/5xx response except 499 (the caller disconnected first), which has no body.",
         "required": [
           "error",
           "code"
@@ -58883,6 +59011,10 @@
           "expires_in": {
             "type": "integer",
             "description": "Seconds until pending_token expires."
+          },
+          "token": {
+            "$ref": "#/components/schemas/TokenPair",
+            "description": "The access/refresh token pair. Present only when the sign-in completed."
           }
         }
       },
@@ -59956,11 +60088,53 @@
             ],
             "format": "date-time",
             "description": "Null until the CNAME resolves to the tracking host."
+          },
+          "cname_target": {
+            "type": "string",
+            "description": "The value the CNAME must point at: this deployment's tracking host. Empty when the deployment has no tracking host."
+          },
+          "txt_name": {
+            "type": "string",
+            "description": "Name of the ownership TXT record a host the workspace has not verified before needs beside the CNAME. Omitted when no tracking domain is set."
+          },
+          "txt_value": {
+            "type": "string",
+            "description": "Value of that ownership TXT record. Omitted when no tracking domain is set."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "unset",
+              "no_target",
+              "not_found",
+              "wrong_target",
+              "proof_missing",
+              "lookup_error",
+              "pending"
+            ],
+            "description": "Machine-readable verdict. pending is stored state that GET has not re-resolved; proof_missing means the CNAME is right but the ownership TXT record is not published yet."
+          },
+          "message": {
+            "type": "string",
+            "description": "One sentence explaining status, safe to show as is."
+          },
+          "observed": {
+            "type": "string",
+            "description": "What DNS returned for the domain, when a lookup ran."
+          },
+          "tracking_host_unresolvable": {
+            "type": "boolean",
+            "description": "The record is correct but this deployment's tracking host has no DNS record of its own."
           }
         },
         "required": [
           "tracking_domain",
-          "tracking_domain_verified"
+          "tracking_domain_verified",
+          "cname_target",
+          "status",
+          "message",
+          "tracking_host_unresolvable"
         ]
       },
       "MailboxAuthCheck": {
@@ -60036,6 +60210,10 @@
               "type": "string"
             },
             "description": "The same skip list the mailbox carries to its worker; present when non-empty."
+          },
+          "full_check_seconds": {
+            "type": "integer",
+            "description": "Seconds between full checks of every followed folder. Omitted when zero, which leaves the worker's default."
           }
         },
         "required": [
@@ -60098,6 +60276,11 @@
           "last_synced_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "folder_coverage_observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the worker last reported which folders it could follow. Orders the skipped-folder counters independently of last_synced_at and does not mean a sync completed. Omitted until a worker reports folder coverage."
           }
         },
         "required": [
@@ -63340,7 +63523,7 @@
       },
       "ContactSuppression": {
         "type": "object",
-        "description": "Suppression state for the contact's email. Null when not suppressed.",
+        "description": "Suppression state for the contact's email. The contact detail omits suppression when the email is not suppressed.",
         "required": [
           "reason",
           "source",
@@ -69319,7 +69502,7 @@
       },
       "AuditLog": {
         "type": "object",
-        "description": "One organization audit-trail entry. actor is null when the acting user has since been deleted; entity_id, changes, and metadata are omitted when empty.",
+        "description": "One organization audit-trail entry. actor is omitted when the acting user has since been deleted; entity_id, changes, and metadata are omitted when empty.",
         "required": [
           "id",
           "org_id",
@@ -72373,9 +72556,11 @@
         "type": "object",
         "properties": {
           "until": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "nullable": true,
             "description": "When the hold lifts. Must be in the future and within a year. Omit or null for a hold with no end."
           },
           "reason": {
@@ -74542,6 +74727,21 @@
             "maximum": 365,
             "description": "Only mailboxes with no finished placement test in this many days."
           }
+        },
+        "if": {
+          "properties": {
+            "type": {
+              "const": "campaign"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        "then": {
+          "required": [
+            "campaign_id"
+          ]
         }
       },
       "PlacementSample": {
@@ -74660,8 +74860,7 @@
           "pace": {
             "type": "string",
             "enum": [
-              "spaced",
-              "quick"
+              "spaced"
             ],
             "default": "spaced",
             "description": "A batch always sends spaced; quick is refused with a 400."
@@ -74680,7 +74879,34 @@
             "minimum": 0,
             "description": "The most credits you agree to pay across the whole batch for tests past the month's free ones. Needed only when the batch needs more tests than are free; the batch never spends more."
           }
-        }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "sender_account_ids"
+            ],
+            "properties": {
+              "sender_account_ids": {
+                "minItems": 1
+              }
+            },
+            "not": {
+              "required": [
+                "sender_scope"
+              ]
+            }
+          },
+          {
+            "required": [
+              "sender_scope"
+            ],
+            "properties": {
+              "sender_account_ids": {
+                "maxItems": 0
+              }
+            }
+          }
+        ]
       },
       "PlacementBatch": {
         "type": "object",
@@ -76940,7 +77166,7 @@
       },
       "MailboxOAuthGrant": {
         "type": "object",
-        "description": "A sign-in the workspace's own OAuth app completed. Send exactly one of `refresh_token` or `code`.",
+        "description": "A sign-in the workspace's own OAuth app completed. Send exactly one of `refresh_token`, or `code` with the `redirect_uri` it was issued for; `code_verifier` is optional.",
         "required": [
           "provider"
         ],
@@ -76976,7 +77202,55 @@
             "format": "email",
             "description": "When set, the address the sign-in must belong to."
           }
-        }
+        },
+        "oneOf": [
+          {
+            "title": "Refresh token",
+            "required": [
+              "refresh_token"
+            ],
+            "properties": {
+              "refresh_token": {
+                "minLength": 1
+              }
+            },
+            "not": {
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          {
+            "title": "Authorization code",
+            "required": [
+              "code",
+              "redirect_uri"
+            ],
+            "properties": {
+              "code": {
+                "minLength": 1
+              },
+              "redirect_uri": {
+                "minLength": 1
+              }
+            },
+            "not": {
+              "required": [
+                "refresh_token"
+              ],
+              "properties": {
+                "refresh_token": {
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
       },
       "MailboxConnectGrantRequest": {
         "allOf": [
@@ -79749,7 +80023,18 @@
       "AgencyClientUpdate": {
         "type": "object",
         "description": "Only the fields sent change; a body with neither is refused. `null` removes that cap.",
-        "minProperties": 1,
+        "anyOf": [
+          {
+            "required": [
+              "monthly_send_limit"
+            ]
+          },
+          {
+            "required": [
+              "monthly_ai_limit_usd"
+            ]
+          }
+        ],
         "properties": {
           "monthly_send_limit": {
             "type": [
@@ -82802,6 +83087,28 @@
           "email_account_id",
           "enablement",
           "managed"
+        ]
+      },
+      "StoreOrderConflict": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Error"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "details": {
+                "type": "object",
+                "description": "Present with code price_changed.",
+                "properties": {
+                  "quote": {
+                    "$ref": "#/components/schemas/StoreQuote",
+                    "description": "A fresh quote to show and confirm before ordering again."
+                  }
+                }
+              }
+            }
+          }
         ]
       }
     }
