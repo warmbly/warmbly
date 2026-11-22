@@ -26,6 +26,8 @@ var sendOperations = map[string]string{
 	"POST /placement/tests":                                  "sends to seed inboxes; use run_placement_test",
 	"POST /placement/batches":                                "sends to seed inboxes; use run_placement_batch",
 	"POST /integrations/connections/{id}/rotate-inbound-url": "returns a secret inbound URL; rotate it in the dashboard",
+	"POST /store/mailboxes/{id}/sign-in":                     "returns a mailbox password; show it in the dashboard",
+	"POST /store/domains/{id}/transfer-out":                  "returns a domain transfer code; get it in the dashboard",
 }
 
 // credentialOperations take a credential in a free-form body the schema cannot show.
