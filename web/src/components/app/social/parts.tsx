@@ -111,7 +111,7 @@ export function Meter({ usage, compact = false }: { usage: SocialUsage; compact?
     const pct = limit > 0 ? Math.min(100, Math.round((usage.today / limit) * 100)) : 0;
     const full = limit > 0 && usage.today >= limit;
     return (
-        <div className={cn("min-w-0", compact ? "w-[84px]" : "w-full")} title={`${actionPlural(usage.action)}: ${usage.today} of ${limit} today`}>
+        <div className={cn("min-w-0", compact ? "w-[116px]" : "w-full")} title={`${actionPlural(usage.action)}: ${usage.today} of ${limit} today`}>
             <div className="flex items-baseline justify-between gap-1">
                 <span className="text-[10.5px] text-slate-500 truncate">{actionPlural(usage.action)}</span>
                 <span className={cn("text-[10.5px] tabular-nums", full ? "text-amber-700 font-medium" : "text-slate-700")}>

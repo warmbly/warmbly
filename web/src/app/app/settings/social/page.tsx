@@ -215,8 +215,9 @@ function SocialAccounts() {
                             <table className="w-full min-w-[860px] text-left">
                                 <thead>
                                     <tr className="h-9 border-y border-slate-200 text-[10px] uppercase tracking-[0.14em] text-slate-400">
-                                        <th className="w-10 pl-4 md:pl-8">
+                                        <th className="w-px whitespace-nowrap pl-4 pr-3 md:pl-8">
                                             <Checkbox
+                                                className="flex"
                                                 checked={selected.size > 0 && selected.size === list.length}
                                                 ref={(el) => {
                                                     if (el) el.indeterminate = selected.size > 0 && selected.size < list.length;
@@ -225,9 +226,9 @@ function SocialAccounts() {
                                                 aria-label="Select every account"
                                             />
                                         </th>
-                                        <th className="font-medium">Account</th>
-                                        <th className="font-medium">Status</th>
-                                        <th className="font-medium">Today</th>
+                                        <th className="w-[360px] font-medium">Account</th>
+                                        <th className="w-[136px] font-medium">Status</th>
+                                        <th className="w-[272px] font-medium">Today</th>
                                         <th className="font-medium">Billing</th>
                                         <th className="w-12" />
                                     </tr>
@@ -367,10 +368,10 @@ function AccountRow({
     const sub = a.headline || a.username;
     return (
         <tr onClick={() => onOpen("overview")} className={cn("group h-16 border-b border-slate-200/60 cursor-pointer transition-colors", selected ? "bg-sky-50/40" : "hover:bg-slate-50/80")}>
-            <td className="pl-4 md:pl-8" onClick={(e) => e.stopPropagation()}>
-                <Checkbox checked={selected} onChange={onToggle} aria-label={`Select ${a.display_name}`} />
+            <td className="w-px pl-4 pr-3 md:pl-8" onClick={(e) => e.stopPropagation()}>
+                <Checkbox className="flex" checked={selected} onChange={onToggle} aria-label={`Select ${a.display_name}`} />
             </td>
-            <td className="pr-4 max-w-[320px]">
+            <td className="py-3 pr-4 max-w-[360px]">
                 <div className="flex items-center gap-3 min-w-0">
                     <span className="relative shrink-0">
                         <Avatar src={a.avatar_url} name={a.display_name} size={34} />
@@ -403,7 +404,7 @@ function AccountRow({
                 </div>
             </td>
             <td className="pr-4">
-                <div className="flex items-center gap-3">
+                <div className="grid w-[248px] grid-cols-2 gap-x-4 gap-y-2">
                     {meters.map((k) => (
                         <Meter key={k} usage={usageFor(a, k)} compact />
                     ))}
