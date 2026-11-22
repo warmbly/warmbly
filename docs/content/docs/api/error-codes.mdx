@@ -48,6 +48,7 @@ Admission denial before dispatch releases the send reservation without spending 
 | 409 | Conflict | Resource already exists |
 | 422 | Unprocessable | Validation failed |
 | 429 | Too Many Requests | Rate limit or AI usage cap exceeded (`rate_limit_exceeded`, `usage_cap_exceeded`), or too many placement tests or batches running at once (`placement_too_many_running`, `placement_too_many_batches`) |
+| 499 | Client Closed Request | The caller disconnected before the request finished and the work it started was cut short, so it is answered with this status instead of a `500`. It has no body and no `code`, and it is recorded as the caller's doing, not a server error. The caller has already gone, so it shows up in access logs rather than in a client. Whether a write took effect is unknown, so the same `Idempotency-Key` then answers `409 idempotency_outcome_unknown`, as after a `5xx` |
 
 ### Server errors (5xx)
 
@@ -461,7 +462,7 @@ The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) routes (
 | `google_delegation_unauthorized` | 400 | Google refused the domain-wide delegation, or accepted it and refused the call: the client ID or a scope is missing from the Admin console entry, an OAuth client ID was entered instead of the service account's numeric one, or the admin address is not a super administrator. Admin console changes can take a few minutes to apply. See [when Google refuses](/development/whole-domain-connect/#when-google-refuses) |
 | `microsoft_consent_missing` | 400 | The Microsoft 365 organization has not granted admin consent, does not exist, or the consent lacks `Mail.ReadWrite`, `Mail.Send` or `User.Read.All`; or the consent sign-in did not complete or name the organization. A Global Administrator connects it again, and again after the app's permissions change. See [when Microsoft refuses](/development/whole-domain-connect/#when-microsoft-refuses) |
 | `mailbox_grant_state_invalid` | 400 | The Google sign-in or Microsoft consent `state` expired (15 minutes), was already used, or was started by another member or workspace, or Google did not accept the sign-in. Start again |
-| `mailbox_grant_proof_missing` | 400 | The workspace has not proved it controls the Google Workspace domain: the `_warmbly.<domain>` `TXT` record does not hold this workspace's `warmbly-verify=` value yet, or the Google sign-in was not the admin address entered on that domain. Also returned when the directory does not list the admin address as a super administrator, and for a Microsoft 365 consent signed in by someone without the Global Administrator or Privileged Role Administrator role. Publish the record (DNS can take a while to appear) or sign in as that administrator, then finish again |
+| `mailbox_grant_proof_missing` | 400 | The workspace has not proved it controls the Google Workspace domain: the `_warmbly.<domain>` `TXT` record does not hold this workspace's `warmbly-verify=` value yet, or the Google sign-in was not the admin address entered on that domain. Also returned when the directory does not list the admin address as a super administrator, and, with status `403`, for a Microsoft 365 consent signed in by someone without the Global Administrator or Privileged Role Administrator role. Publish the record (DNS can take a while to appear) or sign in as that administrator, then finish again |
 | `mailbox_grant_unavailable` | 503 | Google, Microsoft or the DNS lookup for the proof did not answer. Nothing was recorded or changed, and a grant's status is left as it was. Try again in a minute |
 | `mailbox_grant_domain_mismatch` | 400 | The admin address is not on the domain entered, or the mailbox is on a domain the grant does not cover |
 | `mailbox_grant_mailbox_unreachable` | 400 | Google or Microsoft has no mailbox for the account: it does not exist, is suspended or disabled, or has no Exchange Online license |
@@ -810,6 +811,11 @@ The [Buy mailboxes](/guides/buy-mailboxes/) routes (`/store/*`, see [domains and
 | `store_managed_by_partner` | 403 | A write to the store from a workspace a partner manages. Its domains and mailboxes are bought through the partner, and `GET /store/status` answers `enabled: false` |
 | `store_disabled` | 404 | The instance has no GraphKit API key configured, so nothing can be bought or changed. The message says an instance admin adds the key under **Setup and health > Integrations** in the admin panel. `GET /store/status` answers `enabled: false` with `reason: not_configured` instead, and the list reads keep answering |
 | `store_configured_by_environment` | 409 | `PUT`, `DELETE /admin/store/connection` or `POST /admin/store/connection/test` while `GRAPHKIT_API_KEY` (or `GRAPHKIT_API_URL=fake`) is set. The environment takes precedence; change it there |
+| `store_unmetered` | 409 | `POST /admin/store/orders/:id/refund` on an instance that charges nothing for the store, so there is nothing to refund |
+| `refund_exceeds_charge` | 422 | `POST /admin/store/orders/:id/refund` with an `amount_micros` above what is left to refund on the order. The `message` says how much is left |
+| `invalid_line` | 400 | `POST /admin/store/orders/:id/refund` with a `line` the order has no charged line for |
+| `idempotency_key_required` | 400 | `POST /admin/store/orders/:id/refund` with an `amount_micros` and no `Idempotency-Key` header. A refund of a `line` needs none |
+| `invalid_body` | 400 | `POST /admin/store/orders/:id/refund` naming neither a `line` nor a positive `amount_micros`, or `PATCH /admin/store/domains/:id` without `auto_renew` as `true` or `false` |
 | `store_sealing_unavailable` | 409 | `PUT /admin/store/connection` on an instance without `CREDENTIALS_ENCRYPTION_KEY`. The GraphKit API key is stored sealed under it, so set it first |
 | `graphkit_url_invalid` | 400 | The GraphKit API URL given to `/admin/store/connection` is not an `https` address |
 | `graphkit_key_required` | 400 | `PUT` or `POST /admin/store/connection/test` with no API key, and none stored |
@@ -829,11 +835,13 @@ The [Buy mailboxes](/guides/buy-mailboxes/) routes (`/store/*`, see [domains and
 | `dns_record_managed` | 409 | Editing or deleting a `managed` DNS record, which Warmbly keeps for mail delivery and forwarding |
 | `dns_not_hosted` | 409 | A DNS write on a domain connected with `method` `manual`. Its DNS provider holds the records, so change them there |
 | `sign_in_unavailable` | 409 | `POST /store/mailboxes/:id/sign-in` for a mailbox that has no sign-in to show |
+| `mailbox_grant_not_configured` | 400 or 422 | `POST /store/domains/:id/microsoft-consent` on an instance without a Microsoft app for admin grants. The same route answers `mailbox_grant_domain_mismatch` (400) for a name that is not a domain and `mailbox_grant_unavailable` (503) when Microsoft did not answer; see [mailbox source refusals](#mailbox-source-refusals) |
 | `photo_invalid` | 400 | `POST /store/photos`: the upload is not a PNG or JPG photo the store can use (up to 2 MB and 2048 px on each side) |
 | `photo_not_found` | 400 | A quote's `photo_id`, or `PUT /store/mailboxes/:id/photo`, names a photo this workspace does not have, or one deleted because nothing used it for 24 hours. Upload it again |
 | `profile_photo_missing` | 404 | `POST /store/photos` with `{"from": "profile"}` when the caller has no uploaded profile photo |
 | `photo_limit_reached` | 429 | More than 200 photos uploaded in a day |
 | `photo_storage_unavailable` | 503 | The instance has no file storage, so it cannot keep photos |
+| `invalid_body` | 400 | `POST /store/orders` without a `quote_id`, `POST /store/photos` with a JSON body other than `{"from": "profile"}`, or `PUT /store/mailboxes/:id/photo` without a `photo_id`. The `message` says what to send |
 | `store_state_conflict` | 409 | The domain or mailbox is not in a state that allows the change right now. Refresh it and try again |
 | `mailbox_exists` | 409 | An address in the order already exists on that domain |
 | `domain_not_ready` | 409 | Mailboxes were added to a purchased domain that is still being set up, or to a connected domain whose `connection.status` is not `active` yet, or a change was asked of a domain in a state that does not allow it. Try again once it is active |
@@ -1242,7 +1250,7 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `approval_not_pending` | 409 | `POST /ai/sessions/:id/approve` named a tool call the conversation is not waiting on: it was already decided, in another tab or in Slack, or a newer message replaced it |
 | `payment_method_required` | 409 | `POST /subscription/balance/top-up`, or turning on automatic reload with `PATCH /subscription/balance/auto-reload`, with no saved card. Save one with `POST /subscription/balance/payment-method`, or pay through `POST /subscription/balance/checkout` |
 | `charge_in_progress` | 409 | `POST /subscription/balance/top-up` while another payment for the workspace is still going through. Try again in a minute |
-| `idempotency_outcome_unknown` | 409 | The request that first used this `Idempotency-Key` ended in a server error or never finished, so whether it took effect is unknown and it is not run again while the key is kept (24 hours). Retry with a new key only once you have established that the change did not happen. See [retry safety](/api/endpoints/#retry-safety) |
+| `idempotency_outcome_unknown` | 409 | The request that first used this `Idempotency-Key` ended in a server error, was abandoned by its caller (`499`) or never finished, so whether it took effect is unknown and it is not run again while the key is kept (24 hours). Retry with a new key only once you have established that the change did not happen. See [retry safety](/api/endpoints/#retry-safety) |
 | `mailbox_cloud_unenroll_failed` | 409 | The mailbox is linked to [Warmbly Cloud](/guides/warmbly-cloud/) and its link could not be released, so `DELETE /emails/{id}` would leave Warmbly Cloud holding its credential or its claim on it. The mailbox record remains, and restoration onto its worker is attempted |
 | `fleet_max_ceiling_missing` | 409 | `PATCH /admin/fleet/scale` on a worker Auto Scaling Group without a `warmbly:max-ceiling` tag. Apply the workers Terraform root, which sets it |
 
@@ -1698,7 +1706,7 @@ async function requestWithRetry(url, options, maxRetries = 3) {
 }
 ```
 
-A retry of a write that carries an `Idempotency-Key` answers with whatever the first attempt recorded. A `429` leaves the key as it was, so the same key runs the request unless an earlier attempt already recorded an outcome. A `5xx` from a request that reached the operation makes the same key answer `409 idempotency_outcome_unknown` instead of running it again; a `5xx` from a gateway the request never got past leaves the key unused, so the retry runs it for the first time. On `idempotency_outcome_unknown`, stop retrying and use a new key only once you have established that the change did not happen. See [retry safety](/api/endpoints/#retry-safety).
+A retry of a write that carries an `Idempotency-Key` answers with whatever the first attempt recorded. A `429` leaves the key as it was, so the same key runs the request unless an earlier attempt already recorded an outcome. A `5xx` from a request that reached the operation, or a `499` because the caller disconnected before it finished, makes the same key answer `409 idempotency_outcome_unknown` instead of running it again; a `5xx` from a gateway the request never got past leaves the key unused, so the retry runs it for the first time. On `idempotency_outcome_unknown`, stop retrying and use a new key only once you have established that the change did not happen. See [retry safety](/api/endpoints/#retry-safety).
 
 ### Parse error responses
 

@@ -184,7 +184,7 @@
         "required": ["event_type", "seq"],
         "description": "Invalidation-oriented: the body carries ids, not full resource state. Refetch over REST for current contents. Permission- and intent-filtered identically for live and replayed events.",
         "properties": {
-          "event_type": { "type": "string", "description": "e.g. AUDIT_CREATED, CAMPAIGN_UPDATED, CAMPAIGN_PAUSED, EMAIL_SENT, EMAIL_BOUNCED, EMAIL_RECEIVED. Also the frame event name." },
+          "event_type": { "type": "string", "description": "e.g. AUDIT_CREATED, CAMPAIGN_UPDATED, CAMPAIGN_PAUSED, EMAIL_SENT, EMAIL_BOUNCED, EMAIL_RECEIVED, STORE_ORDER_UPDATED, STORE_DOMAIN_UPDATED, STORE_MAILBOX_UPDATED. Also the frame event name." },
           "seq": { "type": "integer", "description": "Monotonic per-organization sequence. Track the highest seen; dedupe replays by it." },
           "org_id": { "type": "string", "format": "uuid" },
           "user_id": { "type": "string", "format": "uuid" },
