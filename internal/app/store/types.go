@@ -29,6 +29,8 @@ type Status struct {
 	Configured bool `json:"configured"`
 	// Reason says why Enabled is false: ReasonNotConfigured or ReasonPartnerManaged.
 	Reason string `json:"reason,omitempty"`
+	// SalesPaused is set while the operator has paused new purchases; everything already bought keeps working.
+	SalesPaused bool `json:"sales_paused"`
 	// Locked is set with ReasonNotConfigured on a self-host, which shows buying as a feature to set up; a hosted instance hides it.
 	Locked bool `json:"locked"`
 	// CanConfigure is set with Locked for an instance admin who may add the GraphKit API key.

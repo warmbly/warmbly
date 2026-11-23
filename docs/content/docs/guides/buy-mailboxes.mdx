@@ -490,6 +490,10 @@ Purchased domains, domains you connected here, and mailbox subscriptions do not 
 
 <Fold>
 
+## When buying is paused
+
+Buying new domains and mailboxes can be paused for a while. When it is, **Buy new mailboxes** stays in the **Add account** menu, marked **Paused**, with the line "Will be available again soon", and the buy page says the same. Nothing you already bought changes: your domains renew, your mailboxes keep working and are billed as usual, and **Orders** still shows every order. You can keep connecting mailboxes you already have. On a self-hosted instance the operator turns the pause on and off; see [configuration](/development/configuration/#pausing-new-purchases).
+
 ## Self-hosted instances
 
 On a self-hosted instance, buying needs one thing from the operator: a GraphKit API key. Until it is added, **Buy new mailboxes** shows with a lock under **Add account**, and the buy page says a key is needed. An instance admin gets a button to **Setup and health > Integrations** in the admin panel, where the key goes; anyone else can copy a short note asking their operator to add it. The operator can set `GRAPHKIT_API_KEY` in the environment instead, which takes precedence. See [configuration](/development/configuration/#adding-the-key-in-the-admin-panel). The locked state is shown only on an instance whose `DEPLOYMENT_MODE` is self-hosted (or that falls back to it with `BILLING_PROVIDER=none`); a hosted instance without a key shows no store at all.

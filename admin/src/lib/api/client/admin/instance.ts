@@ -231,6 +231,8 @@ export interface StoreSettings {
     social_seat_agency_micros?: number;
     /** The same price on the Agency Pro plan and its client workspaces. */
     social_seat_agency_pro_micros?: number;
+    /** New domain and mailbox purchases are refused; what is already bought keeps renewing. Absent from an older backend. */
+    sales_paused?: boolean;
 }
 
 export interface UsageSettings {

@@ -478,6 +478,7 @@ const STORE_DEFAULTS: StoreSettings = {
     social_seat_monthly_micros: 49_000_000,
     social_seat_agency_micros: 32_000_000,
     social_seat_agency_pro_micros: 19_000_000,
+    sales_paused: false,
 };
 
 interface StoreForm {
@@ -489,6 +490,7 @@ interface StoreForm {
     socialSeat: string;
     socialAgency: string;
     socialAgencyPro: string;
+    salesPaused: boolean;
 }
 
 function microsToDollars(micros: number): string {
@@ -511,6 +513,7 @@ function toStoreForm(s: StoreSettings | undefined): StoreForm {
         socialSeat: microsToDollars(store.social_seat_monthly_micros ?? 49_000_000),
         socialAgency: microsToDollars(store.social_seat_agency_micros ?? 32_000_000),
         socialAgencyPro: microsToDollars(store.social_seat_agency_pro_micros ?? 19_000_000),
+        salesPaused: store.sales_paused === true,
     };
 }
 
@@ -857,6 +860,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 social_seat_monthly_micros: dollarsToMicros(form.store.socialSeat),
                 social_seat_agency_micros: dollarsToMicros(form.store.socialAgency),
                 social_seat_agency_pro_micros: dollarsToMicros(form.store.socialAgencyPro),
+                sales_paused: form.store.salesPaused,
             },
         });
     }
@@ -1350,6 +1354,15 @@ function StorePricingGroup({
                 </>
             }
         >
+            <SettingsRow
+                label="Pause new purchases"
+                description="On, nobody can buy a new domain or mailbox, or connect a domain for new mailboxes. The dashboard keeps the Buy new mailboxes row in the Add account menu and says it will be available again soon. Everything already bought keeps renewing, billing and connecting, and social accounts are not affected."
+            >
+                <Switch
+                    checked={store.salesPaused}
+                    onCheckedChange={(v) => onChange({ ...store, salesPaused: v })}
+                />
+            </SettingsRow>
             <NumberRow
                 id="store-mailbox-monthly"
                 label="Mailbox price ($ per month)"

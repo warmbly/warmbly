@@ -296,6 +296,9 @@ func (s *Service) requireBuyer(ctx context.Context, orgID uuid.UUID) error {
 	if s.managed(ctx, orgID) {
 		return errManaged
 	}
+	if s.retail(ctx).SalesPaused {
+		return errSalesPaused
+	}
 	ok, err := s.planActive(ctx, orgID)
 	if err != nil {
 		return err
@@ -352,7 +355,7 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 		return off, nil
 	}
 	r := s.retail(ctx)
-	out := &Status{Enabled: true, Configured: true, Metered: s.metered(), Currency: "USD", MailboxMonthlyMicros: r.MailboxMonthly(),
+	out := &Status{Enabled: true, Configured: true, SalesPaused: r.SalesPaused, Metered: s.metered(), Currency: "USD", MailboxMonthlyMicros: r.MailboxMonthly(),
 		DomainMarkup: "at_cost", Limits: defaultLimits, Providers: []string{graphkit.ProviderGoogle, graphkit.ProviderMicrosoft}}
 	if !atCost(r) {
 		out.DomainMarkup = "markup"

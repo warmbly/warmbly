@@ -7,6 +7,7 @@ import { REGISTRANT_FIELDS, type RegistrantField } from "./registrant";
 
 const COPY: Record<string, string> = {
     store_disabled: "Buying domains and mailboxes is not available on this workspace.",
+    store_sales_paused: "Buying new mailboxes is paused for now. It will be available again soon.",
     store_unavailable: "The store is taking a moment. Try again shortly.",
     rate_limited: "Too many requests at once. Wait a moment and try again.",
     registrant_required: "Add the domain registrant's details to see the total.",

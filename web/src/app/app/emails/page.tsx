@@ -211,7 +211,7 @@ export default function AddressesPage() {
     const { connected: cloudConnected, rowFor: cloudRowFor, unavailable: cloudUnavailable } = cloud;
     const authConfig = useAuthConfig();
     const authConfigLoading = authConfig.isLoading;
-    const storeOn = useStoreEnabled(canView).enabled;
+    const storeOn = useStoreEnabled(canView).selling;
     const emptyCopy = addMailboxesCopy({ partner: usePartnerManaged(), storeOn, writable: useWorkspaceWritable().writable });
 
     // One query for the whole surface; each row reads its own advice out of the

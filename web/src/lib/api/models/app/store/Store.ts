@@ -34,6 +34,8 @@ export interface StoreDisconnected {
 
 export interface StoreStatus {
     enabled: boolean;
+    /** The operator paused new purchases; everything already bought keeps working. Absent from an older backend. */
+    sales_paused?: boolean;
     /** The instance has a GraphKit connection (independent of this workspace); absent from an older backend. */
     configured?: boolean;
     /** Why enabled is false; absent when enabled. */

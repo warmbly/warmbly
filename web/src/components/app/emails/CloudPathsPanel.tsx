@@ -24,7 +24,7 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
     const access = useFeatureAccess();
     const hosted = authConfig.data?.self_hosted === false;
     const instances = usePoolLinkInstances(hosted);
-    const storeOn = useStoreEnabled(hosted).enabled;
+    const storeOn = useStoreEnabled(hosted).selling;
     const partner = usePartnerManaged();
     const workspace = useWorkspaceWritable();
     const copy = addMailboxesCopy({ partner, storeOn, writable: workspace.writable });

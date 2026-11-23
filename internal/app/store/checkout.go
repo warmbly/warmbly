@@ -233,7 +233,8 @@ func (s *Service) quote(ctx context.Context, orgID uuid.UUID, items []graphkit.Q
 // again, and a different total is refused with the fresh quote. One quote,
 // however often it is retried or priced again, yields at most one order.
 func (s *Service) PlaceOrder(ctx context.Context, orgID, userID uuid.UUID, in OrderRequest) (*Order, error) {
-	if err := s.requireBuyer(ctx, orgID); err != nil {
+	// A retry of an order already placed finishes it while sales are paused.
+	if err := s.requireBuyer(ctx, orgID); err != nil && (!errors.Is(err, errSalesPaused) || !s.quoteOrdered(ctx, orgID, in.QuoteID)) {
 		return nil, err
 	}
 	fwd, xerr := cleanForwarding(in.ForwardingURL)
@@ -331,6 +332,16 @@ func (s *Service) placeOrder(ctx context.Context, orgID, userID uuid.UUID, in Or
 		s.adoptAutoReload(ctx, orgID, in.EnableAutoReload)
 	}
 	return o, err
+}
+
+// quoteOrdered reports a quote that already made an order.
+func (s *Service) quoteOrdered(ctx context.Context, orgID, quoteID uuid.UUID) bool {
+	q, err := s.currentQuote(ctx, orgID, quoteID)
+	if err != nil || q == nil {
+		return false
+	}
+	row, err := s.Repo.GetOrderByQuote(ctx, orgID, q.ID)
+	return err == nil && row != nil
 }
 
 func (s *Service) orderForQuote(ctx context.Context, orgID, quoteID uuid.UUID) (*Order, error) {

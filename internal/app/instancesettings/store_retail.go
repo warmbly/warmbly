@@ -16,6 +16,8 @@ type StoreRetail struct {
 	SocialSeatMonthlyMicros   *int64 `json:"social_seat_monthly_micros"`
 	SocialSeatAgencyMicros    *int64 `json:"social_seat_agency_micros"`
 	SocialSeatAgencyProMicros *int64 `json:"social_seat_agency_pro_micros"`
+	// SalesPaused refuses new domain and mailbox purchases; what is already bought keeps renewing and billing.
+	SalesPaused bool `json:"sales_paused"`
 }
 
 const (

@@ -154,6 +154,7 @@ func instanceSettingsAuditDetails(doc instancesettings.Document) map[string]any 
 		"invitations_links_enabled":          doc.Invitations.LinksEnabled,
 		"invitations_ttl_hours":              doc.Invitations.TTLHours,
 		"access_allow_invited_signup":        doc.Access.AllowInvitedSignup,
+		"store_sales_paused":                 doc.Store.SalesPaused,
 		"sync_backfill_days":                 doc.Sync.BackfillDays,
 		"sync_backfill_messages":             doc.Sync.BackfillMessages,
 		"sync_daily_messages_mailbox":        doc.Sync.DailyMessagesPerMailbox,
