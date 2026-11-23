@@ -164,7 +164,8 @@ function fmtDay(iso: string | Date | undefined, tz: string): string {
     const dayOpts: Intl.DateTimeFormatOptions = withinWeek
         ? { weekday: "short", timeZone: tz }
         : { weekday: "short", month: "short", day: "numeric", timeZone: tz };
-    if (!withinWeek && d.getFullYear() !== today.getFullYear()) dayOpts.year = "numeric";
+    const yearIn = (x: Date) => x.toLocaleDateString("en-US", { year: "numeric", timeZone: tz });
+    if (!withinWeek && yearIn(d) !== yearIn(today)) dayOpts.year = "numeric";
     return `${d.toLocaleDateString("en-US", dayOpts)} ${fmtTime(iso, tz)}`;
 }
 
@@ -194,7 +195,7 @@ function headline(plan: SendPlan): string {
             return `Only ${(plan.leads.due_now + plan.leads.due_later_today).toLocaleString()} steps are due today; the mailboxes could send more.`;
         case "sending_window":
             if (plan.window.starts_at && new Date(plan.window.starts_at).getTime() > Date.now()) {
-                return `The campaign's start date is ${fmtDay(plan.window.starts_at, plan.timezone)}; nothing goes out before then.`;
+                return `The campaign's start date is ${fmtDay(plan.window.starts_at, plan.timezone)} (${shortTz(plan.timezone)} time); nothing goes out before then.`;
             }
             return plan.window.opens_at
                 ? `Outside the sending window; it opens ${fmtDay(plan.window.opens_at, plan.timezone)}.`
