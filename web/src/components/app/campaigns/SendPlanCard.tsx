@@ -159,7 +159,13 @@ function fmtDay(iso: string | Date | undefined, tz: string): string {
     const opts: Intl.DateTimeFormatOptions = { timeZone: tz };
     const sameDay = d.toLocaleDateString("en-US", opts) === today.toLocaleDateString("en-US", opts);
     if (sameDay) return fmtTime(iso, tz);
-    return `${d.toLocaleDateString("en-US", { weekday: "short", timeZone: tz })} ${fmtTime(iso, tz)}`;
+    // A weekday alone is ambiguous past the coming week, so name the date there.
+    const withinWeek = Math.abs(d.getTime() - today.getTime()) < 6 * 24 * 3600 * 1000;
+    const dayOpts: Intl.DateTimeFormatOptions = withinWeek
+        ? { weekday: "short", timeZone: tz }
+        : { weekday: "short", month: "short", day: "numeric", timeZone: tz };
+    if (!withinWeek && d.getFullYear() !== today.getFullYear()) dayOpts.year = "numeric";
+    return `${d.toLocaleDateString("en-US", dayOpts)} ${fmtTime(iso, tz)}`;
 }
 
 function shortTz(tz: string): string {
