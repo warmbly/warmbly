@@ -986,6 +986,19 @@ The routes behind the card need the `manage_settings` admin permission, and ever
 
 If the key is removed while purchased mailboxes or unexpired domains exist, their renewals, monthly billing and Google mailbox connections are paused until a key is configured again. The backend logs a warning at boot, **Setup and health** lists an error (`store_purchases_without_graphkit`) with the counts, and each affected workspace sees a banner on its **Purchased** domains tab and in its purchased mailboxes' drawers. Their purchases stay listed. A Google mailbox whose access comes through GraphKit's token broker stops syncing and sending until then.
 
+### Pausing new purchases
+
+**Instance > Configuration > Settings > Domains and mailboxes > Pause new purchases** (`store.sales_paused`) stops the instance selling new domains and mailboxes without disconnecting GraphKit. It is off by default and takes effect within 30 seconds, with no restart.
+
+While it is on:
+
+- `POST /store/quotes` and `POST /store/domains/connect` answer `503` `store_sales_paused`, and so does `POST /store/orders` for a quote that has not made an order yet. A retry of an order that was already placed still finishes it.
+- `GET /store/status` keeps answering `enabled: true` and adds `sales_paused: true`.
+- In the dashboard, **Add account** keeps the **Buy new mailboxes** row, marked **Paused**, with the line "Will be available again soon", and it opens nothing. The buy page says the same, and the buy buttons elsewhere are not shown. **Orders** and every order already placed stay reachable.
+- Everything already bought is unaffected: domains renew, mailboxes are billed and connected, DNS, cancelling and resuming all work. [Social accounts](/guides/social/) are not part of the pause.
+
+Turning it off puts buying back as it was. A backend from before this setting ignores it and keeps selling, so finish the rollout before relying on it.
+
 ### Rolling back
 
 The store and the partner API are off until an operator adds a key or a partner, so an instance that never turned them on has no purchased mailboxes and can roll back as before.
@@ -1343,6 +1356,7 @@ These are the only settings a browser can change, and no environment variable ow
 | `store.domain_markup_fixed_micros` | integer micro-USD, 0 to 100000000 ($0 to $100) | `0` | Added to every domain price after the percent. The retail price is wholesale times (1 + percent / 100) plus this, rounded up to the cent. With both markups at `0` the dashboard shows domains as sold at cost |
 | `store.mailbox_bill_lead_days` | integer, 2 to 10 | `5` | How many days before a workspace's monthly billing day all its mailboxes are charged together. Each mailbox is paid before GraphKit starts its next month, and a payment that keeps failing cancels the unpaid mailboxes at GraphKit a day before that month would start, so a longer lead gives a failed card more time to be fixed |
 | `store.min_card_charge_micros` | integer micro-USD, 500000 to 100000000 ($0.50 to $100) | `10000000` | The least a store charge puts on a card when the balance falls short. The card tops the balance up by at least this (or by the workspace's automatic reload amount when that is larger), the store charge comes out of the balance, and the rest stays there for the next one. Fewer, larger card charges cost less in card fees. No card is charged when the balance covers the charge |
+| `store.sales_paused` | boolean | `false` | Pauses new purchases: a new domain, new mailboxes, or connecting a domain for new mailboxes is refused with `503` `store_sales_paused`, and the dashboard says buying will be available again soon. Everything already bought keeps renewing, billing and connecting. See [pausing new purchases](#pausing-new-purchases) |
 | `store.social_seat_monthly_micros` | integer micro-USD, 0 to 500000000 ($0 to $500) | `49000000` | What a workspace pays per [connected social account](/guides/social/#pricing) per month, on any channel, on every plan but the agency ones ($49.00 by default) |
 | `store.social_seat_agency_micros` | integer micro-USD, 0 to 500000000 ($0 to $500) | `32000000` | The same on the Agency plan, and for its client workspaces ($32.00 by default) |
 | `store.social_seat_agency_pro_micros` | integer micro-USD, 0 to 500000000 ($0 to $500) | `19000000` | The same on the Agency Pro plan, and for its client workspaces ($19.00 by default) |

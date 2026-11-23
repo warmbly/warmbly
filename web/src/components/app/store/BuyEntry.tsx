@@ -4,7 +4,7 @@ import { ChevronDownIcon, LockIcon, PlugIcon, PlusIcon, ReceiptTextIcon, Shoppin
 import { motion, useReducedMotion } from "framer-motion";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuSeparator, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import { TopbarAction } from "@/components/layout/Page";
-import { useStoreState } from "@/lib/api/hooks/app/store/useStore";
+import { storeSalesPaused, useStoreState } from "@/lib/api/hooks/app/store/useStore";
 import useWorkspaceWritable from "@/hooks/useWorkspaceWritable";
 import { fmtMonthly } from "@/lib/buy/money";
 import { HOVER_LIFT, PRESS_SPRING } from "@/lib/buy/motion";
@@ -37,13 +37,17 @@ export function AddAccountMenu({ onConnect }: { onConnect: () => void }) {
             <PopoverMenuContent minWidth={260}>
                 {store.kind === "on" ? (
                     <>
-                        <PopoverMenuItem
-                            onSelect={() => void navigate({ to: "/app/emails/buy" })}
-                            icon={<ShoppingBagIcon className="w-3.5 h-3.5 text-sky-600" />}
-                            description="A new domain with Google or Microsoft mailboxes, set up for you"
-                        >
-                            Buy new mailboxes · {fmtMonthly(store.status.mailbox_monthly_micros)}
-                        </PopoverMenuItem>
+                        {storeSalesPaused(store.status) ? (
+                            <BuyPausedRow />
+                        ) : (
+                            <PopoverMenuItem
+                                onSelect={() => void navigate({ to: "/app/emails/buy" })}
+                                icon={<ShoppingBagIcon className="w-3.5 h-3.5 text-sky-600" />}
+                                description="A new domain with Google or Microsoft mailboxes, set up for you"
+                            >
+                                Buy new mailboxes · {fmtMonthly(store.status.mailbox_monthly_micros)}
+                            </PopoverMenuItem>
+                        )}
                         <PopoverMenuItem
                             onSelect={() => void navigate({ to: "/app/emails/buy/orders" })}
                             icon={<ReceiptTextIcon className="w-3.5 h-3.5" />}
@@ -71,12 +75,31 @@ export function AddAccountMenu({ onConnect }: { onConnect: () => void }) {
     );
 }
 
+/** The buy row while new purchases are paused: it stays in the menu, focusable for arrow keys, and opens nothing. */
+function BuyPausedRow() {
+    return (
+        <div
+            role="menuitem"
+            aria-disabled="true"
+            tabIndex={-1}
+            className="w-full px-3 min-h-7 py-1.5 flex items-center gap-2 text-[12.5px] text-left cursor-default outline-none focus-visible:bg-slate-50"
+        >
+            <ShoppingBagIcon className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+            <span className="flex-1 min-w-0">
+                <span className="block truncate text-slate-400">Buy new mailboxes</span>
+                <span className="block truncate text-[11px] text-slate-500">Will be available again soon</span>
+            </span>
+            <span className="h-4 px-1.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-medium inline-flex items-center shrink-0">Paused</span>
+        </div>
+    );
+}
+
 /** The empty state's lead: buy mailboxes ready to warm, priced up front. Renders nothing when the store is off. */
 export function BuyMailboxesButton({ size = "md" }: { size?: "sm" | "md" }) {
     const reduced = useReducedMotion();
-    // Locked renders nothing too: an empty Mailboxes page stays connect-first until the store sells.
+    // Locked and paused render nothing too: an empty Mailboxes page stays connect-first until the store sells.
     const store = useStoreState();
-    if (store.kind !== "on") return null;
+    if (store.kind !== "on" || storeSalesPaused(store.status)) return null;
     const { status } = store;
     return (
         <motion.span whileHover={reduced ? undefined : HOVER_LIFT} whileTap={reduced ? undefined : { scale: 0.97 }} transition={PRESS_SPRING} className="inline-flex rounded-md">

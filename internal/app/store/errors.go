@@ -20,6 +20,7 @@ import (
 // of these with Warmbly's own message; its codes and wording never pass through.
 const (
 	CodeDisabled              = "store_disabled"
+	CodeSalesPaused           = "store_sales_paused"
 	CodeUnavailable           = "store_unavailable"
 	CodeBusy                  = "rate_limited"
 	CodeRegistrantRequired    = "registrant_required"
@@ -67,6 +68,9 @@ var errDisabled = errx.NewWithIdentifier(errx.NotFound, CodeDisabled,
 
 // NotConfiguredMessage answers an operator's store request while no GraphKit API key is configured.
 const NotConfiguredMessage = "The store is not configured on this instance. Add a GraphKit API key under Setup and health > Integrations, or set GRAPHKIT_API_KEY."
+
+var errSalesPaused = errx.NewWithIdentifier(errx.ServiceUnavailable, CodeSalesPaused,
+	"Buying new domains and mailboxes is paused for now and will be available again soon. What you already bought is not affected.")
 
 var errManaged = errx.NewWithIdentifier(errx.Forbidden, CodeManagedByPartner, "This workspace's domains and mailboxes are bought through its partner.")
 

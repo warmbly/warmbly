@@ -566,11 +566,15 @@ type Patch struct {
 		Units         *map[string]float64 `json:"units"`
 	} `json:"usage"`
 	Store *struct {
-		MailboxMonthlyMicros    *int64 `json:"mailbox_monthly_micros"`
-		DomainMarkupPercent     *int   `json:"domain_markup_percent"`
-		DomainMarkupFixedMicros *int64 `json:"domain_markup_fixed_micros"`
-		MailboxBillLeadDays     *int   `json:"mailbox_bill_lead_days"`
-		MinCardChargeMicros     *int64 `json:"min_card_charge_micros"`
+		MailboxMonthlyMicros      *int64 `json:"mailbox_monthly_micros"`
+		DomainMarkupPercent       *int   `json:"domain_markup_percent"`
+		DomainMarkupFixedMicros   *int64 `json:"domain_markup_fixed_micros"`
+		MailboxBillLeadDays       *int   `json:"mailbox_bill_lead_days"`
+		MinCardChargeMicros       *int64 `json:"min_card_charge_micros"`
+		SalesPaused               *bool  `json:"sales_paused"`
+		SocialSeatMonthlyMicros   *int64 `json:"social_seat_monthly_micros"`
+		SocialSeatAgencyMicros    *int64 `json:"social_seat_agency_micros"`
+		SocialSeatAgencyProMicros *int64 `json:"social_seat_agency_pro_micros"`
 	} `json:"store"`
 }
 
@@ -733,6 +737,21 @@ func (p Patch) Apply(doc Document) Document {
 		if v := p.Store.MinCardChargeMicros; v != nil {
 			n := *v
 			doc.Store.MinCardChargeMicros = &n
+		}
+		if v := p.Store.SalesPaused; v != nil {
+			doc.Store.SalesPaused = *v
+		}
+		if v := p.Store.SocialSeatMonthlyMicros; v != nil {
+			n := *v
+			doc.Store.SocialSeatMonthlyMicros = &n
+		}
+		if v := p.Store.SocialSeatAgencyMicros; v != nil {
+			n := *v
+			doc.Store.SocialSeatAgencyMicros = &n
+		}
+		if v := p.Store.SocialSeatAgencyProMicros; v != nil {
+			n := *v
+			doc.Store.SocialSeatAgencyProMicros = &n
 		}
 	}
 	return doc
