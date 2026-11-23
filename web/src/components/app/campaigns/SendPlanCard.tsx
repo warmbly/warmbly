@@ -187,6 +187,9 @@ function headline(plan: SendPlan): string {
         case "leads":
             return `Only ${(plan.leads.due_now + plan.leads.due_later_today).toLocaleString()} steps are due today; the mailboxes could send more.`;
         case "sending_window":
+            if (plan.window.starts_at && new Date(plan.window.starts_at).getTime() > Date.now()) {
+                return `The campaign's start date is ${fmtDay(plan.window.starts_at, plan.timezone)}; nothing goes out before then.`;
+            }
             return plan.window.opens_at
                 ? `Outside the sending window; it opens ${fmtDay(plan.window.opens_at, plan.timezone)}.`
                 : "Outside the sending window.";
