@@ -369,27 +369,15 @@ func (c *Client) moveUIDLocked(src, dst string, uid uint32) error {
 	}
 
 	set := imap.UIDSetNum(imap.UID(uid))
-	if c.client.Caps().Has(imap.CapMove) {
-		if _, err := c.client.Move(set, dst).Wait(); err != nil {
-			return fmt.Errorf("move uid %d %q→%q: %w", uid, src, dst, err)
-		}
-		return nil
+	caps := c.client.Caps()
+	if !caps.Has(imap.CapMove) && !caps.Has(imap.CapUIDPlus) {
+		// The MOVE fallback ends in an expunge, and without UIDPLUS that
+		// expunge is folder-wide: it would remove every \Deleted message
+		// another client flagged in the folder, not just ours.
+		return ErrNoSingleMessageDelete
 	}
-
-	// MOVE not supported — emulate via COPY + STORE \Deleted + EXPUNGE.
-	if _, err := c.client.Copy(set, dst).Wait(); err != nil {
-		return fmt.Errorf("copy uid %d %q→%q: %w", uid, src, dst, err)
-	}
-	storeCmd := c.client.Store(set, &imap.StoreFlags{
-		Op:     imap.StoreFlagsAdd,
-		Silent: true,
-		Flags:  []imap.Flag{imap.FlagDeleted},
-	}, nil)
-	if err := storeCmd.Close(); err != nil {
-		return fmt.Errorf("store \\Deleted on uid %d: %w", uid, err)
-	}
-	if err := c.client.Expunge().Close(); err != nil {
-		return fmt.Errorf("expunge %q: %w", src, err)
+	if _, err := c.client.Move(set, dst).Wait(); err != nil {
+		return fmt.Errorf("move uid %d %q→%q: %w", uid, src, dst, err)
 	}
 	return nil
 }
