@@ -29,6 +29,8 @@ type Invocation struct {
 	// IsAPIKey selects which permission mask gates the tool: API-key callers
 	// (MCP, developer sockets) are gated on APIPerms; JWT callers on OrgPerms.
 	IsAPIKey bool
+	// CallerKeyID is the workspace API key making the request. A key edit is held to that key, the same way PATCH /api-keys/:id is.
+	CallerKeyID uuid.UUID
 	// ActsForMember marks an OAuth token: it also needs OrgPerms, its member's permissions.
 	ActsForMember bool
 	// FreshAuthed marks a member session that confirmed the account holder within the reauth window.

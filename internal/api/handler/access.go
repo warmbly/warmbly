@@ -55,6 +55,16 @@ func bindOAuthMember(c *gin.Context, inv *aitools.Invocation) {
 	inv.OrgPerms, _ = middleware.GetMemberPermissions(c)
 }
 
+// bindCallerKey names the workspace API key on the invocation so a key edit can be held to that key.
+func bindCallerKey(c *gin.Context, inv *aitools.Invocation) {
+	if middleware.GetAuthType(c) != middleware.AuthTypeAPIKey {
+		return
+	}
+	if id := middleware.GetAPIKeyID(c); id != nil {
+		inv.CallerKeyID = *id
+	}
+}
+
 // apiKeyCeiling is the widest permission set the caller may put on an API key.
 func (h *Handler) apiKeyCeiling(c *gin.Context) (uint64, *errx.Error) {
 	if middleware.GetAuthType(c) == middleware.AuthTypeAPIKey {

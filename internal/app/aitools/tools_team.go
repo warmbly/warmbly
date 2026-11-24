@@ -68,6 +68,7 @@ func (d Deps) registerTeamTools(r *Registry) {
 			"member_user_id": strProp("The member's user UUID."),
 		}, "member_user_id"),
 		Risk:            generation.RiskWrite,
+		AlwaysAsk:       true,
 		JWTOnly:         true,
 		RequiredOrgPerm: models.PermManageTeam,
 		Handler:         d.removeMember,

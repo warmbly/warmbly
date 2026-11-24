@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/google/uuid"
+
+	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
 // API-key management tools, gated on PermManageAPIKeys / APIPermAPIKeys (the
-// same group gate as the HTTP routes). Creating a key returns its secret once,
-// exactly like the dashboard.
+// same group gate as the HTTP routes). Creating a key is refused here: that
+// confirmation cannot be collected in a chat.
 func (d Deps) registerAPIKeyTools(r *Registry) {
 	if d.APIKeys == nil {
 		return
@@ -69,6 +72,7 @@ func (d Deps) registerAPIKeyTools(r *Registry) {
 			"reason": strProp("Optional reason recorded on the key."),
 		}, "key_id"),
 		Risk:            generation.RiskWrite,
+		AlwaysAsk:       true,
 		RequiredOrgPerm: models.PermManageAPIKeys,
 		RequiredAPIPerm: models.APIPermAPIKeys,
 		Handler:         d.revokeAPIKey,
@@ -122,6 +126,12 @@ func (d Deps) updateAPIKey(ctx context.Context, inv Invocation, args json.RawMes
 	if err != nil {
 		return "", err
 	}
+	// A session may rename a key. A key may rename one only when the result stays inside the key making the request, matching PATCH /api-keys/:id.
+	if inv.IsAPIKey {
+		if err := d.apiKeyEditWithinCaller(ctx, inv, kid); err != nil {
+			return "", err
+		}
+	}
 	key, xerr := d.APIKeys.Update(ctx, inv.OrgID, kid, &models.UpdateAPIKey{Name: in.Name, Description: in.Description})
 	if xerr != nil {
 		return "", fromErrx(xerr)
@@ -147,4 +157,23 @@ func (d Deps) revokeAPIKey(ctx context.Context, inv Invocation, args json.RawMes
 	}
 	d.logAudit(ctx, inv, models.AuditActionRevoke, models.AuditEntityAPIKey, &kid, nil)
 	return jsonResult(map[string]any{"ok": true, "key_id": kid.String()})
+}
+
+// apiKeyEditWithinCaller applies the same ceiling as the API-key branch of the REST key update.
+func (d Deps) apiKeyEditWithinCaller(ctx context.Context, inv Invocation, targetID uuid.UUID) error {
+	if inv.CallerKeyID == uuid.Nil || d.APIKeys == nil {
+		return fromErrx(apikey.WithinKey(nil, 0, nil, nil))
+	}
+	caller, xerr := d.APIKeys.Get(ctx, inv.OrgID, inv.CallerKeyID)
+	if xerr != nil {
+		return fromErrx(xerr)
+	}
+	target, xerr := d.APIKeys.Get(ctx, inv.OrgID, targetID)
+	if xerr != nil {
+		return fromErrx(xerr)
+	}
+	if xerr := apikey.WithinKey(caller, target.Permissions, target.AllowedIPs, target.AllowedEmailAccounts); xerr != nil {
+		return fromErrx(xerr)
+	}
+	return nil
 }

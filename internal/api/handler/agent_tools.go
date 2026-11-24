@@ -44,6 +44,7 @@ func (h *Handler) agentToolInvocation(c *gin.Context) (aitools.Invocation, *errx
 		inv.UserID = uid
 	}
 	bindOAuthMember(c, &inv)
+	bindCallerKey(c, &inv)
 	return inv, nil
 }
 
