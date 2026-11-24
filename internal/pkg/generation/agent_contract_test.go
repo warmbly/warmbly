@@ -421,7 +421,9 @@ func TestOpenAIEmitsTextBeforeApprovalPause(t *testing.T) {
 				}
 			}
 			if kind == "anthropic" {
-				if len(events) != 1 || events[0].Type != EventIteration {
+				// Anthropic does not stream deltas. The commentary still arrives
+				// as one text event before the approval pause, matching OpenAI.
+				if len(events) != 2 || events[0].Type != EventIteration || events[1].Type != EventText || events[1].Text != "Looking" {
 					t.Fatalf("anthropic events = %+v", events)
 				}
 				return
