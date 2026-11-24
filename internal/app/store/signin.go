@@ -48,8 +48,11 @@ func (s *Service) WireSignIns(links ConnectLinks, repo repository.StoreSignInLin
 	}
 }
 
+// waitsForSignIn: GraphKit offers the sign-in while the vendor's API still reports the order in
+// setup (mailbox provisioning), because the vendor's team finishes the Workspace before its API says so.
 func waitsForSignIn(m *graphkit.Mailbox) bool {
-	return m.Provider == graphkit.ProviderGoogle && m.Connection.Method == graphkit.ConnectOAuth && !m.Connection.Ready && m.Status == graphkit.MailboxActive
+	return m.Provider == graphkit.ProviderGoogle && m.Connection.Method == graphkit.ConnectOAuth && !m.Connection.Ready &&
+		(m.Status == graphkit.MailboxActive || m.Status == graphkit.MailboxProvisioning)
 }
 
 // syncSignIn keeps an oauth mailbox moving: a live link GraphKit can show the vendor, and the
