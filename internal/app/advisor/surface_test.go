@@ -8,6 +8,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -60,8 +61,13 @@ type fixAgent struct {
 	req generation.AgentRequest
 }
 
-func (a *fixAgent) RunAgent(_ context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
+func (a *fixAgent) RunAgent(ctx context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
 	a.req = req
+	if req.PreIteration != nil {
+		if err := req.PreIteration(ctx, 1); err != nil {
+			return &generation.AgentResult{}, nil
+		}
+	}
 	return &generation.AgentResult{Text: "rewrote the subject", InputTokens: 2, OutputTokens: 3, TokensUsed: 5}, nil
 }
 
@@ -75,10 +81,11 @@ func (fixToolList) ToolDefsByName(aitools.Invocation, ...string) []generation.To
 }
 
 type fixCredits struct {
-	reason string
+	reason     string
+	reserveErr error
 }
 
-func (fixCredits) Reserve(context.Context, uuid.UUID, models.Micro) error { return nil }
+func (c *fixCredits) Reserve(context.Context, uuid.UUID, models.Micro) error { return c.reserveErr }
 
 func (c *fixCredits) Charge(_ context.Context, _ uuid.UUID, _ credits.Usage, reason, _ string) (models.Micro, error) {
 	c.reason = reason
@@ -108,5 +115,38 @@ func TestFixWithAgentChargesTheRun(t *testing.T) {
 	}
 	if ledger.reason != "advisor_agent_fix" {
 		t.Fatalf("charge reason %q", ledger.reason)
+	}
+	if agent.req.MaxIterations != agentMaxIterations {
+		t.Fatalf("iterations = %d", agent.req.MaxIterations)
+	}
+}
+
+func TestFixWithAgentAllowanceKeepsItsSentence(t *testing.T) {
+	org, id := uuid.New(), uuid.New()
+	s := &service{
+		repo: advisorRepo{finding: &models.AdvisorFinding{
+			ID: id, OrganizationID: org, DetectorKey: "copy_spam_phrases", Category: models.AdvisorCategoryCopy,
+		}},
+		agent: &fixAgent{}, toolList: fixToolList{},
+		credits: &fixCredits{reserveErr: credits.ErrAIAllowanceUsed},
+	}
+	_, xerr := s.FixWithAgent(context.Background(), aitools.Invocation{OrgID: org, UserID: uuid.New()}, id)
+	if xerr == nil || xerr.Identifier != "ai_allowance_used" || xerr.Code != errx.PaymentRequired {
+		t.Fatalf("err = %+v", xerr)
+	}
+}
+
+func TestFixWithAgentCapIsNotAPaymentError(t *testing.T) {
+	org, id := uuid.New(), uuid.New()
+	s := &service{
+		repo: advisorRepo{finding: &models.AdvisorFinding{
+			ID: id, OrganizationID: org, DetectorKey: "copy_spam_phrases", Category: models.AdvisorCategoryCopy,
+		}},
+		agent: &fixAgent{}, toolList: fixToolList{},
+		credits: &fixCredits{reserveErr: credits.ErrCapExceeded},
+	}
+	_, xerr := s.FixWithAgent(context.Background(), aitools.Invocation{OrgID: org, UserID: uuid.New()}, id)
+	if xerr == nil || xerr.Code != errx.TooManyRequests {
+		t.Fatalf("err = %+v", xerr)
 	}
 }

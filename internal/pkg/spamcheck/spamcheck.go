@@ -147,9 +147,9 @@ func Analyze(ctx context.Context, p generation.Provider, model string, in Input)
 
 	out := parse(res.Text)
 	// A response with no score and no findings is not an analysis, whatever
-	// else it carried. Failing here refunds the credit; deriving a score from
-	// an empty finding list would render as a confident 100/100 sitting above a
-	// verdict that says the opposite.
+	// else it carried. The handler has not charged yet, so this error costs
+	// nothing. Deriving a score from an empty finding list would render as a
+	// confident 100/100 sitting above a verdict that says the opposite.
 	if out.Score < 0 && len(out.Findings) == 0 {
 		return nil, fmt.Errorf("spamcheck: could not read the model's response")
 	}

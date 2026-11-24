@@ -137,3 +137,32 @@ func TestExecuteSavesResearchOnTheRun(t *testing.T) {
 }
 
 func providerRepo() repository.ResearchRepository { return researchRepo{} }
+
+type nosaveProvider struct {
+	researchProvider
+}
+
+func (p *nosaveProvider) RunAgent(_ context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
+	p.req = req
+	return &generation.AgentResult{Text: "stopped", InputTokens: 1, OutputTokens: 1}, nil
+}
+
+func TestExecuteDoesNotChargeWithoutASave(t *testing.T) {
+	provider := &nosaveProvider{researchProvider: researchProvider{t: t}}
+	ledger := &researchCredits{}
+	reg := aitools.NewRegistry()
+	noop := func(context.Context, aitools.Invocation, json.RawMessage) (string, error) { return `{}`, nil }
+	for _, name := range []string{"search_web", "fetch_url", "load_skill"} {
+		reg.Register(aitools.Tool{Name: name, Risk: generation.RiskRead, Handler: noop})
+	}
+	org := uuid.New()
+	run := &models.ContactResearchRun{ID: uuid.New(), OrgID: org, ContactID: uuid.New()}
+	s := &service{
+		repo: providerRepo(), registry: reg, provider: provider, credits: ledger,
+		feature: researchFeature{}, contacts: &researchContacts{t: t}, orgs: researchOrgs{},
+	}
+	got := s.execute(context.Background(), aitools.Invocation{OrgID: org}, run)
+	if got.Status != models.ResearchFailed || ledger.reason != "" {
+		t.Fatalf("status %s charge %q", got.Status, ledger.reason)
+	}
+}

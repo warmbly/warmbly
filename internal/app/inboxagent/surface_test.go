@@ -40,6 +40,7 @@ type inboxDrafts struct {
 	repository.AIDraftRepository
 	saved   *models.AIThreadDraft
 	created bool
+	deleted bool
 }
 
 func (r *inboxDrafts) HasActiveDraft(context.Context, uuid.UUID, string, *uuid.UUID) (bool, error) {
@@ -52,18 +53,26 @@ func (r *inboxDrafts) CreateDraft(_ context.Context, d *models.AIThreadDraft) er
 	return nil
 }
 
+func (r *inboxDrafts) DeleteDraft(context.Context, uuid.UUID) error {
+	r.deleted = true
+	r.saved = nil
+	return nil
+}
+
 type inboxCredits struct {
 	credits.CreditService
-	reserves int
-	estimate models.Micro
-	reason   string
-	drafts   *inboxDrafts
+	reserves   int
+	estimate   models.Micro
+	reason     string
+	reserveErr error
+	chargeErr  error
+	drafts     *inboxDrafts
 }
 
 func (c *inboxCredits) Reserve(_ context.Context, _ uuid.UUID, estimate models.Micro) error {
 	c.reserves++
 	c.estimate = estimate
-	return nil
+	return c.reserveErr
 }
 
 func (c *inboxCredits) Charge(_ context.Context, _ uuid.UUID, _ credits.Usage, reason, _ string) (models.Micro, error) {
@@ -71,6 +80,9 @@ func (c *inboxCredits) Charge(_ context.Context, _ uuid.UUID, _ credits.Usage, r
 		return 0, errx.New(errx.Internal, "charged before the draft row existed")
 	}
 	c.reason = reason
+	if c.chargeErr != nil {
+		return 0, c.chargeErr
+	}
 	return 1, nil
 }
 
@@ -78,12 +90,21 @@ type inboxProvider struct {
 	generation.Provider
 	completes int
 	system    string
+	fail      error
+	text      string
 }
 
 func (p *inboxProvider) Complete(_ context.Context, req generation.CompletionRequest) (*generation.WritingResult, error) {
 	p.completes++
 	p.system = req.System
-	return &generation.WritingResult{Text: "Thursday works for me.", Model: "m", InputTokens: 5, OutputTokens: 6}, nil
+	if p.fail != nil {
+		return nil, p.fail
+	}
+	text := p.text
+	if text == "" {
+		text = "Thursday works for me."
+	}
+	return &generation.WritingResult{Text: text, Model: "m", InputTokens: 5, OutputTokens: 6}, nil
 }
 
 func (p *inboxProvider) RunAgent(context.Context, generation.AgentRequest) (*generation.AgentResult, error) {
@@ -139,5 +160,89 @@ func TestDraftUsesOneCompletionAndDoesNotSend(t *testing.T) {
 	}
 	if pub.n != 1 {
 		t.Fatalf("draft-ready events = %d, want 1", pub.n)
+	}
+}
+
+func inboxService(p *inboxProvider, drafts *inboxDrafts, ledger *inboxCredits, pub *inboxPub) *service {
+	return &service{
+		provider: p, credits: ledger, feature: inboxGate{}, orgs: inboxOrgs{},
+		threads: inboxThreads{}, draftRepo: drafts, publisher: pub,
+	}
+}
+
+func TestDraftGateSkipsWithoutACall(t *testing.T) {
+	p := &inboxProvider{}
+	drafts := &inboxDrafts{}
+	ledger := &inboxCredits{drafts: drafts}
+	s := inboxService(p, drafts, ledger, &inboxPub{})
+	s.gate = denyGate{}
+	s.draft(context.Background(), models.InboxAgentReply{
+		OrganizationID: uuid.New(), ThreadID: "thread-1", Counterpart: "a@b.co",
+		BodyText: "Can we talk about the proposal tomorrow?", InReplyTo: "<m@x>",
+	})
+	if p.completes != 0 || drafts.created || ledger.reserves != 0 {
+		t.Fatalf("completes %d created %v reserves %d", p.completes, drafts.created, ledger.reserves)
+	}
+}
+
+type denyGate struct{}
+
+func (denyGate) ShouldDraft(context.Context, uuid.UUID, string) (bool, string) {
+	return false, "the reply closed the conversation: not_interested"
+}
+
+func TestShortReplySkipsTheDraft(t *testing.T) {
+	p := &inboxProvider{}
+	drafts := &inboxDrafts{}
+	ledger := &inboxCredits{drafts: drafts}
+	s := inboxService(p, drafts, ledger, &inboxPub{})
+	s.draft(context.Background(), models.InboxAgentReply{
+		OrganizationID: uuid.New(), ThreadID: "thread-1", Counterpart: "a@b.co", BodyText: "Thanks",
+	})
+	if p.completes != 0 || drafts.created {
+		t.Fatalf("completes %d created %v", p.completes, drafts.created)
+	}
+}
+
+func TestLowBalanceSkipsTheDraft(t *testing.T) {
+	p := &inboxProvider{}
+	drafts := &inboxDrafts{}
+	ledger := &inboxCredits{drafts: drafts, reserveErr: credits.ErrInsufficientCredits}
+	s := inboxService(p, drafts, ledger, &inboxPub{})
+	s.draft(context.Background(), models.InboxAgentReply{
+		OrganizationID: uuid.New(), ThreadID: "thread-1", Counterpart: "a@b.co",
+		BodyText: "Can we talk about the proposal tomorrow?",
+	})
+	if p.completes != 0 || drafts.created || ledger.reserves != 1 {
+		t.Fatalf("completes %d created %v reserves %d", p.completes, drafts.created, ledger.reserves)
+	}
+}
+
+func TestDraftChargeFailureDeletesTheRow(t *testing.T) {
+	p := &inboxProvider{}
+	drafts := &inboxDrafts{}
+	ledger := &inboxCredits{drafts: drafts, chargeErr: credits.ErrInsufficientCredits}
+	pub := &inboxPub{}
+	s := inboxService(p, drafts, ledger, pub)
+	s.draft(context.Background(), models.InboxAgentReply{
+		OrganizationID: uuid.New(), ThreadID: "thread-1", Counterpart: "a@b.co",
+		BodyText: "Can we talk about the proposal tomorrow?",
+	})
+	if !drafts.deleted || pub.n != 0 || drafts.saved != nil {
+		t.Fatalf("deleted %v published %d saved %+v", drafts.deleted, pub.n, drafts.saved)
+	}
+}
+
+func TestDraftProviderErrorWritesNothing(t *testing.T) {
+	p := &inboxProvider{fail: credits.ErrInsufficientCredits}
+	drafts := &inboxDrafts{}
+	ledger := &inboxCredits{drafts: drafts}
+	s := inboxService(p, drafts, ledger, &inboxPub{})
+	s.draft(context.Background(), models.InboxAgentReply{
+		OrganizationID: uuid.New(), ThreadID: "thread-1", Counterpart: "a@b.co",
+		BodyText: "Can we talk about the proposal tomorrow?",
+	})
+	if drafts.created || ledger.reason != "" {
+		t.Fatalf("created %v reason %q", drafts.created, ledger.reason)
 	}
 }

@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -9,6 +10,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type surfaceProvider struct {
@@ -19,6 +21,7 @@ type surfaceProvider struct {
 	lastWrite   generation.CompletionRequest
 	agentText   string
 	writeText   string
+	fail        error
 }
 
 func (p *surfaceProvider) RunAgent(_ context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
@@ -34,6 +37,9 @@ func (p *surfaceProvider) RunAgent(_ context.Context, req generation.AgentReques
 func (p *surfaceProvider) Complete(_ context.Context, req generation.CompletionRequest) (*generation.WritingResult, error) {
 	p.completions++
 	p.lastWrite = req
+	if p.fail != nil {
+		return nil, p.fail
+	}
 	text := p.writeText
 	if text == "" {
 		text = "hello"
@@ -102,6 +108,12 @@ func TestAutomationAgentHasNoApprovalHook(t *testing.T) {
 	if p.lastAgent.Approve != nil {
 		t.Fatal("automation agent set an approval hook")
 	}
+	if p.lastAgent.MaxIterations != aiAgentMaxIterations {
+		t.Fatalf("iterations = %d", p.lastAgent.MaxIterations)
+	}
+	if len(p.lastAgent.Tools) != 1 || p.lastAgent.Tools[0].Name != "unsubscribe" {
+		t.Fatalf("tools = %+v", p.lastAgent.Tools)
+	}
 	if data["ai_agent"] != "unsubscribed" {
 		t.Fatalf("ai_agent = %#v", data["ai_agent"])
 	}
@@ -123,5 +135,121 @@ func TestAskAIIsOneYesNoCompletion(t *testing.T) {
 	}
 	if p.lastWrite.MaxTokens != 8 || p.lastWrite.Temperature == nil || *p.lastWrite.Temperature != 0 {
 		t.Fatalf("completion max=%d temp=%v", p.lastWrite.MaxTokens, p.lastWrite.Temperature)
+	}
+}
+
+func TestAutomationModesAreOneCompletion(t *testing.T) {
+	cases := []struct {
+		name   string
+		action models.IntegrationAction
+		config string
+		reply  string
+		key    string
+		want   string
+		temp   bool
+	}{
+		{"classify", models.IntegrationActionAIStep, `{"mode":"classify","instruction":"label it","labels":["yes","no"]}`, "yes", "ai_class", "yes", true},
+		{"extract", models.IntegrationActionAIStep, `{"mode":"extract","instruction":"pull the company","output_keys":["company"]}`, `{"company":"Acme"}`, "company", "Acme", true},
+		{"decide", models.IntegrationActionAISwitch, `{"instruction":"pick a case","cases":["now","later"]}`, "later", "ai_switch_case", "later", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &surfaceProvider{writeText: tc.reply}
+			s := &service{aiProvider: p, credits: surfaceCredits{}}
+			data := map[string]any{}
+			err := s.execAIAction(context.Background(), models.Automation{ID: uuid.New(), OrganizationID: uuid.New()}, models.AutomationNode{
+				ID: "n", Action: tc.action, Config: []byte(tc.config),
+			}, data, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.completions != 1 || p.agents != 0 {
+				t.Fatalf("agent=%d complete=%d", p.agents, p.completions)
+			}
+			if data[tc.key] != tc.want {
+				t.Fatalf("%s = %#v", tc.key, data[tc.key])
+			}
+			if tc.temp && (p.lastWrite.Temperature == nil || *p.lastWrite.Temperature != 0) {
+				t.Fatalf("temperature = %v", p.lastWrite.Temperature)
+			}
+		})
+	}
+}
+
+type recordingCredits struct {
+	credits.CreditService
+	reserveErr error
+	reasons    []string
+}
+
+func (c *recordingCredits) Reserve(context.Context, uuid.UUID, models.Micro) error {
+	return c.reserveErr
+}
+func (c *recordingCredits) Charge(context.Context, uuid.UUID, credits.Usage, string, string) (models.Micro, error) {
+	c.reasons = append(c.reasons, "charged")
+	return 1, nil
+}
+
+type pauseRepo struct {
+	repository.IntegrationRepository
+	bumps  int
+	paused bool
+	at     int
+}
+
+func (r *pauseRepo) BumpAutomationAICreditFailures(context.Context, uuid.UUID) (int, error) {
+	r.bumps++
+	if r.at > 0 {
+		return r.at, nil
+	}
+	return r.bumps, nil
+}
+func (r *pauseRepo) DisableAutomationForCredits(context.Context, uuid.UUID) error {
+	r.paused = true
+	return nil
+}
+
+func TestAutomationAllowancePausesAtTheThreshold(t *testing.T) {
+	p := &surfaceProvider{}
+	repo := &pauseRepo{at: 20}
+	s := &service{aiProvider: p, credits: &recordingCredits{reserveErr: credits.ErrAIAllowanceUsed}, repo: repo}
+	err := s.execAIAction(context.Background(), models.Automation{ID: uuid.New(), OrganizationID: uuid.New()}, models.AutomationNode{
+		ID: "n", Action: models.IntegrationActionAIStep, Config: []byte(`{"instruction":"write one line"}`),
+	}, map[string]any{}, true)
+	if err == nil || err.Error() != credits.ErrAIAllowanceUsed.Error() {
+		t.Fatalf("err = %v", err)
+	}
+	if p.completions != 0 || !repo.paused || repo.bumps != 1 {
+		t.Fatalf("calls %d bumps %d paused %v", p.completions, repo.bumps, repo.paused)
+	}
+}
+
+func TestAutomationCapDoesNotPause(t *testing.T) {
+	p := &surfaceProvider{}
+	repo := &pauseRepo{}
+	s := &service{aiProvider: p, credits: &recordingCredits{reserveErr: credits.ErrCapExceeded}, repo: repo}
+	err := s.execAIAction(context.Background(), models.Automation{ID: uuid.New(), OrganizationID: uuid.New()}, models.AutomationNode{
+		ID: "n", Action: models.IntegrationActionAIStep, Config: []byte(`{"instruction":"write one line"}`),
+	}, map[string]any{}, true)
+	if err == nil || err.Error() != "AI usage cap reached; try again later" {
+		t.Fatalf("err = %v", err)
+	}
+	if p.completions != 0 || repo.bumps != 0 || repo.paused {
+		t.Fatalf("calls %d bumps %d paused %v", p.completions, repo.bumps, repo.paused)
+	}
+}
+
+func TestAutomationFailedCompletionIsNotCharged(t *testing.T) {
+	p := &surfaceProvider{fail: errors.New("down")}
+	ledger := &recordingCredits{}
+	s := &service{aiProvider: p, credits: ledger}
+	err := s.execAIAction(context.Background(), models.Automation{ID: uuid.New(), OrganizationID: uuid.New()}, models.AutomationNode{
+		ID: "n", Action: models.IntegrationActionAIStep, Config: []byte(`{"instruction":"write one line"}`),
+	}, map[string]any{}, false)
+	if err == nil {
+		t.Fatal("provider error was ignored")
+	}
+	if len(ledger.reasons) != 0 {
+		t.Fatalf("charges %v", ledger.reasons)
 	}
 }

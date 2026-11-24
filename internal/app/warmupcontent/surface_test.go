@@ -49,3 +49,23 @@ func TestReviewUsesOpenAIOnlyWithoutAJudge(t *testing.T) {
 		t.Fatalf("reviews with a judge = %d, want 1", gen.reviews)
 	}
 }
+
+func TestThreadJudgmentRejectThresholds(t *testing.T) {
+	cases := []struct {
+		name string
+		j    ThreadJudgment
+		out  bool
+	}{
+		{"clean", ThreadJudgment{Naturalness: 1, Confidence: 0.9}, false},
+		{"pitch", ThreadJudgment{Pitch: 0.60, Naturalness: 1, Confidence: 1}, true},
+		{"filler", ThreadJudgment{Template: 0.80, Naturalness: 1, Confidence: 1}, true},
+		{"unnatural", ThreadJudgment{Naturalness: 0, Confidence: 1}, true},
+		{"unsure", ThreadJudgment{Naturalness: 1, Confidence: 0.69}, true},
+	}
+	for _, tc := range cases {
+		got, _ := tc.j.Reject()
+		if got != tc.out {
+			t.Errorf("%s: reject=%v want %v", tc.name, got, tc.out)
+		}
+	}
+}

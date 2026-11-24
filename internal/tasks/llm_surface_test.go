@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -22,11 +23,17 @@ type surfaceProvider struct {
 	writeText   string
 	failAgent   bool
 	failWrite   bool
+	writeErr    error
 }
 
-func (p *surfaceProvider) RunAgent(_ context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
+func (p *surfaceProvider) RunAgent(ctx context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
 	if p.failAgent {
 		panic("RunAgent")
+	}
+	if req.PreIteration != nil {
+		if err := req.PreIteration(ctx, 1); err != nil {
+			return &generation.AgentResult{}, nil
+		}
 	}
 	p.agents++
 	p.lastAgent = req
@@ -42,6 +49,9 @@ func (p *surfaceProvider) Complete(_ context.Context, req generation.CompletionR
 		panic("Complete")
 	}
 	p.completions++
+	if p.writeErr != nil {
+		return nil, p.writeErr
+	}
 	p.lastWrite = req
 	text := p.writeText
 	if text == "" {
@@ -56,10 +66,13 @@ func (p *surfaceProvider) Name() string             { return "test" }
 
 type surfaceCredits struct {
 	credits.CreditService
-	reasons []string
+	reserveErr error
+	reasons    []string
 }
 
-func (c *surfaceCredits) Reserve(context.Context, uuid.UUID, models.Micro) error { return nil }
+func (c *surfaceCredits) Reserve(context.Context, uuid.UUID, models.Micro) error {
+	return c.reserveErr
+}
 func (c *surfaceCredits) Charge(_ context.Context, _ uuid.UUID, _ credits.Usage, reason, _ string) (models.Micro, error) {
 	c.reasons = append(c.reasons, reason)
 	return 1, nil
@@ -136,6 +149,14 @@ func TestCampaignAIStepRunsToolsWithoutApproval(t *testing.T) {
 	if p.lastAgent.Approve != nil {
 		t.Fatal("agent step set an approval hook")
 	}
+	if p.lastAgent.MaxIterations != seqAgentMaxIterations {
+		t.Fatalf("iterations = %d", p.lastAgent.MaxIterations)
+	}
+	for _, tool := range p.lastAgent.Tools {
+		if tool.Name == "send_email" || tool.Name == "reply" {
+			t.Fatalf("agent step offered %s", tool.Name)
+		}
+	}
 	if len(p.lastAgent.Tools) == 0 {
 		t.Fatal("agent step had no tools")
 	}
@@ -195,5 +216,91 @@ func TestAIVariableResearchWithoutToolsFallsBack(t *testing.T) {
 	}
 	if text != "a safe line" || p.completions != 1 {
 		t.Fatalf("text %q completions %d", text, p.completions)
+	}
+}
+
+func TestCampaignSwitchAllowanceKeepsItsSentence(t *testing.T) {
+	p := &surfaceProvider{}
+	c := &surfaceCredits{reserveErr: credits.ErrAIAllowanceUsed}
+	s := &tasksService{aiProvider: p, aiCredits: c}
+	campaign, contact, step := surfaceCampaign()
+	err := s.execSequenceSwitchStep(context.Background(), campaign, contact, step, &models.ActionConfig{
+		SwitchOn: "ai", SwitchCases: []string{"yes"}, AIInstruction: "pick a case",
+	})
+	if !errors.Is(err, credits.ErrAIAllowanceUsed) {
+		t.Fatalf("err = %v", err)
+	}
+	if p.completions != 0 || len(c.reasons) != 0 {
+		t.Fatalf("calls %d charges %v", p.completions, c.reasons)
+	}
+}
+
+func TestCampaignSwitchCapSkipsTheProvider(t *testing.T) {
+	p := &surfaceProvider{}
+	c := &surfaceCredits{reserveErr: credits.ErrCapExceeded}
+	s := &tasksService{aiProvider: p, aiCredits: c}
+	campaign, contact, step := surfaceCampaign()
+	err := s.execSequenceSwitchStep(context.Background(), campaign, contact, step, &models.ActionConfig{
+		SwitchOn: "ai", SwitchCases: []string{"yes"}, AIInstruction: "pick a case",
+	})
+	if err == nil || err.Error() != "AI usage cap reached; try again later" {
+		t.Fatalf("err = %v", err)
+	}
+	if p.completions != 0 {
+		t.Fatalf("completions %d", p.completions)
+	}
+}
+
+func TestCampaignAgentLowBalanceDoesNotRunTheModel(t *testing.T) {
+	p := &surfaceProvider{}
+	c := &surfaceCredits{reserveErr: credits.ErrInsufficientCredits}
+	s := &tasksService{aiProvider: p, aiCredits: c}
+	campaign, contact, step := surfaceCampaign()
+	err := s.execSequenceAIAgentStep(context.Background(), campaign, contact, step, &models.ActionConfig{
+		AIInstruction: "unsubscribe them", AIAllowedActions: []string{"unsubscribe"},
+		AINoEngagement: true, AINoReplies: true,
+	})
+	if err == nil || err.Error() != "the workspace balance is too low for the agent step" {
+		t.Fatalf("err = %v", err)
+	}
+	if p.agents != 0 {
+		t.Fatalf("model ran %d times", p.agents)
+	}
+}
+
+type stubSearch struct{}
+
+func (stubSearch) Search(context.Context, string, int) ([]generation.SearchResult, error) {
+	return []generation.SearchResult{{Title: "Acme", Snippet: "ships widgets"}}, nil
+}
+
+func TestAIVariableSearchChargeSurvivesAFailedCompletion(t *testing.T) {
+	p := &surfaceProvider{writeErr: errors.New("down")}
+	c := &surfaceCredits{}
+	s := &tasksService{aiProvider: p, aiCredits: c, aiSearch: stubSearch{}}
+	_, contact, _ := surfaceCampaign()
+	contact.Company = "Acme"
+	_, err := s.generateAIVariable(context.Background(), uuid.New(), contact, aiVarConfig{
+		Prompt: "one line", WebSearch: true,
+	}, "one line", "", "", "k-search")
+	if err == nil {
+		t.Fatal("failed completion returned text")
+	}
+	if len(c.reasons) != 1 || c.reasons[0] != "campaign_ai_var_search" {
+		t.Fatalf("charges %v", c.reasons)
+	}
+}
+
+func TestAIVariableAllowanceIsTheRefusal(t *testing.T) {
+	p := &surfaceProvider{}
+	c := &surfaceCredits{reserveErr: credits.ErrAIOverageLimitReached}
+	s := &tasksService{aiProvider: p, aiCredits: c}
+	_, contact, _ := surfaceCampaign()
+	_, err := s.generateAIVariable(context.Background(), uuid.New(), contact, aiVarConfig{Prompt: "one line"}, "one line", "", "", "k-cap")
+	if !errors.Is(err, credits.ErrAIOverageLimitReached) {
+		t.Fatalf("err = %v", err)
+	}
+	if p.completions != 0 || len(c.reasons) != 0 {
+		t.Fatalf("calls %d charges %v", p.completions, c.reasons)
 	}
 }

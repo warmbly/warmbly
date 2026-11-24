@@ -296,18 +296,8 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		Detail:         string(n.Action),
 	}})
 	if !s.aiProvider.IsLocal() {
-		if cerr := s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAINode); cerr != nil {
-			switch {
-			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				if feedPause {
-					s.noteAICreditFailure(ctx, a)
-				}
-				return errors.New("the workspace balance is too low for this step")
-			case errors.Is(cerr, credits.ErrCapExceeded):
-				return errors.New("AI usage cap reached; try again later")
-			default:
-				return cerr
-			}
+		if err := s.refuseAICredits(ctx, a, s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAINode), feedPause, "the workspace balance is too low for this step"); err != nil {
+			return err
 		}
 	}
 
@@ -404,17 +394,7 @@ func (s *service) execAIAgentStep(ctx context.Context, a models.Automation, n mo
 			return nil
 		}
 		if cerr := s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAgentIteration); cerr != nil {
-			switch {
-			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				if feedPause {
-					s.noteAICreditFailure(ctx, a)
-				}
-				creditErr = errors.New("the workspace balance is too low for the agent step")
-			case errors.Is(cerr, credits.ErrCapExceeded):
-				creditErr = errors.New("AI usage cap reached; try again later")
-			default:
-				creditErr = cerr
-			}
+			creditErr = s.refuseAICredits(ctx, a, cerr, feedPause, "the workspace balance is too low for the agent step")
 			return creditErr
 		}
 		return nil
@@ -788,18 +768,8 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 		Detail:         "ask_ai: " + truncate(question, 120),
 	}})
 	if !s.aiProvider.IsLocal() {
-		if cerr := s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAINode); cerr != nil {
-			switch {
-			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				if feedPause {
-					s.noteAICreditFailure(ctx, a)
-				}
-				return false, errors.New("the workspace balance is too low for this branch")
-			case errors.Is(cerr, credits.ErrCapExceeded):
-				return false, errors.New("AI usage cap reached; try again later")
-			default:
-				return false, cerr
-			}
+		if err := s.refuseAICredits(ctx, a, s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAINode), feedPause, "the workspace balance is too low for this branch"); err != nil {
+			return false, err
 		}
 	}
 
@@ -840,6 +810,30 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 		// Ambiguous answers fail safe to NO, surfaced in run history.
 		return false, fmt.Errorf("AI gave an ambiguous answer: %s", truncate(res.Text, 80))
 	}
+}
+
+// refuseAICredits turns a Reserve error into the sentence a run history shows.
+// An empty balance keeps the caller's sentence. An allowance or overage refusal
+// keeps its own sentence. Both count as out of AI funds and advance the pause
+// counter on a live run. A usage cap does not.
+func (s *service) refuseAICredits(ctx context.Context, a models.Automation, err error, feedPause bool, low string) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, credits.ErrCapExceeded) {
+		return errors.New("AI usage cap reached; try again later")
+	}
+	if errors.Is(err, credits.ErrInsufficientCredits) {
+		if feedPause {
+			s.noteAICreditFailure(ctx, a)
+		}
+		var refusal *credits.AIRefusal
+		if errors.As(err, &refusal) {
+			return errors.New(refusal.Message)
+		}
+		return errors.New(low)
+	}
+	return err
 }
 
 // noteAICreditFailure advances the consecutive out-of-credits counter and pauses

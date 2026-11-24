@@ -115,7 +115,9 @@ func aiVarAvailableVars(contact *models.Contact) []string {
 // resolveAIVariables generates and substitutes every per-recipient AI block in
 // the email. It returns the inputs unchanged (zero cost) when the body has no
 // blocks. A malformed block is skipped (substituted empty) rather than failing
-// the send; a provider error fails the send (so the task retries) after refunding.
+// the send. A provider or credit error fails the send so the task retries.
+// The token charge has not been taken. A web search that already returned
+// results stays charged.
 func (s *tasksService) resolveAIVariables(ctx context.Context, campaign *models.Campaign, contact *models.Contact, sequenceID uuid.UUID, subject, bodyHTML, bodyPlain string) (string, string, string, error) {
 	subject, bodyHTML, bodyPlain, _, err := s.resolveAIVariablesWith(ctx, campaign, contact, sequenceID, subject, bodyHTML, bodyPlain, aiVarWrite{})
 	return subject, bodyHTML, bodyPlain, err
@@ -182,8 +184,8 @@ func (s *tasksService) resolveAIVariablesWith(ctx context.Context, campaign *mod
 		text, gerr := s.generateAIVariable(ctx, *campaign.OrganizationID, contact, cfg, rendered, before, after,
 			fmt.Sprintf("seq_ai_var:%s:%s:%s:%s%s", campaign.ID, contact.ID, sequenceID, ref.id, aiVarKeySuffix(ctx)))
 		if gerr != nil {
-			// A provider/credit failure fails the send so the task retries (the
-			// charge was already refunded inside generateAIVariable).
+			// The send retries. Tokens were not charged. A search that returned
+			// results was charged under its own key and is not refunded.
 			return subject, bodyHTML, bodyPlain, nil, gerr
 		}
 		resolved[ref.id] = text
@@ -255,7 +257,10 @@ func (s *tasksService) generateAIVariable(ctx context.Context, orgID uuid.UUID, 
 	model := s.aiProvider.ModelForTier(cfg.Thinking)
 	if !s.aiProvider.IsLocal() {
 		if cerr := s.aiCredits.Reserve(ctx, orgID, estimate); cerr != nil {
+			var refusal *credits.AIRefusal
 			switch {
+			case errors.As(cerr, &refusal):
+				return "", cerr
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
 				return "", ErrAIVarBalance
 			case errors.Is(cerr, credits.ErrCapExceeded):
