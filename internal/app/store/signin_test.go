@@ -47,6 +47,11 @@ func TestOAuthMailboxesConnectOnlyThroughTheirSignIn(t *testing.T) {
 	if !waitsForSignIn(m) {
 		t.Fatal("an oauth mailbox that is not ready waits for its sign-in")
 	}
+	m.Status = graphkit.MailboxProvisioning
+	if !waitsForSignIn(m) {
+		t.Fatal("an oauth mailbox the vendor still sets up waits for its sign-in")
+	}
+	m.Status = graphkit.MailboxActive
 	m.Connection.Ready = true
 	if waitsForSignIn(m) || connectable(&models.StoreMailbox{}, m) {
 		t.Fatal("a ready oauth mailbox neither waits nor auto-connects")
