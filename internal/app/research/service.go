@@ -1,8 +1,10 @@
 // Package research runs the AI contact-research agent: it drives the M2 web
 // tools (search_web, fetch_url) through the M1 provider loop, validates the
-// strict save_research output, charges 2 credits per run on save, and persists a
-// cited findings blob. Sync runs execute in the request; batch runs queue and
-// drain through a bounded in-process worker pool (no new Kafka).
+// strict save_research output, and persists a cited findings blob. On save,
+// Charge with reason research_run bills the token price plus the search_web
+// calls actually spent (credits.Price). EstimateResearchRun only checks the
+// balance before the run starts. Sync runs execute in the request; batch runs
+// queue and drain through a bounded in-process worker pool (no new Kafka).
 package research
 
 import (

@@ -94,3 +94,146 @@ func TestAdaptParamsRefusesToRepeatAFlag(t *testing.T) {
 		t.Fatal("second identical rejection should not adapt again")
 	}
 }
+
+// TestCompleteAndCompleteStreamAdapt locks the exported completion paths onto the same parameter walk.
+func TestCompleteAndCompleteStreamAdapt(t *testing.T) {
+	t.Run("complete", func(t *testing.T) { assertCompletionAdapts(t, false) })
+	t.Run("stream", func(t *testing.T) { assertCompletionAdapts(t, true) })
+}
+
+func assertCompletionAdapts(t *testing.T, stream bool) {
+	t.Helper()
+	var bodies []map[string]json.RawMessage
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Error(err)
+		}
+		bodies = append(bodies, body)
+		reject := func(param, msg string) {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"type": "invalid_request_error", "param": param, "message": msg},
+			})
+		}
+		switch {
+		case body["max_tokens"] != nil:
+			reject("max_tokens", "use max_completion_tokens")
+		case body["temperature"] != nil:
+			reject("temperature", "unsupported temperature")
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}},
+			})
+		}
+	}))
+	defer srv.Close()
+
+	temp := 0.7
+	p := &openAIProvider{apiKey: "k", baseURL: srv.URL, http: srv.Client()}
+	req := CompletionRequest{System: "s", Prompt: "hi", Model: "m", MaxTokens: 64, Temperature: &temp}
+	var (
+		result *WritingResult
+		err    error
+	)
+	if stream {
+		result, err = p.CompleteStream(context.Background(), req, func(string) {})
+	} else {
+		result, err = p.Complete(context.Background(), req)
+	}
+	if err != nil || result == nil || result.Text != "ok" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if len(bodies) != 3 {
+		t.Fatalf("attempts = %d, want 3", len(bodies))
+	}
+	if string(bodies[0]["temperature"]) != "0.7" || string(bodies[1]["temperature"]) != "0.7" {
+		t.Fatalf("temperature was not kept until rejected: %s then %s", bodies[0]["temperature"], bodies[1]["temperature"])
+	}
+	if bodies[0]["max_tokens"] == nil || bodies[2]["temperature"] != nil || string(bodies[2]["max_completion_tokens"]) != "64" {
+		t.Fatalf("adapted body = %v", bodies[2])
+	}
+	before := len(bodies)
+	if stream {
+		result, err = p.CompleteStream(context.Background(), req, func(string) {})
+	} else {
+		result, err = p.Complete(context.Background(), req)
+	}
+	if err != nil || result.Text != "ok" {
+		t.Fatalf("second call result=%+v err=%v", result, err)
+	}
+	if got := len(bodies) - before; got != 1 {
+		t.Fatalf("second call made %d requests, want 1", got)
+	}
+	final := bodies[len(bodies)-1]
+	if final["temperature"] != nil || string(final["max_completion_tokens"]) != "64" {
+		t.Fatalf("sticky body = %v", final)
+	}
+}
+
+func TestCompleteStreamDropsRejectedStreamOptions(t *testing.T) {
+	var bodies []map[string]json.RawMessage
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Error(err)
+		}
+		bodies = append(bodies, body)
+		if body["stream_options"] != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"type": "invalid_request_error", "param": "stream_options", "message": "unsupported stream_options"},
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}},
+		})
+	}))
+	defer srv.Close()
+
+	p := &openAIProvider{apiKey: "k", baseURL: srv.URL, http: srv.Client()}
+	req := CompletionRequest{System: "s", Prompt: "hi", Model: "m", MaxTokens: 32}
+	result, err := p.CompleteStream(context.Background(), req, func(string) {})
+	if err != nil || result == nil || result.Text != "ok" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if len(bodies) != 2 || bodies[0]["stream_options"] == nil || bodies[1]["stream_options"] != nil {
+		t.Fatalf("stream_options walk = %d bodies, first=%s second=%s", len(bodies), bodies[0]["stream_options"], bodies[1]["stream_options"])
+	}
+	before := len(bodies)
+	if _, err = p.CompleteStream(context.Background(), req, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(bodies) - before; got != 1 || bodies[len(bodies)-1]["stream_options"] != nil {
+		t.Fatalf("sticky stream_options call made %d requests", len(bodies)-before)
+	}
+}
+
+func TestCompleteStreamAcceptsPlainJSON(t *testing.T) {
+	var sawStream bool
+	var deltas []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		sawStream, _ = body["stream"].(bool)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}},
+		})
+	}))
+	defer srv.Close()
+
+	p := &openAIProvider{apiKey: "k", baseURL: srv.URL, http: srv.Client()}
+	result, err := p.CompleteStream(context.Background(), CompletionRequest{Prompt: "hi", Model: "m"}, func(delta string) {
+		deltas = append(deltas, delta)
+	})
+	if err != nil || result == nil || result.Text != "ok" || !sawStream || len(deltas) != 1 || deltas[0] != "ok" {
+		t.Fatalf("result=%+v err=%v stream=%t deltas=%q", result, err, sawStream, deltas)
+	}
+}

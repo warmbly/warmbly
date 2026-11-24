@@ -120,3 +120,6 @@ compliance/
 
 # Local Cloudflare Worker dev state (wrangler dev)
 .wrangler/
+
+# Local task notes. Not part of the product.
+/lokalfix/

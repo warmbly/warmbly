@@ -3,6 +3,7 @@ package aiagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -365,5 +366,50 @@ func TestRunMessagePreservesCompletedActionsAfterCancellation(t *testing.T) {
 	}
 	if pending == nil || pending.ToolCallID != "newer-run-call" {
 		t.Fatalf("canceled run cleared a newer run's approval: %+v", pending)
+	}
+}
+
+// approveProbe calls the run's Approve hook once for a write tool and keeps the error.
+type approveProbe struct {
+	generation.Provider
+	err error
+}
+
+func (p *approveProbe) ModelForTier(bool) string { return "m" }
+func (p *approveProbe) IsLocal() bool            { return true }
+func (p *approveProbe) RunAgent(ctx context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
+	if req.Approve == nil {
+		return nil, errors.New("approve hook missing")
+	}
+	p.err = req.Approve(ctx, generation.ToolDef{Name: "add_tag", Risk: generation.RiskWrite}, generation.ToolCall{ID: "c1", Name: "add_tag", Args: json.RawMessage(`{}`)})
+	return &generation.AgentResult{
+		Text: "ok", StopReason: "stop",
+		Messages: append(req.Messages, generation.AgentMessage{Role: "assistant", Content: "ok"}),
+	}, nil
+}
+
+func TestStrictApprovalIgnoresAlwaysAllow(t *testing.T) {
+	repo := &runRepository{
+		session:  models.AgentSession{ID: uuid.New(), OrgID: uuid.New(), UserID: uuid.New()},
+		policies: map[string]string{"add_tag": "always_allow"},
+	}
+	inv := aitools.Invocation{OrgID: repo.session.OrgID, UserID: repo.session.UserID}
+	plain := &approveProbe{}
+	svc := NewService(repo, testRegistry(), plain, nil, runFeatureGate{}, nil, nil, nil, nil)
+	if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, "plain", "Tag this contact", "", "", func(StreamEvent) {}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if plain.err != nil {
+		t.Fatalf("always_allow write was stopped: %v", plain.err)
+	}
+
+	strict := &approveProbe{}
+	svc = NewService(repo, testRegistry(), strict, nil, runFeatureGate{}, nil, nil, nil, nil)
+	ctx := WithStrictApproval(context.Background())
+	if xerr := svc.RunMessage(ctx, inv, repo.session.ID, "strict", "Tag this contact", "", "", func(StreamEvent) {}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if !errors.Is(strict.err, generation.ErrApprovalRequired) {
+		t.Fatalf("strict run approved a write: %v", strict.err)
 	}
 }

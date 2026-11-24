@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -120,6 +121,13 @@ func TestAgentReturnsEarlyAnswerWithoutSpendingReservedTurn(t *testing.T) {
 			requests, charges := 0, 0
 			provider := agentFixtureProvider(kind, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests++
+				raw, rerr := io.ReadAll(r.Body)
+				if rerr != nil {
+					t.Error(rerr)
+				}
+				if strings.Contains(string(raw), "Do not invent findings") {
+					t.Error("early answer carried the final-turn instructions")
+				}
 				writeAgentFixture(w, kind, "The mailbox is paused.")
 			}))
 			result, err := provider.RunAgent(context.Background(), AgentRequest{
@@ -152,8 +160,11 @@ func TestAgentRejectsEmptyAnswer(t *testing.T) {
 				req.OnEvent = func(AgentEvent) {}
 			}
 			result, err := provider.RunAgent(context.Background(), req)
-			if err == nil {
-				t.Fatalf("empty answer returned as success: %+v", result)
+			if result == nil || err == nil || !strings.Contains(err.Error(), "empty agent response") {
+				t.Fatalf("empty answer: result=%+v err=%v", result, err)
+			}
+			if result.StopReason != "error" || result.Iterations != 1 || result.Pending != nil || len(result.Messages) != 1 || result.Messages[0].Role != "user" || result.Messages[0].Content != "Explain the sending status" {
+				t.Fatalf("empty answer result=%+v", result)
 			}
 		})
 	}

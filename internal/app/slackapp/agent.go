@@ -111,6 +111,12 @@ func (s *Service) getDraft(ctx context.Context, orgID uuid.UUID, threadID string
 	return body
 }
 
+// strictThread reports a Slack turn whose writes must ask even when the workspace always allows them.
+// A channel is readable by other people, and a quote brings in text they wrote.
+func strictThread(dm, quotesOthers bool) bool {
+	return !dm || quotesOthers
+}
+
 // runTurn answers one message in a thread, one run per thread at a time.
 func (s *Service) runTurn(ctx context.Context, t agentTurn) {
 	if s.agent == nil {
@@ -137,7 +143,7 @@ func (s *Service) runTurn(ctx context.Context, t agentTurn) {
 	}
 	s.react(ctx, t.token, t.channel, t.ackTS, reactWorking, true)
 	// Anyone can post in a channel, so there every change asks.
-	if !t.dm || t.quotesOthers {
+	if strictThread(t.dm, t.quotesOthers) {
 		ctx = aiagent.WithStrictApproval(ctx)
 	}
 	r := s.newRenderer(t.token, t.channel, t.threadTS, row.SessionID, t.dm)

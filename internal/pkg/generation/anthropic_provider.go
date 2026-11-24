@@ -265,7 +265,7 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 		finalTurn := req.ReserveFinalResponse && iter == maxIter-1
 		if finalTurn {
 			iterationTools = nil
-			system += agentFinalResponseInstructions
+			system = req.System + agentFinalResponseInstructions
 		}
 		resp, err := p.complete(ctx, model, maxTokens, system, transcriptToAnthropic(messages), iterationTools, nil)
 		if err != nil {

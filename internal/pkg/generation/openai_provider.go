@@ -559,7 +559,7 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 		finalTurn := req.ReserveFinalResponse && iter == maxIter-1
 		if finalTurn {
 			available = nil
-			iterationSystem += agentFinalResponseInstructions
+			iterationSystem = req.System + agentFinalResponseInstructions
 		}
 		wireTools := toolDefsToWire(available)
 		var resp *oaiResponse

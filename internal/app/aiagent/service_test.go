@@ -83,6 +83,17 @@ func TestAlwaysAllowNeedsSettingsAndANonSendingTool(t *testing.T) {
 	}
 }
 
+func TestAutoAllowedDoesNotSkipASend(t *testing.T) {
+	s := &service{registry: testRegistry()}
+	policies := map[string]string{"send_reply": "always_allow", "add_tag": "always_allow"}
+	if s.autoAllowed(policies, generation.ToolDef{Name: "send_reply", Risk: generation.RiskSend}) {
+		t.Fatal("a send tool ran under always_allow")
+	}
+	if !s.autoAllowed(policies, generation.ToolDef{Name: "add_tag", Risk: generation.RiskWrite}) {
+		t.Fatal("a write tool with always_allow did not auto-run")
+	}
+}
+
 func TestForReaderWithholdsResultsOfToolsTheReaderCannotRun(t *testing.T) {
 	s := &service{registry: testRegistry()}
 	reader := aitools.Invocation{OrgID: uuid.New(), OrgPerms: models.PermViewContacts}
