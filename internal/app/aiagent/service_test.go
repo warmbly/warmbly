@@ -198,3 +198,63 @@ func TestLoadTranscriptAnswersEveryToolCallInPlace(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemPromptLayers(t *testing.T) {
+	s := &service{}
+	order := func(t *testing.T, prompt string, parts ...string) {
+		t.Helper()
+		prev := -1
+		for _, part := range parts {
+			at := strings.Index(prompt, part)
+			if at < 0 || at <= prev {
+				t.Fatalf("%q is out of order in %s", part, prompt)
+			}
+			prev = at
+		}
+	}
+	dash := s.systemPrompt(&models.AgentSession{Context: models.AgentSessionContext{Page: "/app/campaigns/x", Resource: "campaign:abc"}}, "VOICE_BLOCK", "SKILL_BLOCK")
+	order(t, dash, "You are Remie", "How Warmbly works:", "VOICE_BLOCK", "currently on page", "looking at", "SKILL_BLOCK")
+	if strings.Contains(dash, "You are replying in Slack") {
+		t.Fatal("dashboard prompt includes Slack rules")
+	}
+	dm := s.systemPrompt(&models.AgentSession{Context: models.AgentSessionContext{Page: PageSlack, Resource: "slack:D123"}}, "", "")
+	if !strings.Contains(dm, "You are replying in Slack") || !strings.Contains(dm, "direct message") || strings.Contains(dm, "currently on page") || strings.Contains(dm, "Slack channel with id") {
+		t.Fatalf("dm prompt=%s", dm)
+	}
+	ch := s.systemPrompt(&models.AgentSession{Context: models.AgentSessionContext{Page: PageSlack, Resource: "slack:C123"}}, "", "")
+	if !strings.Contains(ch, "Slack channel with id C123") || strings.Contains(ch, "direct message") {
+		t.Fatalf("channel prompt=%s", ch)
+	}
+	bare := s.systemPrompt(&models.AgentSession{Context: models.AgentSessionContext{Page: "/app/campaigns/x", Resource: "campaign:abc"}}, "", "")
+	if strings.Contains(bare, "VOICE_BLOCK") || strings.Contains(bare, "SKILL_BLOCK") || !strings.Contains(bare, "How Warmbly works:") {
+		t.Fatal("empty voice and skills changed the primer")
+	}
+}
+
+func TestDeriveTitleCapsRunes(t *testing.T) {
+	if deriveTitle("hello\nthere") != "hello there" {
+		t.Fatalf("newline: %q", deriveTitle("hello\nthere"))
+	}
+	if deriveTitle("hello") != "hello" {
+		t.Fatal("short title changed")
+	}
+	exact := strings.Repeat("a", 60)
+	if deriveTitle(exact) != exact {
+		t.Fatalf("60 runes changed: %q", deriveTitle(exact))
+	}
+	got := deriveTitle(strings.Repeat("a", 61))
+	if got != exact+"…" {
+		t.Fatalf("cap=%q", got)
+	}
+}
+
+func TestStreamEventOmitsRawArgs(t *testing.T) {
+	ev := StreamEvent{Type: evTool, Tool: "issue_token", Args: json.RawMessage(`{"token":"sekret"}`)}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "sekret") || strings.Contains(string(b), `"args":`) {
+		t.Fatalf("raw args leaked: %s", b)
+	}
+}

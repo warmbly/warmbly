@@ -286,3 +286,92 @@ func TestAgentPreservesCompletedToolsWhenFinalResponseFails(t *testing.T) {
 		}
 	}
 }
+
+func TestPausedTurnStillEmitsItsText(t *testing.T) {
+	const sentence = "I'll update the contact."
+	for _, kind := range []string{"openai", "openai-stream", "anthropic"} {
+		t.Run(kind, func(t *testing.T) {
+			executions, texts, deltas := 0, 0, 0
+			var got string
+			provider := agentFixtureProvider(kind, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeAgentFixture(w, kind, sentence, ToolCall{ID: "write-1", Name: "write", Args: json.RawMessage(`{}`)})
+			}))
+			result, err := provider.RunAgent(context.Background(), AgentRequest{
+				Messages: []AgentMessage{{Role: "user", Content: "Update"}},
+				Tools: []ToolDef{{Name: "write", Risk: RiskWrite, Handler: func(context.Context, json.RawMessage) (string, error) {
+					executions++
+					return `{}`, nil
+				}}},
+				OnEvent: func(ev AgentEvent) {
+					switch ev.Type {
+					case EventText:
+						texts++
+						got = ev.Text
+					case EventTextDelta:
+						deltas++
+					}
+				},
+				Approve: func(context.Context, ToolDef, ToolCall) error { return ErrApprovalRequired },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if texts != 1 || got != sentence || executions != 0 || result.StopReason != "approval_required" {
+				t.Fatalf("text=%q texts=%d executions=%d result=%+v", got, texts, executions, result)
+			}
+			for _, m := range result.Messages {
+				if len(m.ToolCalls) > 0 || m.Content == sentence {
+					t.Fatalf("paused turn leaked into the provider transcript: %+v", m)
+				}
+			}
+			if kind == "anthropic" && deltas != 0 {
+				t.Fatalf("anthropic emitted %d deltas", deltas)
+			}
+		})
+	}
+}
+
+func TestPausedBatchRunsNoTool(t *testing.T) {
+	for _, kind := range []string{"openai", "openai-stream", "anthropic"} {
+		t.Run(kind, func(t *testing.T) {
+			reads, writes := 0, 0
+			provider := agentFixtureProvider(kind, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeAgentFixture(w, kind, "",
+					ToolCall{ID: "read-1", Name: "read", Args: json.RawMessage(`{}`)},
+					ToolCall{ID: "write-1", Name: "write", Args: json.RawMessage(`{}`)},
+				)
+			}))
+			result, err := provider.RunAgent(context.Background(), AgentRequest{
+				Messages: []AgentMessage{{Role: "user", Content: "Update"}},
+				Tools: []ToolDef{
+					{Name: "read", Risk: RiskRead, Handler: func(context.Context, json.RawMessage) (string, error) {
+						reads++
+						return `{}`, nil
+					}},
+					{Name: "write", Risk: RiskWrite, Handler: func(context.Context, json.RawMessage) (string, error) {
+						writes++
+						return `{}`, nil
+					}},
+				},
+				OnEvent: func(AgentEvent) {},
+				Approve: func(_ context.Context, tool ToolDef, _ ToolCall) error {
+					if tool.Name == "write" {
+						return ErrApprovalRequired
+					}
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reads != 0 || writes != 0 || result.StopReason != "approval_required" || result.Pending == nil || result.Pending.Call.Name != "write" {
+				t.Fatalf("reads=%d writes=%d result=%+v", reads, writes, result)
+			}
+			for _, m := range result.Messages {
+				if len(m.ToolCalls) > 0 {
+					t.Fatalf("paused batch leaked a tool call: %+v", m)
+				}
+			}
+		})
+	}
+}

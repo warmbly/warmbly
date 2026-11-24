@@ -3,10 +3,10 @@ package aiagent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -369,47 +369,332 @@ func TestRunMessagePreservesCompletedActionsAfterCancellation(t *testing.T) {
 	}
 }
 
-// approveProbe calls the run's Approve hook once for a write tool and keeps the error.
-type approveProbe struct {
-	generation.Provider
-	err error
+func openAIChoice(w http.ResponseWriter, content, tool, callID string) {
+	w.Header().Set("Content-Type", "application/json")
+	msg := map[string]any{"role": "assistant", "content": content}
+	if tool != "" {
+		msg["tool_calls"] = []any{map[string]any{
+			"id": callID, "type": "function",
+			"function": map[string]string{"name": tool, "arguments": `{}`},
+		}}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"choices": []any{map[string]any{"message": msg}},
+		"usage":   map[string]int{"prompt_tokens": 6, "completion_tokens": 4, "total_tokens": 10},
+	})
 }
 
-func (p *approveProbe) ModelForTier(bool) string { return "m" }
-func (p *approveProbe) IsLocal() bool            { return true }
-func (p *approveProbe) RunAgent(ctx context.Context, req generation.AgentRequest) (*generation.AgentResult, error) {
-	if req.Approve == nil {
-		return nil, errors.New("approve hook missing")
+func localOpenAI(t *testing.T, h http.HandlerFunc) generation.Provider {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	p, err := generation.NewProvider(generation.ProviderConfig{
+		OpenAIAPIKey: "fixture", OpenAIBaseURL: srv.URL, Local: true,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	p.err = req.Approve(ctx, generation.ToolDef{Name: "add_tag", Risk: generation.RiskWrite}, generation.ToolCall{ID: "c1", Name: "add_tag", Args: json.RawMessage(`{}`)})
-	return &generation.AgentResult{
-		Text: "ok", StopReason: "stop",
-		Messages: append(req.Messages, generation.AgentMessage{Role: "assistant", Content: "ok"}),
-	}, nil
+	return p
+}
+
+func newRunSession() (*runRepository, aitools.Invocation) {
+	repo := &runRepository{session: models.AgentSession{ID: uuid.New(), OrgID: uuid.New(), UserID: uuid.New()}}
+	return repo, aitools.Invocation{OrgID: repo.session.OrgID, UserID: repo.session.UserID}
+}
+
+func decodeAgentRow(t *testing.T, row models.AgentMessageRow) generation.AgentMessage {
+	t.Helper()
+	var m generation.AgentMessage
+	if err := json.Unmarshal(row.Content, &m); err != nil {
+		t.Fatalf("decode row: %v", err)
+	}
+	return m
+}
+
+func countingTool(name string, risk generation.RiskClass, n *int, out string) aitools.Tool {
+	return aitools.Tool{
+		Name: name,
+		Risk: risk,
+		Handler: func(context.Context, aitools.Invocation, json.RawMessage) (string, error) {
+			if n != nil {
+				*n++
+			}
+			return out, nil
+		},
+	}
+}
+
+func TestRunMessageKeepsApprovalCommentary(t *testing.T) {
+	const sentence = "I'll update the contact."
+	requests, writes := 0, 0
+	p := localOpenAI(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		openAIChoice(w, sentence, "update_contact_fields", "call-1")
+	})
+	repo, inv := newRunSession()
+	reg := aitools.NewRegistry()
+	reg.Register(countingTool("update_contact_fields", generation.RiskWrite, &writes, `{"updated":true}`))
+	svc := NewService(repo, reg, p, nil, runFeatureGate{}, nil, nil, nil, nil)
+	var events []StreamEvent
+	if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, "m1", "Update the contact", "", "", func(ev StreamEvent) {
+		events = append(events, ev)
+	}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	last := events[len(events)-1]
+	if requests != 1 || writes != 0 || last.Type != evDone || last.Message != "awaiting_approval" {
+		t.Fatalf("requests=%d writes=%d last=%+v", requests, writes, last)
+	}
+	turns, pending, xerr := svc.Transcript(context.Background(), inv, repo.session.ID)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	if pending == nil || pending.ToolName != "update_contact_fields" {
+		t.Fatalf("pending=%+v", pending)
+	}
+	if len(turns) != 2 || len(turns[1].Blocks) != 1 || turns[1].Blocks[0].Kind != "text" || turns[1].Blocks[0].Text != sentence {
+		t.Fatalf("transcript=%+v", turns)
+	}
+	first := decodeAgentRow(t, repo.rows[0])
+	if first.Role != "user" || first.Content != "Update the contact" {
+		t.Fatalf("user row=%+v", first)
+	}
 }
 
 func TestStrictApprovalIgnoresAlwaysAllow(t *testing.T) {
-	repo := &runRepository{
-		session:  models.AgentSession{ID: uuid.New(), OrgID: uuid.New(), UserID: uuid.New()},
-		policies: map[string]string{"add_tag": "always_allow"},
+	for _, strict := range []bool{false, true} {
+		name := "plain"
+		if strict {
+			name = "strict"
+		}
+		t.Run(name, func(t *testing.T) {
+			requests, writes := 0, 0
+			p := localOpenAI(t, func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if requests == 1 {
+					openAIChoice(w, "", "update_contact_fields", "call-1")
+					return
+				}
+				openAIChoice(w, "Done.", "", "")
+			})
+			repo, inv := newRunSession()
+			repo.policies = map[string]string{"update_contact_fields": "always_allow"}
+			reg := aitools.NewRegistry()
+			reg.Register(countingTool("update_contact_fields", generation.RiskWrite, &writes, `{"updated":true}`))
+			svc := NewService(repo, reg, p, nil, runFeatureGate{}, nil, nil, nil, nil)
+			ctx := context.Background()
+			if strict {
+				ctx = WithStrictApproval(ctx)
+			}
+			var events []StreamEvent
+			if xerr := svc.RunMessage(ctx, inv, repo.session.ID, "m", "Update the contact", "", "", func(ev StreamEvent) {
+				events = append(events, ev)
+			}); xerr != nil {
+				t.Fatal(xerr)
+			}
+			last := events[len(events)-1]
+			if strict {
+				if requests != 1 || writes != 0 || last.Type != evDone || last.Message != "awaiting_approval" {
+					t.Fatalf("requests=%d writes=%d last=%+v", requests, writes, last)
+				}
+				if repo.session.Context.Pending == nil || repo.session.Context.Pending.ToolName != "update_contact_fields" {
+					t.Fatalf("pending=%+v", repo.session.Context.Pending)
+				}
+				return
+			}
+			if requests != 2 || writes != 1 || last.Type != evDone || last.Message != "" {
+				t.Fatalf("requests=%d writes=%d last=%+v", requests, writes, last)
+			}
+		})
 	}
-	inv := aitools.Invocation{OrgID: repo.session.OrgID, UserID: repo.session.UserID}
-	plain := &approveProbe{}
-	svc := NewService(repo, testRegistry(), plain, nil, runFeatureGate{}, nil, nil, nil, nil)
-	if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, "plain", "Tag this contact", "", "", func(StreamEvent) {}); xerr != nil {
-		t.Fatal(xerr)
-	}
-	if plain.err != nil {
-		t.Fatalf("always_allow write was stopped: %v", plain.err)
-	}
+}
 
-	strict := &approveProbe{}
-	svc = NewService(repo, testRegistry(), strict, nil, runFeatureGate{}, nil, nil, nil, nil)
-	ctx := WithStrictApproval(context.Background())
-	if xerr := svc.RunMessage(ctx, inv, repo.session.ID, "strict", "Tag this contact", "", "", func(StreamEvent) {}); xerr != nil {
+func TestResumeDenySkipsTheToolAndContinues(t *testing.T) {
+	const denied = `{"status":"denied","note":"The user declined to run this action."}`
+	requests, writes := 0, 0
+	p := localOpenAI(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			openAIChoice(w, "", "update_contact_fields", "call-1")
+			return
+		}
+		openAIChoice(w, "Stopped.", "", "")
+	})
+	repo, inv := newRunSession()
+	reg := aitools.NewRegistry()
+	reg.Register(countingTool("update_contact_fields", generation.RiskWrite, &writes, `{"updated":true}`))
+	svc := NewService(repo, reg, p, nil, runFeatureGate{}, nil, nil, nil, nil)
+	var events []StreamEvent
+	emit := func(ev StreamEvent) { events = append(events, ev) }
+	if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, "m", "Update the contact", "", "", emit); xerr != nil {
 		t.Fatal(xerr)
 	}
-	if !errors.Is(strict.err, generation.ErrApprovalRequired) {
-		t.Fatalf("strict run approved a write: %v", strict.err)
+	if requests != 1 || writes != 0 || events[len(events)-1].Message != "awaiting_approval" {
+		t.Fatalf("requests=%d writes=%d last=%+v", requests, writes, events[len(events)-1])
 	}
+	if xerr := svc.Resume(context.Background(), inv, repo.session.ID, "other-call", "deny", emit); xerr != errApprovalNotPending || requests != 1 {
+		t.Fatalf("wrong id: err=%v requests=%d", xerr, requests)
+	}
+	events = nil
+	if xerr := svc.Resume(context.Background(), inv, repo.session.ID, "call-1", "deny", emit); xerr != nil {
+		t.Fatal(xerr)
+	}
+	var sawText bool
+	for _, ev := range events {
+		if ev.Type == evTool || ev.Type == evToolDone {
+			t.Fatalf("deny emitted a tool event: %+v", ev)
+		}
+		if ev.Type == evText && ev.Text == "Stopped." {
+			sawText = true
+		}
+	}
+	if !sawText || writes != 0 {
+		t.Fatalf("text=%v writes=%d events=%+v", sawText, writes, events)
+	}
+	var toolBody string
+	for _, row := range repo.rows {
+		if m := decodeAgentRow(t, row); m.Role == "tool" {
+			toolBody = m.Content
+		}
+	}
+	if toolBody != denied {
+		t.Fatalf("stored tool=%s", toolBody)
+	}
+	turns, _, xerr := svc.Transcript(context.Background(), inv, repo.session.ID)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	var result string
+	for _, b := range turns[len(turns)-1].Blocks {
+		if b.Kind == "tool" {
+			result = b.Result
+		}
+	}
+	if result != denied {
+		t.Fatalf("hydrated result=%s", result)
+	}
+}
+
+func TestRunMessageShowsASecretOnce(t *testing.T) {
+	calls := 0
+	p := localOpenAI(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			openAIChoice(w, "", "issue_token", "sec-1")
+			return
+		}
+		openAIChoice(w, "Done.", "", "")
+	})
+	repo, inv := newRunSession()
+	reg := aitools.NewRegistry()
+	reg.Register(aitools.Tool{
+		Name:         "issue_token",
+		Risk:         generation.RiskRead,
+		SecretFields: []string{"token"},
+		Handler: func(context.Context, aitools.Invocation, json.RawMessage) (string, error) {
+			return `{"token":"sekret","ok":true}`, nil
+		},
+	})
+	svc := NewService(repo, reg, p, nil, runFeatureGate{}, nil, nil, nil, nil)
+	var events []StreamEvent
+	if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, "m", "Issue a token", "", "", func(ev StreamEvent) {
+		events = append(events, ev)
+	}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	var sawSecret bool
+	for _, ev := range events {
+		if ev.Type == evSecret && ev.Secrets["token"] == "sekret" {
+			sawSecret = true
+		}
+		if ev.Type == evToolDone && strings.Contains(ev.Result, "sekret") {
+			t.Fatalf("tool result leaked the secret: %s", ev.Result)
+		}
+	}
+	if !sawSecret {
+		t.Fatal("tool_secret was not emitted")
+	}
+	var toolBody string
+	for _, row := range repo.rows {
+		if m := decodeAgentRow(t, row); m.Role == "tool" {
+			toolBody = m.Content
+		}
+	}
+	if strings.Contains(toolBody, "sekret") || !strings.Contains(toolBody, secretPlaceholder) {
+		t.Fatalf("stored tool=%s", toolBody)
+	}
+}
+
+func TestRunMessageWritesTheUserTurnAndThePage(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		p := localOpenAI(t, func(w http.ResponseWriter, r *http.Request) {
+			openAIChoice(w, "The mailbox is paused.", "", "")
+		})
+		repo, inv := newRunSession()
+		svc := NewService(repo, aitools.NewRegistry(), p, nil, runFeatureGate{}, nil, nil, nil, nil)
+		var events []StreamEvent
+		if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, "m", "Inspect sending", "/app/campaigns/x", "campaign:abc", func(ev StreamEvent) {
+			events = append(events, ev)
+		}); xerr != nil {
+			t.Fatal(xerr)
+		}
+		first := decodeAgentRow(t, repo.rows[0])
+		if first.Role != "user" || first.Content != "Inspect sending" {
+			t.Fatalf("user row=%+v", first)
+		}
+		if len(repo.rows) < 2 || decodeAgentRow(t, repo.rows[1]).Role != "assistant" {
+			t.Fatalf("rows=%d", len(repo.rows))
+		}
+		if repo.session.Context.Page != "/app/campaigns/x" || repo.session.Context.Resource != "campaign:abc" || repo.session.Context.Pending != nil {
+			t.Fatalf("context=%+v", repo.session.Context)
+		}
+		iter, textAt := 0, -1
+		for i, ev := range events {
+			if ev.Type == "iteration" {
+				iter++
+				if ev.Budget != DefaultRunBudget {
+					t.Fatalf("budget=%d", ev.Budget)
+				}
+			}
+			if ev.Type == evText && textAt < 0 {
+				textAt = i
+			}
+		}
+		var iterAt int
+		for i, ev := range events {
+			if ev.Type == "iteration" {
+				iterAt = i
+				break
+			}
+		}
+		if iter != 1 || textAt < iterAt || events[len(events)-1].Type != evDone {
+			t.Fatalf("events=%+v", events)
+		}
+	})
+	t.Run("provider error", func(t *testing.T) {
+		p := localOpenAI(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":{"message":"down"}}`))
+		})
+		repo, inv := newRunSession()
+		svc := NewService(repo, aitools.NewRegistry(), p, nil, runFeatureGate{}, nil, nil, nil, nil)
+		var events []StreamEvent
+		if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, "m", "Inspect sending", "", "", func(ev StreamEvent) {
+			events = append(events, ev)
+		}); xerr != nil {
+			t.Fatal(xerr)
+		}
+		last := events[len(events)-1]
+		if last.Type != evError || last.Code != "provider_error" || last.Message != "Remie hit an error. Please try again." {
+			t.Fatalf("last=%+v", last)
+		}
+		if len(repo.rows) != 1 {
+			t.Fatalf("rows=%d", len(repo.rows))
+		}
+		first := decodeAgentRow(t, repo.rows[0])
+		if first.Role != "user" || first.Content != "Inspect sending" {
+			t.Fatalf("user row=%+v", first)
+		}
+	})
 }

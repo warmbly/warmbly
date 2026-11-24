@@ -173,6 +173,11 @@ func (s *Service) react(ctx context.Context, token, channel, ts, name string, ad
 	}
 }
 
+// resumeApprovalContext asks again for every write. A resumed turn may have read other people's text.
+func resumeApprovalContext(ctx context.Context) context.Context {
+	return aiagent.WithStrictApproval(ctx)
+}
+
 // resumeTurn continues a paused run after the owner's decision.
 func (s *Service) resumeTurn(ctx context.Context, token string, row *models.SlackAgentThread, inv aitools.Invocation, toolCallID, decision string) {
 	if s.agent == nil {
@@ -189,7 +194,7 @@ func (s *Service) resumeTurn(ctx context.Context, token string, row *models.Slac
 	}
 	defer release()
 	// What the run read before pausing is not known here, so later changes ask too.
-	ctx = aiagent.WithStrictApproval(ctx)
+	ctx = resumeApprovalContext(ctx)
 	r := s.newRenderer(token, row.ChannelID, row.ThreadTS, row.SessionID, strings.HasPrefix(row.ChannelID, "D"))
 	r.start(ctx)
 	xerr := s.agent.Resume(ctx, inv, row.SessionID, toolCallID, decision, r.emit)
@@ -610,6 +615,15 @@ func (r *renderer) takeDrafts() map[string]string {
 	return d
 }
 
+// settleReply decides the empty-run sentence. skip is computed before that sentence is filled in.
+func settleReply(done []string, cur string, steps int, errMsg string, hasApproval, tsEmpty bool) (string, bool) {
+	empty := len(done) == 0 && strings.TrimSpace(cur) == "" && steps == 0 && errMsg == ""
+	if empty && !hasApproval {
+		errMsg = "I don't have an answer for that. Try asking another way."
+	}
+	return errMsg, empty && hasApproval && tsEmpty
+}
+
 // finish stops the ticker and writes the final state.
 func (r *renderer) finish(ctx context.Context, xerr *errx.Error) {
 	close(r.stop)
@@ -623,12 +637,9 @@ func (r *renderer) finish(ctx context.Context, xerr *errx.Error) {
 			r.errMsg = xerr.Message
 		}
 	}
-	empty := len(r.done) == 0 && strings.TrimSpace(r.cur) == "" && len(r.steps) == 0 && r.errMsg == ""
-	if empty && r.appr == nil {
-		r.errMsg = "I don't have an answer for that. Try asking another way."
-	}
+	errMsg, skip := settleReply(r.done, r.cur, len(r.steps), r.errMsg, r.appr != nil, r.ts == "")
+	r.errMsg = errMsg
 	r.dirty = true
-	skip := empty && r.appr != nil && r.ts == ""
 	r.mu.Unlock()
 	if skip {
 		if r.useStatus {
