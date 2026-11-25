@@ -442,7 +442,7 @@ const (
 	ConnectToken      = "token"
 	ConnectDelegation = "delegation"
 	ConnectPassword   = "password"
-	// ConnectOAuth (Google, with GoogleDelegation.SignInClientID registered): the mail vendor's team
+	// ConnectOAuth (a SignInClientID registered for the provider): the mail vendor's team
 	// signs the mailbox in through a link the partner registers (PutMailboxSignInLink); the partner
 	// reports it connected (MailboxSignedIn) and it is ready.
 	ConnectOAuth = "oauth"
@@ -532,6 +532,8 @@ type AccessToken struct {
 type MicrosoftDelegation struct {
 	AppID       string   `json:"app_id"`
 	Permissions []string `json:"permissions"`
+	// SignInClientID is the Entra app the mail vendor signs Microsoft mailboxes in to (ConnectOAuth).
+	SignInClientID string `json:"sign_in_client_id,omitempty"`
 }
 
 // Delegation is a set of connection identities, the partner's or one account's.

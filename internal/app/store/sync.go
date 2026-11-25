@@ -370,6 +370,11 @@ func (s *Service) PushDelegation(ctx context.Context) error {
 		}
 		if app, perms, ok := s.Delegator.MicrosoftAppIdentity(); ok {
 			d.Microsoft = &graphkit.MicrosoftDelegation{AppID: app, Permissions: perms}
+			// New tenants connect by sign-in to this instance's Outlook app too, so the store never needs
+			// the admin mailbox's password to approve the app in the tenant.
+			if !s.Simulate && s.links != nil {
+				d.Microsoft.SignInClientID = config.OutlookOAuthClientID()
+			}
 		}
 	}
 	if d.Empty() {

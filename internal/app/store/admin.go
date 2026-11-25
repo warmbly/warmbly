@@ -597,6 +597,7 @@ func (s *Service) AdminRetryConnect(ctx context.Context, id uuid.UUID) (*AdminMa
 	if err != nil {
 		return nil, err
 	}
+	s.syncSignIn(ctx, fresh, m)
 	if fresh != nil && connectable(fresh, m) {
 		cctx, cancel := context.WithTimeout(ctx, connectBudget)
 		s.connect(cctx, fresh, m)

@@ -61,3 +61,16 @@ func TestOAuthMailboxesConnectOnlyThroughTheirSignIn(t *testing.T) {
 		t.Fatal("delegation connects as before")
 	}
 }
+
+func TestMicrosoftOAuthMailboxesSignInWithOutlook(t *testing.T) {
+	m := &graphkit.Mailbox{Provider: graphkit.ProviderMicrosoft, Status: graphkit.MailboxActive, Connection: graphkit.Connection{Method: graphkit.ConnectOAuth}}
+	if !waitsForSignIn(m) || connectable(&models.StoreMailbox{}, m) {
+		t.Fatal("a Microsoft oauth mailbox waits for its sign-in and never auto-connects")
+	}
+	if got := signInProvider(m.Provider); got != models.InboxProviderOutlook {
+		t.Fatalf("Microsoft sign-in link provider %q", got)
+	}
+	if got := signInProvider(graphkit.ProviderGoogle); got != models.InboxProviderGoogle {
+		t.Fatalf("Google sign-in link provider %q", got)
+	}
+}
