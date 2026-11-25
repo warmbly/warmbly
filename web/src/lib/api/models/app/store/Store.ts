@@ -36,6 +36,8 @@ export interface StoreStatus {
     enabled: boolean;
     /** The operator paused new purchases; everything already bought keeps working. Absent from an older backend. */
     sales_paused?: boolean;
+    /** New mailboxes can't be ordered for a while; domains alone still can. Absent from an older backend. */
+    mailbox_orders_paused?: boolean;
     /** The instance has a GraphKit connection (independent of this workspace); absent from an older backend. */
     configured?: boolean;
     /** Why enabled is false; absent when enabled. */

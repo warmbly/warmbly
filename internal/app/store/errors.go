@@ -41,7 +41,9 @@ const (
 	CodeTransferLocked        = "transfer_locked"
 	CodeProviderMixed         = "provider_mixed"
 	// CodeProviderUnavailable refuses mailboxes from a provider that is not offered right now.
-	CodeProviderUnavailable   = "provider_unavailable"
+	CodeProviderUnavailable = "provider_unavailable"
+	// CodeMailboxOrdersPaused refuses new mailboxes for a while; domains alone can still be bought.
+	CodeMailboxOrdersPaused   = "mailbox_orders_paused"
 	CodeAddressTaken          = "mailbox_exists"
 	CodeAddressInvalid        = "local_part_invalid"
 	CodeMailboxLimit          = "mailbox_limit"
@@ -164,6 +166,9 @@ func providerUnavailable(provider string) *errx.Error {
 	return errx.NewWithIdentifier(errx.Unprocessable, CodeProviderUnavailable, name+" aren't available right now. Choose another provider for these mailboxes.")
 }
 
+var errMailboxOrdersPaused = errx.NewWithIdentifier(errx.ServiceUnavailable, CodeMailboxOrdersPaused,
+	"New mailboxes can't be ordered for a short while. Domains can still be bought on their own, and mailboxes will be available again soon.")
+
 func unavailable() *errx.Error {
 	e := errx.NewWithIdentifier(errx.ServiceUnavailable, CodeUnavailable, "Buying domains and mailboxes is unavailable right now. Try again in a few minutes.")
 	e.Public = true
@@ -182,6 +187,9 @@ func (s *Service) upstream(_ context.Context, op string, err error) *errx.Error 
 	if ge.AccountLevel() {
 		s.alertIfAccountLevel(err)
 		return unavailable()
+	}
+	if ge.MailboxOrdersPaused() {
+		return errMailboxOrdersPaused
 	}
 	if p := ge.UnavailableProvider(); p != "" {
 		return providerUnavailable(p)

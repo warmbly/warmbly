@@ -87,8 +87,10 @@ type Pricing struct {
 	Domains   []TLDPrice     `json:"domains"`
 	Mailboxes []MailboxPrice `json:"mailboxes"`
 	Limits    Limits         `json:"limits"`
-	Sending   *SendingPrices `json:"sending,omitempty"`
-	Social    *SocialPrices  `json:"social,omitempty"`
+	// MailboxOrdersPaused is set while GraphKit takes no new mailbox orders on live keys.
+	MailboxOrdersPaused bool           `json:"mailbox_orders_paused"`
+	Sending             *SendingPrices `json:"sending,omitempty"`
+	Social              *SocialPrices  `json:"social,omitempty"`
 }
 
 // MinYears is the shortest registration a TLD takes, 1 when it is not listed.

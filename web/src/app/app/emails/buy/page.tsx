@@ -155,6 +155,14 @@ function Checkout({ status }: { status: StoreStatus }) {
                         A sending domain next to your main one, with Google or Microsoft mailboxes set up, connected and warming for you.
                     </p>
                 </div>
+                {status.mailbox_orders_paused && (
+                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50/60 px-3.5 py-2.5 flex items-start gap-2.5">
+                        <PauseCircleIcon className="w-4 h-4 text-amber-600 mt-px shrink-0" />
+                        <p className="text-[12px] text-amber-900 leading-relaxed">
+                            New mailboxes are paused for a short while and will be available again soon. You can still buy domains on their own.
+                        </p>
+                    </div>
+                )}
                 <DomainSearch
                     query={query}
                     onQuery={setQuery}

@@ -31,6 +31,8 @@ type Status struct {
 	Reason string `json:"reason,omitempty"`
 	// SalesPaused is set while the operator has paused new purchases; everything already bought keeps working.
 	SalesPaused bool `json:"sales_paused"`
+	// MailboxOrdersPaused is set while new mailboxes cannot be ordered; domains alone still can.
+	MailboxOrdersPaused bool `json:"mailbox_orders_paused"`
 	// Locked is set with ReasonNotConfigured on a self-host, which shows buying as a feature to set up; a hosted instance hides it.
 	Locked bool `json:"locked"`
 	// CanConfigure is set with Locked for an instance admin who may add the GraphKit API key.

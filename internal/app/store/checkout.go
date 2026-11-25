@@ -549,6 +549,8 @@ func (s *Service) submit(ctx context.Context, row *models.StoreOrder, snap quote
 			switch {
 			case ge != nil && ge.Code == graphkit.CodeQuoteExpired:
 				code = CodePriceChanged
+			case ge != nil && ge.MailboxOrdersPaused():
+				code = CodeMailboxOrdersPaused
 			case ge != nil && ge.UnavailableProvider() != "":
 				code = CodeProviderUnavailable
 			}
