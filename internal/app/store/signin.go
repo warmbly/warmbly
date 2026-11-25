@@ -1,14 +1,15 @@
 package store
 
-// Purchased Google mailboxes that connect by sign-in (GraphKit connection method oauth). Google
-// Workspace no longer takes new domain-wide delegation grants for this instance, so the mail
-// vendor's team signs each mailbox in to this instance's OAuth client from GraphKit:
+// Purchased mailboxes that connect by sign-in (GraphKit connection method oauth). Google Workspace no
+// longer takes new domain-wide delegation grants for this instance, and a Microsoft tenant's app
+// approval needs the admin mailbox's password, which the mail vendor may not have published yet, so
+// the vendor's team signs each mailbox in to this instance's Google or Outlook client from GraphKit:
 //
 //  1. GraphKit reports the mailbox oauth, not ready. The store mints a single-mailbox client
 //     connect link in the purchaser's name (connectlink.CreateSingle), remembers which mailbox it is
 //     for, and registers it with GraphKit, which shows it only to the vendor's team.
-//  2. The vendor opens it, signs in to Google as the mailbox (the login hint is its address) and
-//     allows the app. connectlink connects the mailbox and calls SignInLinks.Connected.
+//  2. The vendor opens it, signs in to Google or Microsoft as the mailbox (the login hint is its
+//     address) and allows the app. connectlink connects the mailbox and calls SignInLinks.Connected.
 //  3. The store links the mailbox to the purchase, starts warmup, and reports it signed in to
 //     GraphKit, which then completes the order.
 //
@@ -51,8 +52,19 @@ func (s *Service) WireSignIns(links ConnectLinks, repo repository.StoreSignInLin
 // waitsForSignIn: GraphKit offers the sign-in while the vendor's API still reports the order in
 // setup (mailbox provisioning), because the vendor's team finishes the Workspace before its API says so.
 func waitsForSignIn(m *graphkit.Mailbox) bool {
-	return m.Provider == graphkit.ProviderGoogle && m.Connection.Method == graphkit.ConnectOAuth && !m.Connection.Ready &&
+	return signInProvider(m.Provider) != "" && m.Connection.Method == graphkit.ConnectOAuth && !m.Connection.Ready &&
 		(m.Status == graphkit.MailboxActive || m.Status == graphkit.MailboxProvisioning)
+}
+
+// signInProvider is the connect link provider a GraphKit provider's mailboxes sign in with, "" for none.
+func signInProvider(p string) models.InboxProvider {
+	switch p {
+	case graphkit.ProviderGoogle:
+		return models.InboxProviderGoogle
+	case graphkit.ProviderMicrosoft:
+		return models.InboxProviderOutlook
+	}
+	return ""
 }
 
 // syncSignIn keeps an oauth mailbox moving: a live link GraphKit can show the vendor, and the
@@ -73,7 +85,7 @@ func (s *Service) syncSignIn(ctx context.Context, row *models.StoreMailbox, m *g
 		log.Warn().Str("store_mailbox_id", row.ID.String()).Msg("store: no member to mint a sign-in link in the name of")
 		return
 	}
-	created, xerr := s.links.CreateSingle(ctx, row.OrganizationID, creator, "Mailbox sign-in: "+row.Email, models.InboxProviderGoogle, signInLinkTTL)
+	created, xerr := s.links.CreateSingle(ctx, row.OrganizationID, creator, "Mailbox sign-in: "+row.Email, signInProvider(m.Provider), signInLinkTTL)
 	if xerr != nil {
 		log.Warn().Str("store_mailbox_id", row.ID.String()).Str("reason", xerr.ResponseCode()).Msg("store: minting a sign-in link failed")
 		return
@@ -119,7 +131,7 @@ func (l SignInLinks) get(ctx context.Context, linkID uuid.UUID) *repository.Stor
 	return row
 }
 
-// LoginHint opens Google's sign-in with the purchased mailbox's address.
+// LoginHint opens Google's or Microsoft's sign-in with the purchased mailbox's address.
 func (l SignInLinks) LoginHint(ctx context.Context, linkID uuid.UUID) string {
 	if row := l.get(ctx, linkID); row != nil {
 		return row.Email
