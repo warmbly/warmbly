@@ -10,6 +10,7 @@
   <p>
     <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
     <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
+    <a href="https://www.linkedin.com/company/warmbly/"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMC40NDcgMjAuNDUyaC0zLjU1NHYtNS41NjljMC0xLjMyOC0uMDI3LTMuMDM3LTEuODUyLTMuMDM3LTEuODUzIDAtMi4xMzYgMS40NDUtMi4xMzYgMi45Mzl2NS42NjdIOS4zNTFWOWgzLjQxNHYxLjU2MWguMDQ2Yy40NzctLjkgMS42MzctMS44NSAzLjM3LTEuODUgMy42MDEgMCA0LjI2NyAyLjM3IDQuMjY3IDUuNDU1djYuMjg2ek01LjMzNyA3LjQzM2EyLjA2MiAyLjA2MiAwIDAgMS0yLjA2My0yLjA2NSAyLjA2NCAyLjA2NCAwIDEgMSAyLjA2MyAyLjA2NXptMS43ODIgMTMuMDE5SDMuNTU1VjloMy41NjR2MTEuNDUyek0yMi4yMjUgMEgxLjc3MUMuNzkyIDAgMCAuNzc0IDAgMS43Mjl2MjAuNTQyQzAgMjMuMjI3Ljc5MiAyNCAxLjc3MSAyNGgyMC40NTFDMjMuMiAyNCAyNCAyMy4yMjcgMjQgMjIuMjcxVjEuNzI5QzI0IC43NzQgMjMuMiAwIDIyLjIyMiAwaC4wMDN6Ii8%2BPC9zdmc%2B&style=flat-square" alt="Warmbly on LinkedIn" /></a>
     <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/Docs-1f6feb?style=flat-square" alt="Docs" /></a>
     <a href="https://github.com/sponsors/warmbly"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=white&style=flat-square" alt="Sponsor Warmbly on GitHub" /></a>
     <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
@@ -169,6 +170,7 @@ Have a question, found a bug, or want to shape where Warmbly goes next?
 - **[Discord](https://dc.warmbly.com)** - chat with the team and other senders
 - **[GitHub Issues](https://github.com/warmbly/warmbly/issues)** - report bugs and request features
 - **[X / @WarmblyHQ](https://x.com/WarmblyHQ)** - follow along for updates and releases
+- **[LinkedIn](https://www.linkedin.com/company/warmbly/)** - company news and product updates
 - **[GitHub Sponsors](https://github.com/sponsors/warmbly)** - support Warmbly's development
 - **Email** - reach us at `team@warmbly.com`
 
@@ -181,6 +183,7 @@ Have a question, found a bug, or want to shape where Warmbly goes next?
 
 <p>
   <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20@WarmblyHQ%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
+  <a href="https://www.linkedin.com/company/warmbly/"><img src="https://img.shields.io/badge/Follow%20on%20LinkedIn-0A66C2?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMC40NDcgMjAuNDUyaC0zLjU1NHYtNS41NjljMC0xLjMyOC0uMDI3LTMuMDM3LTEuODUyLTMuMDM3LTEuODUzIDAtMi4xMzYgMS40NDUtMi4xMzYgMi45Mzl2NS42NjdIOS4zNTFWOWgzLjQxNHYxLjU2MWguMDQ2Yy40NzctLjkgMS42MzctMS44NSAzLjM3LTEuODUgMy42MDEgMCA0LjI2NyAyLjM3IDQuMjY3IDUuNDU1djYuMjg2ek01LjMzNyA3LjQzM2EyLjA2MiAyLjA2MiAwIDAgMS0yLjA2My0yLjA2NSAyLjA2NCAyLjA2NCAwIDEgMSAyLjA2MyAyLjA2NXptMS43ODIgMTMuMDE5SDMuNTU1VjloMy41NjR2MTEuNDUyek0yMi4yMjUgMEgxLjc3MUMuNzkyIDAgMCAuNzc0IDAgMS43Mjl2MjAuNTQyQzAgMjMuMjI3Ljc5MiAyNCAxLjc3MSAyNGgyMC40NTFDMjMuMiAyNCAyNCAyMy4yMjcgMjQgMjIuMjcxVjEuNzI5QzI0IC43NzQgMjMuMiAwIDIyLjIyMiAwaC4wMDN6Ii8%2BPC9zdmc%2B&style=flat-square" alt="Follow Warmbly on LinkedIn" /></a>
   <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Join%20the%20Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Join the Discord" /></a>
   <a href="mailto:team@warmbly.com"><img src="https://img.shields.io/badge/Email%20the%20team-1f6feb?style=flat-square" alt="Email the team" /></a>
 </p>
