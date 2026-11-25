@@ -1,9 +1,8 @@
 # AWS foundation
 
 Terraform provisions the control plane's foundation in `us-east-1`. The existing
-Postgres database, Kafka cluster, object bucket and KMS key remain external to
-this state. The sibling PlanetScale and Confluent roots adopt their existing
-configuration. This root does not deploy application services or change
+Postgres database, object bucket and KMS key remain external to this state. The
+sibling PlanetScale root adopts its existing configuration. This root does not deploy application services or change
 production traffic. A standalone cache-check task definition supports verification.
 
 ## Bootstrap state storage

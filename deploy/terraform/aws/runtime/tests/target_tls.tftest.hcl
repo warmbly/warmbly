@@ -54,9 +54,9 @@ override_data {
         repository_urls     = { for name in ["backend", "consumer", "forms", "realtime", "tracking"] : name => "123456789012.dkr.ecr.us-east-1.amazonaws.com/warmbly/${name}" }
       }
       configuration_parameter_arns = {
-        "backend/KAFKA_BOOTSTRAP_SERVERS" = "arn:aws:ssm:us-east-1:123456789012:parameter/a"
-        "backend/SCHEMA_REGISTRY_URL"     = "arn:aws:ssm:us-east-1:123456789012:parameter/b"
-        "backend/BLOB_BUCKET"             = "arn:aws:ssm:us-east-1:123456789012:parameter/c"
+        "backend/EVENTBUS_PROVIDER" = "arn:aws:ssm:us-east-1:123456789012:parameter/a"
+        "backend/CODEC_PROVIDER"    = "arn:aws:ssm:us-east-1:123456789012:parameter/b"
+        "backend/BLOB_BUCKET"       = "arn:aws:ssm:us-east-1:123456789012:parameter/c"
       }
       cache = { credential_secret = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cache", endpoint = "cache" }
     }

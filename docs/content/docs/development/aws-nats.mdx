@@ -3,6 +3,12 @@ title: NATS deployment and Kafka migration
 description: Choose managed or private JetStream and migrate through compatible releases.
 ---
 
+<Callout>
+The hosted Warmbly deployment completed this migration: it runs NATS with JSON
+only, and its Confluent Kafka cluster and Schema Registry were retired on
+2026-11-25. The steps below remain for self-hosted instances still on Kafka.
+</Callout>
+
 ## Choose who operates the broker
 
 A hosted service such as [Synadia Cloud](https://www.synadia.com/cloud) operates
