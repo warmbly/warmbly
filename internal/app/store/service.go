@@ -364,6 +364,7 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 		if p.Limits.MailboxesPerDomainMax > 0 {
 			out.Limits = p.Limits
 		}
+		out.MailboxOrdersPaused = p.MailboxOrdersPaused
 	}
 	active, err := s.planActive(ctx, orgID)
 	if err != nil {

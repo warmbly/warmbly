@@ -111,6 +111,18 @@ func (e *Error) UnavailableProvider() string {
 	return d.Provider
 }
 
+// MailboxOrdersPaused reports a refusal because GraphKit paused new mailbox orders.
+func (e *Error) MailboxOrdersPaused() bool {
+	if e.Code != CodeUpstreamUnavailable || len(e.Details) == 0 {
+		return false
+	}
+	var d struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.Unmarshal(e.Details, &d)
+	return d.Reason == "mailbox_orders_paused"
+}
+
 // ContactFields names the registrant fields a contact_invalid refusal rejected.
 func (e *Error) ContactFields() []string {
 	var d struct {
