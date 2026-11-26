@@ -26,7 +26,7 @@ const posture = [
   { label: 'Open source and auditable', note: 'The backend, workers and dashboard are public.', state: 'shipped' },
   { label: 'TLS 1.2 or later in transit', note: 'Every connection is encrypted on the way.', state: 'shipped' },
   { label: 'Encryption at rest', note: 'A data key per workspace, AES-256-GCM.', state: 'shipped' },
-  { label: 'GDPR-aligned handling', note: 'Plain-English privacy policy, data processing terms on request.', state: 'shipped' },
+  { label: 'GDPR-aligned handling', note: 'Plain-English privacy policy.', state: 'shipped' },
   { label: 'SOC 2 Type II', note: 'Controls in place. The audit window opens with our auditor.', state: 'planned' },
   { label: 'ISO 27001', note: 'Under evaluation. No certification claimed today.', state: 'planned' },
 ];
@@ -78,7 +78,7 @@ const abuse = [
 ];
 
 const subs = [
-  { name: 'AWS', use: 'Compute, key management, storage, databases', region: 'us-east-1, eu-west-1' },
+  { name: 'AWS', use: 'Compute, key management, storage, databases', region: 'us-east-1' },
   { name: 'Cloudflare', use: 'Edge network, DDoS protection, CAPTCHA', region: 'Global' },
   { name: 'Stripe', use: 'Billing and tax', region: 'United States' },
   { name: 'Postmark', use: 'Account email', region: 'United States' },
@@ -262,7 +262,7 @@ const cap = 'mt-3 max-w-2xl text-[13.5px] leading-[1.55] text-slate-500';
     </div>
   </div>
 
-  <CTA photo="frost-blue" title="Need the full security package?" description="Data processing terms, a security questionnaire and an architecture walkthrough, on request. A person replies within one business day." primaryLabel="Email us" primaryHref="mailto:team@warmbly.com" secondaryLabel="Read the code" secondaryHref="https://github.com/warmbly/warmbly" />
+  <CTA photo="frost-blue" title="Need the full security package?" description="A security questionnaire and an architecture walkthrough, on request. A person replies within one business day." primaryLabel="Email us" primaryHref="mailto:team@warmbly.com" secondaryLabel="Read the code" secondaryHref="https://github.com/warmbly/warmbly" />
 </Layout>
 
 <style>
