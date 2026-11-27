@@ -2,6 +2,7 @@ package connectlink
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
@@ -17,14 +18,15 @@ type fakePartnerLinks struct {
 	link      uuid.UUID
 	hint      string
 	required  string
+	lookupErr error
 	connected []uuid.UUID
 }
 
-func (p *fakePartnerLinks) RequiredAddress(_ context.Context, id uuid.UUID) string {
+func (p *fakePartnerLinks) RequiredAddress(_ context.Context, id uuid.UUID) (string, error) {
 	if id != p.link {
-		return ""
+		return "", nil
 	}
-	return p.required
+	return p.required, p.lookupErr
 }
 
 func (p *fakePartnerLinks) LoginHint(_ context.Context, id uuid.UUID) string {
@@ -178,4 +180,18 @@ func startHinted(t *testing.T, s *Service, token string) string {
 	}
 	u, _ := url.Parse(started.URL)
 	return u.Query().Get("state")
+}
+
+// When the link's mailbox cannot be looked up, nobody is let in: nothing is stored and the link stays usable.
+func TestRequiredAddressLookupFailureRefusesTheSignIn(t *testing.T) {
+	s, repo, mb, _, token := newFixture(t)
+	repo.link.MaxMailboxes = 1
+	p := &fakePartnerLinks{link: repo.link.ID, hint: "jordan@client.test", lookupErr: errors.New("db down")}
+	s.WirePartnerLinks(p)
+	if _, _, xerr := s.FinishOAuth(context.Background(), "outlook", "code", startHinted(t, s, token), ""); xerr == nil {
+		t.Fatal("a failed lookup let the sign-in through")
+	}
+	if mb.calls != 0 || len(p.connected) != 0 || repo.link.MailboxesConnected != 0 {
+		t.Fatalf("calls %d, partner told of %v, used %d", mb.calls, p.connected, repo.link.MailboxesConnected)
+	}
 }

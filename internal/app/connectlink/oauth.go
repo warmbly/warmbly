@@ -140,7 +140,12 @@ func (s *Service) finishOAuth(ctx context.Context, sess *models.ClientConnectLin
 	orgID := link.OrganizationID
 	address := ""
 	if s.partner != nil {
-		address = s.partner.RequiredAddress(ctx, link.ID)
+		a, err := s.partner.RequiredAddress(ctx, link.ID)
+		if err != nil {
+			errs.CaptureException(err)
+			return nil, errx.InternalError()
+		}
+		address = a
 	}
 	return s.connect(ctx, link, provider, sess.RemoteIPHash, func(userID string) (*models.Email, *errx.Error) {
 		return s.d.Mailboxes.OAuthConnectWithCodeAs(ctx, userID, &orgID, provider, code, sess.CodeVerifier, address)
