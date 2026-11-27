@@ -98,7 +98,7 @@ Where they come from, tried in this order:
 | The instance's reader services (Crawl4AI, Jina Reader, DDGS, or any reader your operator points at) | The operator, with [`WEB_READER`](/development/configuration/#ai-and-search) | Included in the website read |
 | A tool on one of your [MCP servers](/guides/connect-mcp-tools/) picked as the workspace's web search | You, under **Settings → Connections** | Nothing on your balance |
 | Jina AI, with your own key | You, under **Integrations** | Your Jina account |
-| The instance's web search (DDGS, SearXNG, Jina, Brave, Tavily or Serper) | The operator, with [`SEARCH_PROVIDER`](/development/configuration/#ai-and-search) | Your balance, $0.0125 a search at the default prices, refunded when it finds nothing |
+| The instance's web search (DDGS, SearXNG, Jina, Brave, Tavily, Serper or Keenable) | The operator, with [`SEARCH_PROVIDER`](/development/configuration/#ai-and-search) | Your balance, $0.0125 a search at the default prices, refunded when it finds nothing |
 
 To use an MCP search tool, connect and enable the server, then pick the tool in its **Web search** setting. Any tool that takes a search query works, for example `search_text` on the DDGS MCP server. The finder sends it only the search text (the business's name and town, or `"@domain"`), and reads back the links and text it returns. The assistant's `search_web` uses the same tool when the instance has no web search of its own. A search you set up yourself is always tried before the instance's, so it is only charged when yours finds nothing.
 
