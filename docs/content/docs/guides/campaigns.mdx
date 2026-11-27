@@ -340,7 +340,7 @@ Every option applies as another minimum against the mailbox's own daily cap, the
 
 Changing the option on an active campaign takes effect from its next send. Setting the schedule's numbers again keeps the level it has reached; it never goes back below the start.
 
-**Lead flow** throttles new contacts with **Max new leads per day** (`0` for unlimited, up to `1000`). At the cap, follow-ups to in-flight contacts continue and new leads resume tomorrow. You can prioritize new leads over follow-ups, and choose whether to attempt addresses verification flagged risky.
+**Lead flow** throttles new contacts with **Max new leads per day** (`0` for unlimited, up to `10000`). At the cap, follow-ups to in-flight contacts continue and new leads resume tomorrow. You can prioritize new leads over follow-ups, and choose whether to attempt addresses verification flagged risky.
 
 **Keep running for new leads** turns a campaign into an ongoing one: when it runs out of leads it stays **active** and shows **waiting for leads** instead of finishing, then sends the sequence to each lead as they arrive from a linked segment, a form, the API, Zapier, Make, n8n or an automation. Linking a segment, pointing a form at the campaign, or saving an automation that enrols leads in it turns it on, and so does pressing play on a finished campaign whose every lead is done; turn it off in the campaign's preferences to have the campaign finish once every lead is done. A campaign with this on can be started with no leads yet. An end date still ends it.
 

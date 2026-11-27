@@ -19,6 +19,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	source "github.com/warmbly/warmbly/internal/pkg/outreachsource"
 	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
@@ -406,7 +407,7 @@ func (r *run) buildCampaign(c source.Campaign, name string) (*models.CreateCampa
 		data.DailyLimit = &v
 	}
 	if c.MaxNewLeadsPerDay > 0 {
-		v := c.MaxNewLeadsPerDay
+		v := min(c.MaxNewLeadsPerDay, config.CampaignMaxNewLeadsMax)
 		data.MaxNewLeadsPerDay = &v
 	}
 	r.schedule(c.Schedule, data, plan)
