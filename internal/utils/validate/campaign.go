@@ -148,8 +148,8 @@ func CampaignESPMatchMode(s string) *errx.Error {
 }
 
 func CampaignMaxNewLeads(v int) *errx.Error {
-	if v < 0 || v > 1000 {
-		return errx.New(errx.BadRequest, "max new leads per day must be between 0 and 1000")
+	if v < 0 || v > config.CampaignMaxNewLeadsMax {
+		return errx.New(errx.BadRequest, fmt.Sprintf("max new leads per day must be between 0 and %d", config.CampaignMaxNewLeadsMax))
 	}
 	return nil
 }

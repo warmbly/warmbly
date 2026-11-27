@@ -229,7 +229,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `ramp_ceiling` | integer | no | Ramp ceiling, `1` to `5000` and at least `ramp_start` (default `50`). It never raises a mailbox above its own cap. |
 | `warmup_graduation` | boolean | no | Hold mailboxes whose warmup is running or paused to the reply-earned ceiling in this campaign: `5` a day, plus one a day for each lead who replied in the last seven days. Default `true`. `false` leaves each mailbox's daily cap, `daily_limit` and the ramp. The dashboard sets `false` with `ramp_enabled: true` for **On a schedule**, and both `false` for **Full volume**. See [ramp-up](/guides/campaigns/#ramp-up). |
 | `esp_match_mode` | string | no | `off`, `prefer`, or `strict`. |
-| `max_new_leads_per_day` | integer | no | New-lead throttle, `0` is unlimited. |
+| `max_new_leads_per_day` | integer | no | New-lead throttle, `0` is unlimited, up to `10000`. |
 | `prioritize_new_leads` | boolean | no | Prefer new leads in each send window. |
 | `entry_delay_minutes` | integer | no | Hold a contact's first email this long after they entered the campaign. `0` (the default) sends it as soon as the schedule and mailbox limits allow; the maximum is `129600` (90 days). Follow-up spacing is unaffected: that is each step's `wait_after`. |
 | `continuous` | boolean | no | Keep running for new leads: out of leads, the campaign stays `active` and waits instead of finishing. Linking a segment, a form or an automation that enrols leads turns it on, and so does starting a campaign whose every lead has finished. Default `false`. |

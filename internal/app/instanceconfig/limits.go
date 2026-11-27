@@ -38,7 +38,7 @@ func Limits() []LimitGroup {
 				{"Campaign ramp increment", n(config.CampaignRampIncrementDefault), "emails/day", "Added each day, applied only as a lower bound against the mailbox cap."},
 				{"Campaign ramp ceiling", n(config.CampaignRampCeilingDefault), "emails/day", "Where the ramp stops lifting."},
 				{"Sender weight ceiling", n(config.CampaignSenderWeightMax), "weight", "The largest share one mailbox can take in a rotation."},
-				{"New leads per campaign", n(config.CampaignMaxNewLeadsMax), "contacts", "The most contacts one campaign can pull in per run."},
+				{"New leads per campaign", n(config.CampaignMaxNewLeadsMax), "contacts/day", "The highest Max new leads per day a campaign accepts."},
 			},
 		},
 		{

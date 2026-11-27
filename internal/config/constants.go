@@ -47,7 +47,7 @@ const (
 	CampaignRampStartDefault     = 10
 	CampaignRampIncrementDefault = 5
 	CampaignRampCeilingDefault   = 50
-	CampaignMaxNewLeadsMax       = 1000
+	CampaignMaxNewLeadsMax       = 10000
 
 	MaxContactSize = 10240
 	// MaxEmailBodySize bounds a single stored message body. 200 KB cut real
