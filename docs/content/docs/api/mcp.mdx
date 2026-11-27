@@ -104,7 +104,7 @@ Every tool is gated by its API permission. `tools/list` returns only the tools y
 - `find_tools` searches every tool your credential may use by keywords and returns each one's description and input schema. An empty query lists everything, twenty at a time.
 - `call_tool` runs a tool found that way, by `name`, with its `arguments`.
 
-Every tool in the table below stays callable directly through `tools/call` whether or not it is listed. To list every tool instead, add `?tools=all` to the server URL (`https://api.warmbly.com/v1/mcp?tools=all`) or send the header `X-Warmbly-Tools: all`. The `initialize` response carries `instructions` that explain how Warmbly fits together and how to use discovery, for clients that pass them to the model.
+Every tool in the table below stays callable directly through `tools/call` whether or not it is listed. To list every tool instead, add `?tools=all` to the server URL (`https://api.warmbly.com/v1/mcp?tools=all`) or send the header `X-Warmbly-Tools: all`. The `initialize` response carries `instructions` that explain how Warmbly fits together and how to use discovery, for clients that pass them to the model, and a `serverInfo` with the title, icon and website a client shows for the server.
 
 ### Docs and the full API
 
@@ -241,7 +241,7 @@ Nothing that is session-only for an agency is exposed: billing, staff, agency AP
 
 The one-command flow is standard MCP authorization, so any spec-compliant client works without Warmbly-specific setup. On a request with no valid token, `/v1/mcp` returns `401` with a `WWW-Authenticate` header pointing at the protected-resource metadata. The client then walks:
 
-- `GET /.well-known/oauth-protected-resource`: the resource and its authorization server ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)).
+- `GET /.well-known/oauth-protected-resource`: the resource, its name (`resource_name`, so a client can show "Warmbly" before sign-in) and its authorization server ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)).
 - `GET /.well-known/oauth-authorization-server`: the authorize, token, and registration endpoints ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)).
 - `POST /v1/oauth/register`: dynamic client registration, so the client mints a public (PKCE) `client_id` with no manual app setup ([RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)).
 - Authorization code with PKCE (S256) in the browser, then `POST /v1/oauth/token` for a short-lived access token and a rotating refresh token.

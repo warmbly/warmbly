@@ -29,6 +29,20 @@ const (
 
 const mcpProtocolVersion = "2025-03-26"
 
+// mcpTitle is the name an MCP client shows for this server, read from the
+// protected-resource metadata before sign-in and from serverInfo after.
+const mcpTitle = "Warmbly"
+
+// mcpServerInfo answers initialize. name stays the stable identifier; title,
+// icons and websiteUrl are what a client shows its user.
+var mcpServerInfo = gin.H{
+	"name":       "warmbly",
+	"title":      mcpTitle,
+	"version":    "1.0",
+	"websiteUrl": "https://warmbly.com",
+	"icons":      []gin.H{{"src": "https://warmbly.com/web-app-manifest-512x512.png", "mimeType": "image/png", "sizes": []string{"512x512"}}},
+}
+
 type jsonRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -97,7 +111,7 @@ func mcpCommon(c *gin.Context, req jsonRPCRequest, instructions string) {
 		c.JSON(http.StatusOK, rpcResult(req.ID, gin.H{
 			"protocolVersion": mcpProtocolVersion,
 			"capabilities":    gin.H{"tools": gin.H{}},
-			"serverInfo":      gin.H{"name": "warmbly", "version": "1.0"},
+			"serverInfo":      mcpServerInfo,
 			"instructions":    aitools.ProductPrimer + instructions,
 		}))
 	case "ping":
