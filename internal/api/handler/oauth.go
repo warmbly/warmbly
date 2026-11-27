@@ -670,6 +670,7 @@ func (h *Handler) OAuthProtectedResourceMetadata(c *gin.Context) {
 		"authorization_servers":    []string{apiURL},
 		"scopes_supported":         oauth.ScopeList(oauth.MCPRegistrableScopes()),
 		"bearer_methods_supported": []string{"header"},
+		"resource_name":            mcpTitle,
 		"resource_documentation":   "https://docs.warmbly.com/api/mcp/",
 	})
 }
