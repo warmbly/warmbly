@@ -42,10 +42,17 @@ func RequestLogger() gin.HandlerFunc {
 }
 
 func routineInternalLookup(c *gin.Context) bool {
-	if c.Request.Method != http.MethodGet || len(c.Errors) != 0 {
+	if len(c.Errors) != 0 {
 		return false
 	}
 	path, status := c.FullPath(), c.Writer.Status()
+	// The batched map lookup is a read sent as POST to carry its id list.
+	if c.Request.Method == http.MethodPost && path == "/api/v1/internal/email-message-map/lookup" {
+		return status < http.StatusBadRequest
+	}
+	if c.Request.Method != http.MethodGet {
+		return false
+	}
 	if path == "/api/v1/internal/email-message-map" && status == http.StatusNotFound {
 		return true
 	}

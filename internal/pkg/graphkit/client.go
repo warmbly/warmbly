@@ -69,6 +69,10 @@ type API interface {
 	MailboxCredentials(ctx context.Context, mailboxID string) (*Credentials, error)
 	// MailboxAccessToken brokers a Google token for one token-method mailbox; key must be fresh per call.
 	MailboxAccessToken(ctx context.Context, mailboxID string, scopes []string, key string) (*AccessToken, error)
+	// PutMailboxSignInLink registers the single-use link the mail vendor opens to sign an oauth mailbox in.
+	PutMailboxSignInLink(ctx context.Context, mailboxID, url string, expiresAt time.Time, key string) (*Mailbox, error)
+	// MailboxSignedIn reports an oauth mailbox connected through its sign-in; it becomes ready.
+	MailboxSignedIn(ctx context.Context, mailboxID, key string) (*Mailbox, error)
 
 	PutDelegation(ctx context.Context, d Delegation, key string) error
 	GetDelegation(ctx context.Context) (*Delegation, error)
@@ -85,6 +89,8 @@ type API interface {
 	DeleteWebhook(ctx context.Context, key string) error
 	Events(ctx context.Context, after string, limit int) (*Page[Event], error)
 	Balance(ctx context.Context) (*PartnerBalance, error)
+
+	SocialAPI
 }
 
 // Client is the HTTP implementation of API.
@@ -350,6 +356,17 @@ func (c *Client) MailboxAccessToken(ctx context.Context, mailboxID string, scope
 	}
 	var out AccessToken
 	return ret(&out, c.send(ctx, http.MethodPost, "/mailboxes/"+esc(mailboxID)+"/access-token", body, key, &out))
+}
+
+func (c *Client) PutMailboxSignInLink(ctx context.Context, mailboxID, url string, expiresAt time.Time, key string) (*Mailbox, error) {
+	var out Mailbox
+	body := map[string]any{"url": url, "expires_at": expiresAt.UTC().Format(time.RFC3339)}
+	return ret(&out, c.send(ctx, http.MethodPut, "/mailboxes/"+esc(mailboxID)+"/sign-in-link", body, key, &out))
+}
+
+func (c *Client) MailboxSignedIn(ctx context.Context, mailboxID, key string) (*Mailbox, error) {
+	var out Mailbox
+	return ret(&out, c.send(ctx, http.MethodPost, "/mailboxes/"+esc(mailboxID)+"/signed-in", map[string]any{}, key, &out))
 }
 
 func (c *Client) GetDelegation(ctx context.Context) (*Delegation, error) {

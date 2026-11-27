@@ -138,8 +138,17 @@ func (s *Service) finishOAuth(ctx context.Context, sess *models.ClientConnectLin
 		return nil, ErrProviderUnavailable
 	}
 	orgID := link.OrganizationID
+	address := ""
+	if s.partner != nil {
+		a, err := s.partner.RequiredAddress(ctx, link.ID)
+		if err != nil {
+			errs.CaptureException(err)
+			return nil, errx.InternalError()
+		}
+		address = a
+	}
 	return s.connect(ctx, link, provider, sess.RemoteIPHash, func(userID string) (*models.Email, *errx.Error) {
-		return s.d.Mailboxes.OAuthConnectWithCode(ctx, userID, &orgID, provider, code, sess.CodeVerifier)
+		return s.d.Mailboxes.OAuthConnectWithCodeAs(ctx, userID, &orgID, provider, code, sess.CodeVerifier, address)
 	})
 }
 

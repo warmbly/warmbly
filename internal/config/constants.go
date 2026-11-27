@@ -736,3 +736,7 @@ var InboundClassificationHeaders = []string{
 	"List-Unsubscribe",
 	"List-Id",
 }
+
+// ContactsWithoutEmail lets a contact be created with a social handle and no email. It stays off until every
+// release on the instance drops the full (user_id, lower(email)) unique index; see the stage 2 notes.
+const ContactsWithoutEmail = false

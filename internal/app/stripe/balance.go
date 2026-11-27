@@ -143,6 +143,15 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 			return nil, fmt.Errorf("load charge invoice: %w", err)
 		}
 	} else {
+		meta := map[string]string{
+			"purpose": purposeBalanceCharge, "org_id": c.OrgID.String(), "charge_id": c.ID.String(),
+			"kind": c.Kind, "amount_micro": strconv.FormatInt(int64(c.Amount), 10),
+		}
+		// Only fee-bearing charges name the fee: a retry of a charge the previous release started must
+		// send the same invoice parameters under its idempotency key.
+		if fee := c.AmountCents - c.Amount.Cents(); fee > 0 {
+			meta["fee_cents"] = strconv.FormatInt(fee, 10)
+		}
 		params := &stripe.InvoiceParams{
 			Params:                      stripe.Params{Context: ctx},
 			Customer:                    stripe.String(c.CustomerID),
@@ -150,10 +159,7 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 			AutoAdvance:                 stripe.Bool(false),
 			PendingInvoiceItemsBehavior: stripe.String("exclude"),
 			Description:                 stripe.String(chargeDescription(c)),
-			Metadata: map[string]string{
-				"purpose": purposeBalanceCharge, "org_id": c.OrgID.String(), "charge_id": c.ID.String(),
-				"kind": c.Kind, "amount_micro": strconv.FormatInt(int64(c.Amount), 10),
-			},
+			Metadata:                    meta,
 		}
 		params.SetIdempotencyKey(key + "-invoice")
 		if inv, err = invoice.New(params); err != nil {
@@ -175,18 +181,18 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 		out.Declined = models.ReloadPaymentFailed
 		return out, nil
 	case stripe.InvoiceStatusDraft:
-		if inv.Total == 0 {
-			item := &stripe.InvoiceItemParams{
-				Params:      stripe.Params{Context: ctx},
-				Customer:    stripe.String(c.CustomerID),
-				Invoice:     stripe.String(inv.ID),
-				Amount:      stripe.Int64(c.AmountCents),
-				Currency:    stripe.String(c.Currency),
-				Description: stripe.String(chargeDescription(c)),
-			}
-			item.SetIdempotencyKey(key + "-item")
-			if _, err := invoiceitem.New(item); err != nil {
+		// The amount and the processing fee are separate lines; whichever a crash left out is added now.
+		fee := max(c.AmountCents-c.Amount.Cents(), 0)
+		total := inv.Total
+		if total == 0 {
+			if err := addChargeLine(ctx, c, inv.ID, c.AmountCents-fee, chargeDescription(c), key+"-item"); err != nil {
 				return nil, fmt.Errorf("add charge line: %w", err)
+			}
+			total = c.AmountCents - fee
+		}
+		if fee > 0 && total < c.AmountCents {
+			if err := addChargeLine(ctx, c, inv.ID, c.AmountCents-total, models.TopUpFeeLabel, key+"-fee"); err != nil {
+				return nil, fmt.Errorf("add fee line: %w", err)
 			}
 		}
 		fin := &stripe.InvoiceFinalizeInvoiceParams{Params: stripe.Params{Context: ctx}, AutoAdvance: stripe.Bool(false)}
@@ -216,6 +222,20 @@ func (s *stripeService) ChargeSavedCard(ctx context.Context, c *models.SavedCard
 		return out, nil
 	}
 	return nil, fmt.Errorf("pay charge invoice: %w", err)
+}
+
+func addChargeLine(ctx context.Context, c *models.SavedCardCharge, invoiceID string, cents int64, description, key string) error {
+	item := &stripe.InvoiceItemParams{
+		Params:      stripe.Params{Context: ctx},
+		Customer:    stripe.String(c.CustomerID),
+		Invoice:     stripe.String(invoiceID),
+		Amount:      stripe.Int64(cents),
+		Currency:    stripe.String(c.Currency),
+		Description: stripe.String(description),
+	}
+	item.SetIdempotencyKey(key)
+	_, err := invoiceitem.New(item)
+	return err
 }
 
 func chargeDescription(c *models.SavedCardCharge) string {
@@ -276,21 +296,13 @@ func (s *stripeService) CreateBalanceCheckout(ctx context.Context, userID, orgID
 		"purpose": purposeBalanceCheckout, metaActor: userID.String(), "org_id": orgID.String(),
 		"amount_micro": strconv.FormatInt(int64(amount), 10),
 	}
+	fee, _ := models.TopUpCharge(amount.Cents())
+	meta["fee_cents"] = strconv.FormatInt(fee, 10)
 	params := &stripe.CheckoutSessionParams{
 		Params:          stripe.Params{Context: ctx},
 		Mode:            stripe.String(string(stripe.CheckoutSessionModePayment)),
 		InvoiceCreation: &stripe.CheckoutSessionInvoiceCreationParams{Enabled: stripe.Bool(true)},
-		LineItems: []*stripe.CheckoutSessionLineItemParams{{
-			Quantity: stripe.Int64(1),
-			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-				Currency:    stripe.String("usd"),
-				UnitAmount:  stripe.Int64(amount.Cents()),
-				TaxBehavior: stripe.String(businesscheckout.TaxExclusive),
-				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
-					Name: stripe.String("Warmbly balance"),
-				},
-			},
-		}},
+		LineItems:       businesscheckout.TopUpLineItems("Warmbly balance", amount.Cents()),
 		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
 			SetupFutureUsage: stripe.String("off_session"),
 			Metadata:         meta,

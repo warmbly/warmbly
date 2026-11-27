@@ -1,0 +1,198 @@
+---
+title: Social accounts
+description: "Connect LinkedIn, Instagram, WhatsApp, Telegram and Facebook accounts to Warmbly, run social steps in campaigns, search LinkedIn for leads, and answer social messages from your workspace."
+---
+
+Connect the LinkedIn, Instagram, WhatsApp, Telegram and Facebook accounts your team prospects with, add social steps to your campaigns, search LinkedIn for people to reach, and read and answer their messages without leaving Warmbly. Social accounts run through GraphKit, the same partner that sells [domains and mailboxes](/guides/buy-mailboxes/) in Warmbly.
+
+Accounts live in **Settings > Social accounts**. Anywhere in Warmbly that needs an account you do not have yet (a campaign step, the lead finder, the unibox, a contact) shows a link that opens the connect window at the right channel.
+
+## Connect an account
+
+<Steps>
+
+<Step>
+
+Open **Settings > Social accounts** and select **Connect account**, then pick the channel.
+
+</Step>
+
+<Step>
+
+Check the price and accept the charge. The first month is paid now, from the workspace balance first and your saved card for the rest. See [pricing](#pricing).
+
+</Step>
+
+<Step>
+
+Read and accept the terms for automating the account. Warmbly records who accepted them and when. WhatsApp, Telegram and Facebook also show what they need before you message anyone: a [consent basis](#consent) for each contact.
+
+</Step>
+
+<Step>
+
+Sign in. Each channel offers its own ways:
+
+- **LinkedIn**: email or phone and password, or the `li_at` session cookie. Choose **Recruiter** to connect the account's Recruiter seat instead of Sales Navigator; one connection holds one of them.
+- **Instagram** and **Facebook**: username and password, or the account's session cookies.
+- **WhatsApp**: scan a QR code from **Linked devices** in WhatsApp on the phone, or enter the phone number and type the pairing code Warmbly shows into WhatsApp.
+- **Telegram**: scan a QR code from **Devices** in Telegram on the phone.
+
+A QR code refreshes by itself while it waits, and the window moves on as soon as it is scanned or the code is entered.
+
+</Step>
+
+<Step>
+
+Answer any check the network asks for: a code sent by text or email, approval in the app, the Sales Navigator or Recruiter contract to use, Telegram's cloud password, or Facebook's PIN or recovery code for end-to-end encrypted chats. A check that waits for the app finishes on its own.
+
+</Step>
+
+</Steps>
+
+The account appears in **Social accounts**, active, with its channel, limits and usage.
+
+### Sign-in details are never kept
+
+The password, cookie, phone number or code you enter goes to GraphKit once, to sign in, and is never stored by Warmbly or written into a request log. A connection lives 20 minutes, takes at most 5 sign-in attempts and 10 answers, and a code can be resent every 30 seconds.
+
+### When a connection does not finish
+
+If the sign-in fails, you cancel it, or it expires, the first month it charged is refunded to the balance in full. Start a new connection to try again.
+
+### Reconnecting
+
+When a network signs an account out, its status turns to **Reconnect required**. Reconnect it from its row; a reconnect is never charged and keeps the account's settings and history.
+
+## Pricing
+
+Each connected social account is $49 a month, whatever the channel, $32 on the Agency plan and $19 on Agency Pro. A client workspace of an agency pays its agency's rate. LinkedIn lead search is included with every LinkedIn account; the AI search builder is charged to your [AI balance](/guides/ai-credits/).
+
+- Connecting an account needs a Warmbly plan, like [buying mailboxes](/guides/buy-mailboxes/). Without one, link your own GraphKit workspace instead (see [use your own GraphKit workspace](#use-your-own-graphkit-workspace)).
+- The first month is charged when you start the connection, the next ones together with your purchased mailboxes, in one charge on the same billing day. Your billing day is set by your first purchased mailbox or first social account.
+- Each month is charged at the price your plan has on that day, so a plan change moves the next month's price.
+- Removing an account stops its next charge. The month in progress is not refunded; a month already charged ahead of your billing day that has not started yet is refunded to the balance.
+- Connecting a removed account again starts a new month from the day it connects, charged like a new account. If its paid month has not run out yet, the new charge is refunded and the account runs to the end of that month.
+- Self-hosted instances set these prices in the admin panel; see [configuration](/development/configuration/).
+
+### When a payment fails
+
+If a month cannot be collected, the people who manage billing are told how to fix it and Warmbly tries again every day. The account keeps working until the end of the month it paid for, then pauses. A payment within the following 7 days charges the month and resumes the account; after that the account is removed and has to be connected again. A paused account cannot be resumed by hand while its month is unpaid.
+
+## Use your own GraphKit workspace
+
+If you already run social accounts in GraphKit, link that workspace instead. Its accounts appear in Warmbly, your GraphKit plan bills them, and Warmbly charges nothing for them. Linking works on every Warmbly plan, free included.
+
+1. In **Settings > Social accounts**, choose to link a GraphKit workspace.
+2. Sign in to GraphKit, pick a workspace you administer and approve Warmbly.
+3. Back in Warmbly, the accounts in that workspace are listed and you can connect more.
+
+Good to know:
+
+- A workspace with Warmbly-billed accounts has to remove them before it can link one.
+- Connecting another account may need a seat on your GraphKit plan. Warmbly shows what GraphKit will charge before you accept, and sends you to GraphKit's billing page when the plan has no room.
+- Unlinking, here or from GraphKit's connected apps, removes the accounts from Warmbly and leaves them running in GraphKit.
+
+## Account settings
+
+Open an account to set a daily limit for each action its channel offers (invites, messages, InMail, voice notes, profile visits, follows, likes, comments, endorsements), its weekly invite limit on LinkedIn, the hours and days it works in its time zone, a warm-up that ramps a new account's limits over a few weeks, and how long unanswered LinkedIn invitations wait before they are withdrawn. A limit above what the network tolerates for the account is refused with the field named. The account also shows which actions it can run: one the network has switched off for the account is listed with the reason, and a step that needs it is refused.
+
+**Pause** stops an account's actions, **Resume** starts them again, and **Resync** reads its profile (and on LinkedIn its licences) again.
+
+## Consent
+
+WhatsApp, Telegram and Facebook only reach people who agreed to hear from you. Before a social step on one of them runs for a contact, the contact needs a consent basis recorded on that channel:
+
+| Basis | Meaning |
+| --- | --- |
+| Opt-in | They asked to be contacted on this channel |
+| Existing conversation | You already talk to them there |
+| Imported with consent | They came from a list collected with consent for this channel |
+| Friend | They are a Facebook friend of the account (Facebook only) |
+
+A contact with no basis is passed over by those steps, or leaves the campaign, as the step's **If missing** setting says. LinkedIn and Instagram need no consent basis.
+
+## Social on contacts
+
+A contact carries a handle per channel, shown and edited on their **Social** tab, each with its consent basis. Each channel takes its own forms, and a handle that does not fit is refused:
+
+| Channel | Accepted |
+| --- | --- |
+| LinkedIn | A profile address (`linkedin.com/in/jane-doe`) or its public id |
+| Instagram | A username, profile address or numeric id |
+| WhatsApp | A phone number in international format, with `+` and the country code |
+| Telegram | An `@username`, `t.me` link or numeric id. Phone numbers are not accepted |
+| Facebook | A numeric id, or a `profile.php?id=` or `/people/…/<id>` profile address. Vanity names are not accepted |
+
+Set handles through the API with the contact's `social` map, or map CSV columns to **LinkedIn**, **Instagram**, **WhatsApp**, **Telegram** or **Facebook** and to each channel's **consent** in a [contact import](/guides/contacts-crm/#importing).
+
+## Social steps in campaigns
+
+A campaign can run social steps next to its emails: invite, message, InMail, voice note, visit, follow, like or comment on a post, endorse and withdraw an invite, on the channels that offer each one. It can branch on whether a contact replied on social, accepted a LinkedIn invite, still has an invite pending or has an Open Profile. Pick which accounts run a campaign's social steps in its settings, grouped by channel; each step runs from an account on its own channel, and each contact stays on one account per channel. See [social steps](/guides/sequences/#social-steps).
+
+A voice note is either a recording you upload, up to the channel's longest voice note, or a written script read in the account's own voice. A written script needs every account the campaign uses on that channel to have a voice set up in GraphKit; otherwise only recordings are offered.
+
+A queued step that has not run yet is cancelled when the contact replies (with **Stop on reply** on), unsubscribes, is suppressed or leaves the campaign, or when the campaign is paused or deleted; one that has not run within 3 days expires unsent. A step GraphKit passes over is written to the campaign's activity and the contact's **Social** tab with the reason: no post recent enough, not a connection yet, no skills to endorse, a person who cannot be reached, no consent basis, or a post already commented on.
+
+Social steps need every Warmbly backend on the release that added them or a later one. Rolling back past that release makes the older backends move contacts past social steps without running them.
+
+A contact's **Social** tab shows every social step run for them, with its channel, campaign and outcome, and their conversations. Campaign analytics add invites sent and accepted, the acceptance rate, messages, InMails, voice notes and replies, split by channel.
+
+## Search LinkedIn for leads
+
+Lead search runs on LinkedIn only. In the [lead finder](/guides/lead-finder/), choose LinkedIn as the source and search classic LinkedIn people search, Sales Navigator leads and accounts, or Recruiter, with the filters each one offers. Pick the account to search with, or let Warmbly choose one with the right licence.
+
+- Paste a LinkedIn or Sales Navigator search address to start from its filters.
+- Describe who you want in your own words and the AI search builder turns it into filters you can review. Each build is charged to the AI balance at its cost.
+- Every result shows what Warmbly already knows: the contact it matches, the campaigns that contact is in, whether you have messaged them or they replied, and how many of your contacts work at the same company.
+- Each account searches within a daily budget LinkedIn sets; the remaining searches show above the results.
+- Save a search to run it again later. Saved searches belong to the workspace.
+
+### Add results to contacts
+
+Select results and add them to segments, categories and campaigns. A person already in your contacts, matched by their LinkedIn handle, is updated with what LinkedIn shows (or kept as it is with **Skip people who are already contacts**) and joins the segments, categories and campaigns you chose.
+
+A contact needs an email address, and LinkedIn search gives none, so a person who is not yet a contact is counted as skipped. Turn on **Find work emails** to look one up for each of them through the [lead finder](/guides/lead-finder/#find-people-and-emails), at the lead finder's person email price. Only an address that verifies is charged and used; a lookup that finds none, or a contact that cannot be written, is refunded. The import then runs in the background and its progress updates live; people still without an address are counted under no email. Without it, add their address in your contacts, or import them from a list that has it, and the next search matches them.
+
+Results already reached from LinkedIn show it: an invitation pending, connected, messaged or replied.
+
+## Conversations
+
+Messages your connected accounts send and receive appear in the [unibox](/guides/unibox/#social) under **Social**, on every channel, matched to the contact who has that handle, and update live. Filter them by channel, and reply from Warmbly to send a text message from that account. Message content is encrypted at rest with your workspace's key.
+
+A reply on any channel from a contact in a campaign counts as their reply: it is classified like an email reply, stops their sequence on every channel when **Stop on reply** is on, runs reply branches, and sends the same reply notification and `campaign.reply_received` webhook, with `channel` set to the channel it came on.
+
+## Who can do what
+
+| Action | Member permission | API permission |
+| --- | --- | --- |
+| See accounts, connections, the channels and the status | Manage emails | `READ_SOCIAL` |
+| Change an account's settings, pause, resume or resync it, sign in and answer checks | Manage emails | `MANAGE_SOCIAL` |
+| Connect an account, remove one, link or unlink a GraphKit workspace | Manage emails and Manage billing | `MANAGE_SOCIAL` |
+| Upload or delete a voice note recording | Manage campaigns | `MANAGE_SOCIAL` |
+| Search LinkedIn, build searches with AI, read profiles and saved searches | View contacts | `READ_SOCIAL` |
+| Save, change and delete saved searches | View contacts | `MANAGE_SOCIAL` |
+| Add results to contacts | Manage contacts | `MANAGE_SOCIAL` |
+| Follow an import and see a contact's social activity | View contacts | `READ_SOCIAL` |
+| Pick a campaign's social accounts | Manage campaigns | `WRITE_CAMPAIGNS` and `MANAGE_SOCIAL` |
+| Read conversations and mark them read | Access unibox | `READ_SOCIAL` |
+| Reply in a conversation | Access unibox | `MANAGE_SOCIAL` |
+
+Connecting and removing an account also asks for a recent sign-in. See [team roles](/guides/team-roles/) and the [API endpoints](/api/endpoints/#social).
+
+## Moving a workspace
+
+Contacts' handles and consent bases, and saved LinkedIn searches, travel in a [workspace archive](/guides/workspace-export-import/). Connected accounts, connections, conversations, the social steps campaigns ran and the accounts a campaign uses do not: they belong to the GraphKit connection of the instance that holds them. Connect the accounts again on the new instance and pick each campaign's accounts again; campaigns keep their social steps.
+
+## Self-hosted instances
+
+Social accounts are available when the instance has a GraphKit connection, set in the admin panel or by environment, the same one the [store](/guides/buy-mailboxes/) uses. Without one, **Settings > Social accounts** says it is not set up. An instance that charges nothing for the store charges nothing for social accounts either, and the settings page, the connect window and each account say that the account is not charged.
+
+## Related guides
+
+- [Campaign steps](/guides/sequences/#social-steps)
+- [Lead finder](/guides/lead-finder/)
+- [Unibox](/guides/unibox/)
+- [Buy mailboxes](/guides/buy-mailboxes/)
+- [Contacts and CRM](/guides/contacts-crm/)
+- [AI credits](/guides/ai-credits/)

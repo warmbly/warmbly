@@ -217,6 +217,51 @@ A step can perform an action instead of sending: add or remove a label, label th
 **Label conversation** is reply-only. It labels the conversation the contact replied on, so place it on a reply branch; anywhere else it is a no-op because there is no thread to label.
 </Callout>
 
+### Social steps
+
+With [social accounts](/guides/social/) connected, a **Social** step acts on LinkedIn, Instagram, WhatsApp, Telegram or Facebook instead of sending email. In the step picker, choose **Social** (typing a channel or an action, such as `whatsapp` or `invite`, finds it and picks them for you), then pick the channel, then the action, then fill in its fields. Each step runs from one of the campaign's social accounts on its channel: pick them in the campaign's **Social accounts** setting, or with `PUT /campaigns/:id/social-accounts`. A campaign with steps on a channel it has no account for does not start, and says which channel is missing.
+
+| Action | Channels | What it does | Copy |
+| --- | --- | --- | --- |
+| **Invite** | LinkedIn | Sends a connection invitation | An optional note, at most the channel's invite note limit once rendered (300 characters on LinkedIn) |
+| **Message** | Every channel | Sends a direct message (on LinkedIn, to a 1st-degree connection) | A body, up to the channel's message limit (8,000 characters on LinkedIn, 4,096 on WhatsApp) |
+| **InMail** | LinkedIn | Sends an InMail, which needs a licence that includes it | A subject (up to 200 characters) and a body |
+| **Voice note** | The channels that offer it | Sends a voice message | A recording you upload, up to the channel's longest voice note, or a written script read in the account's own voice when the account has one |
+| **Visit profile**, **Follow** | The channels that offer them | Visits or follows the person's profile | None |
+| **Like a post** | The channels that offer it | Reacts to the person's latest post, within a post age you set | On LinkedIn, the reaction (like, celebrate, support, love, insightful or funny) |
+| **Comment on a post** | The channels that offer it | Comments on the person's latest post, within a post age you set | Up to 10 comments, one picked per contact, each up to the channel's comment limit |
+| **Endorse** | LinkedIn | Endorses 1 to 3 of the person's skills | None |
+| **Withdraw invite** | LinkedIn | Withdraws a pending invitation | None |
+
+The step editor lists every action and greys out those its channel does not offer, naming the channels that do. The copy takes the same [variables](/guides/expressions/) and spintax as an email, with `.Sender` being the social account's name, and each text field has a fallback used when a variable in it has no value for the contact. The editor counts characters after rendering, against the channel's limit. Invites, messages and InMails can carry up to 4 variants with their own copy and shares of the contacts; pick a winner to send only that one.
+
+WhatsApp, Telegram and Facebook need a consent basis for the contact on that channel before anything is sent to them (opt-in, an existing conversation, imported with consent, or on Facebook a friend). Record it on the contact's **Social** tab or in a CSV import. **If missing** decides what happens to a contact with no handle on the step's channel, or no consent basis on a channel that needs one: **Skip** passes over the step and the contact goes on, **Stop** takes the contact out of the campaign.
+
+Each contact stays on one account per channel for the whole campaign: once an invite, message, InMail or voice note reached them, the same account runs every later step on that channel. A new contact goes to the account with the most room left today. GraphKit runs the action inside the account's own limits and working hours, so a queued step can take a while; the next step waits for its own wait as usual. Every step is queued once, whatever happens to the campaign's ticks or a restart.
+
+A step is skipped, and the contact goes on to the next one, when none of the campaign's accounts on that channel can be used, or GraphKit skips it (already connected, an invitation already pending, not a connection, no InMail credits, no recent post, no skills to endorse, a recipient it cannot reach, or no consent basis). A step GraphKit refuses outright is marked failed. One it turns away for now (a rate limit, say) is tried again up to 5 times, and one it cannot be reached for is tried again, waiting longer each time up to an hour, for 3 days. Only that contact waits; the campaign goes on with everyone else meanwhile. A contact whose account needs reconnecting waits the same way. Skipped and failed steps are written to the campaign's activity.
+
+A queued step GraphKit has not run yet is cancelled, and written to the campaign's activity, when the contact replies with **Stop on reply** on, unsubscribes, is added to the suppression list or is removed from the campaign, or when the campaign is paused or deleted. Resuming the campaign does not queue a cancelled step again. A step GraphKit could not run within 3 days expires unsent. Starting a campaign warns, without refusing, when some leads have no handle on a channel the campaign uses.
+
+A campaign of only social steps needs no sending mailboxes, but the workspace still needs one mailbox, which it is scheduled through; nothing is sent from it. Its steps follow the campaign's start and end dates and sending windows. An email step reached by a contact with no email address is skipped and the contact goes on, written once to the campaign's activity.
+
+Branch on social activity with these conditions:
+
+| Condition | Meaning |
+| --- | --- |
+| `social_replied` / `not_social_replied` | The contact replied on a social channel since entering the campaign. Set `channel` to check one channel; leave it out for any |
+| `social_connected` / `not_social_connected` | The contact accepted a LinkedIn invitation from, or is connected to, one of the workspace's accounts |
+| `social_invite_pending` | A LinkedIn invitation to the contact is waiting for an answer |
+| `social_open_profile` / `not_social_open_profile` | The contact has a LinkedIn Open Profile, so an InMail reaches them without using a credit |
+
+The pending invite and Open Profile conditions are checked when the contact reaches them and take no time window. The step picker also offers **Invite, then message or email**: a LinkedIn invite, then a message if they accept within 7 days, else an email.
+
+A social reply on any channel counts as a reply everywhere a reply counts: `if replied`, reply intent, reply branches and **Stop on reply**, and it stops the contact's steps on every channel. Like a wait or a Switch, a social step reached by an instant reply branch runs at the next boundary.
+
+<Callout type="info">
+Social steps need every backend on the release that added them or a later one. Upgrade every backend before adding them: an older backend reads them as no-op actions and moves the contact past them, and so does any backend after a rollback past that release. From this release on, a backend that meets a step type it does not know holds the contact on it and offers it again later instead of moving past it, so step types a later release adds wait for the upgrade.
+</Callout>
+
 ### Switch steps
 
 A Switch step routes each contact down one of several named cases (`interested`, `not_now`, `wrong_person`). Every case is its own column under the step; add the steps that case leads to under it. **Otherwise** is the fallback for contacts no case matched. Renaming a case keeps the steps under it. Side effects stay as ordinary action steps on a path, so the decision and its consequences remain separately visible.

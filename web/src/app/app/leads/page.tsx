@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast/headless";
 import { motion } from "framer-motion";
 import {
@@ -37,6 +37,7 @@ import SavedSearches from "@/components/app/leads/SavedSearches";
 import SearchPanel from "@/components/app/leads/SearchPanel";
 import { areaKm2, boundsOf, inPolygon } from "@/components/app/leads/geo";
 import { useConfirm } from "@/hooks/context/confirm";
+import { useSocialStatus } from "@/lib/api/hooks/app/social/useSocial";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import {
     useDeleteLeads,
@@ -74,6 +75,20 @@ interface Prefs {
 }
 
 const PREFS_KEY = "wb.leadFinder.prefs";
+// Which finder the page shows: businesses on a map, or LinkedIn. `?source=linkedin` opens LinkedIn.
+const SOURCE_KEY = "wb.leadFinder.source";
+type FinderSourceKind = "places" | "linkedin";
+const LinkedInFinder = lazy(() => import("@/components/app/leads/linkedin/LinkedInFinder"));
+
+function readSource(): FinderSourceKind {
+    try {
+        const q = new URLSearchParams(window.location.search).get("source");
+        if (q === "linkedin" || q === "places") return q;
+        return localStorage.getItem(SOURCE_KEY) === "linkedin" ? "linkedin" : "places";
+    } catch {
+        return "places";
+    }
+}
 const DEFAULT_PREFS: Prefs = {
     mode: "split",
     colorBy: "reach",
@@ -103,6 +118,33 @@ function loadPrefs(): Prefs {
 }
 
 export default function LeadFinderPage() {
+    const [source, setSourceState] = useState<FinderSourceKind>(readSource);
+    const linkedin = useSocialStatus();
+    const setSource = useCallback((s: FinderSourceKind) => {
+        setSourceState(s);
+        try {
+            localStorage.setItem(SOURCE_KEY, s);
+        } catch {
+            // Remembering the source is a convenience.
+        }
+    }, []);
+    if (source === "linkedin") {
+        return (
+            <Suspense
+                fallback={
+                    <div className="flex h-full items-center justify-center bg-white">
+                        <Loader2Icon className="size-5 animate-spin text-slate-300" />
+                    </div>
+                }
+            >
+                <LinkedInFinder onExit={() => setSource("places")} />
+            </Suspense>
+        );
+    }
+    return <PlacesFinder onLinkedIn={linkedin.data?.available ? () => setSource("linkedin") : undefined} />;
+}
+
+function PlacesFinder({ onLinkedIn }: { onLinkedIn?: () => void }) {
     const config = useLeadFinderConfig();
     if (!config.data) {
         return (
@@ -115,10 +157,10 @@ export default function LeadFinderPage() {
             </div>
         );
     }
-    return <Finder config={config.data} />;
+    return <Finder config={config.data} onLinkedIn={onLinkedIn} />;
 }
 
-function Finder({ config }: { config: LeadFinderConfig }) {
+function Finder({ config, onLinkedIn }: { config: LeadFinderConfig; onLinkedIn?: () => void }) {
     const resolvedTheme = useAppStore((s) => s.resolvedTheme);
     const confirm = useConfirm();
     const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
@@ -413,6 +455,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                             near={view && view.zoom >= 9 ? view.center : null}
                             provider={provider}
                             onProvider={pickProvider}
+                            onLinkedIn={onLinkedIn}
                             area={area}
                             onClearArea={() => {
                                 setArea(null);

@@ -4,7 +4,7 @@ import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 import TopicFigure from '../components/scenes/faq/TopicFigure.astro';
 
-// Product answers follow CLAUDE.md and the docs; residency, SOC 2, DPA and
+// Product answers follow CLAUDE.md and the docs; residency, SOC 2 and
 // billing answers are the company's own statements.
 const groups = [
   {
@@ -37,10 +37,9 @@ const groups = [
   {
     id: 'security', title: 'Security and data',
     items: [
-      ['Where is my data stored?', 'In AWS, in us-east-1 by default and eu-west-1 on Grow and Business. Enterprise can choose its own residency. A self-hosted instance stores everything on your own servers.'],
+      ['Where is my data stored?', 'In AWS, in us-east-1. A self-hosted instance stores everything on your own servers.'],
       ['How are mailbox credentials stored?', 'Encrypted at rest with a dedicated credentials key, kept separate from the data key your workspace uses for message content and integration tokens. Plain keys are only ever held briefly in memory.'],
       ['Do you have SOC 2?', 'A SOC 2 Type II audit is in progress. We can share a bridge letter once the report is issued.'],
-      ['Do you sign DPAs?', 'Yes. Email team@warmbly.com and we turn it around within 48 hours.'],
     ],
   },
   {
@@ -49,7 +48,6 @@ const groups = [
       ['Is there a free trial?', 'Yes. The first workspace an owner creates gets 14 days free with no card: two mailboxes warming, 20 cold emails a day and the unified inbox. After it, mailboxes and warmup need a paid plan, from $29 a month with unlimited mailboxes and warmup. Workspaces that already had the free plan keep it.'],
       ['Do you charge per email?', 'No. Each plan includes a daily send budget. Unused volume doesn’t carry over.'],
       ['What is your refund policy?', 'A full refund within 14 days of a paid purchase if Warmbly didn’t work for you.'],
-      ['Do you have startup pricing?', '50% off Grow for a year for pre-seed and seed companies from YC, Antler, EF, Techstars and similar programmes.'],
     ],
   },
 ] as const;

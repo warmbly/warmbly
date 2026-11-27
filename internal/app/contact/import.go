@@ -169,6 +169,10 @@ func resolveMapping(mapping []models.ContactImportColumnMapping) ([]importColumn
 			}
 		}
 
+		if _, _, ok := models.SocialImportTarget(string(target)); ok {
+			out = append(out, importColumn{index: m.Index, target: target})
+			continue
+		}
 		switch target {
 		case models.ContactImportTargetIgnore, "":
 			continue
@@ -963,6 +967,12 @@ func mergeAddContact(dst *models.AddContact, src models.AddContact) {
 			dst.CustomFields[k] = v
 		}
 	}
+	for ch, id := range src.Social {
+		if dst.Social == nil {
+			dst.Social = models.ContactSocialPatch{}
+		}
+		dst.Social[ch] = id
+	}
 	dst.Campaigns = appendUnique(dst.Campaigns, src.Campaigns...)
 	dst.Categories = appendUnique(dst.Categories, src.Categories...)
 }
@@ -1214,6 +1224,16 @@ func guessTarget(idx int, header string) models.ContactImportColumnMapping {
 		return models.ContactImportColumnMapping{Index: idx, Target: models.ContactImportTargetSubscribed}
 	case "categories", "category", "tags", "tag", "labels", "label":
 		return models.ContactImportColumnMapping{Index: idx, Target: models.ContactImportTargetCategories}
+	case "linkedin", "linkedinurl", "linkedinprofile", "linkedinprofileurl", "personlinkedinurl":
+		return models.ContactImportColumnMapping{Index: idx, Target: "social.linkedin"}
+	case "instagram", "instagramurl", "instagramhandle", "instagramusername":
+		return models.ContactImportColumnMapping{Index: idx, Target: "social.instagram"}
+	case "whatsapp", "whatsappnumber", "whatsappphone":
+		return models.ContactImportColumnMapping{Index: idx, Target: "social.whatsapp"}
+	case "telegram", "telegramusername", "telegramhandle":
+		return models.ContactImportColumnMapping{Index: idx, Target: "social.telegram"}
+	case "facebook", "facebookurl", "facebookprofile", "facebookprofileurl":
+		return models.ContactImportColumnMapping{Index: idx, Target: "social.facebook"}
 	}
 	return models.ContactImportColumnMapping{Index: idx, Target: models.ContactImportTargetIgnore}
 }
@@ -1233,6 +1253,7 @@ func buildAddContact(
 		Categories:   append([]string{}, defaultCategoryIDs...),
 	}
 	var categories []string
+	handles, consents := map[string]string{}, map[string]string{}
 	for _, col := range columns {
 		if col.index >= len(row) {
 			continue
@@ -1275,7 +1296,26 @@ func buildAddContact(
 			}
 		case models.ContactImportTargetCustom:
 			ac.CustomFields[col.customKey] = val
+		default:
+			if ch, consent, ok := models.SocialImportTarget(string(col.target)); ok {
+				if consent {
+					consents[ch] = models.ImportConsentBasis(ch, val)
+				} else if handle, _, ok := models.NormalizeSocialHandle(ch, val); ok {
+					handles[ch] = handle
+				}
+			}
 		}
+	}
+	// A handle that names nobody on its channel is dropped, not the row; a consent basis needs its handle.
+	for ch, handle := range handles {
+		if ac.Social == nil {
+			ac.Social = models.ContactSocialPatch{}
+		}
+		id := &models.ContactSocialIdentity{Handle: handle}
+		if b := consents[ch]; b != "" {
+			id.ConsentBasis = &b
+		}
+		ac.Social[ch] = id
 	}
 	return ac, categories, ""
 }

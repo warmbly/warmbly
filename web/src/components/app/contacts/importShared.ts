@@ -12,6 +12,14 @@ import type {
     ImportResult,
 } from "@/lib/api/client/app/contacts/importContacts";
 
+const SOCIAL_IMPORT_CHANNELS: [string, string][] = [
+    ["linkedin", "LinkedIn"],
+    ["instagram", "Instagram"],
+    ["whatsapp", "WhatsApp"],
+    ["telegram", "Telegram"],
+    ["facebook", "Facebook"],
+];
+
 export const STANDARD_TARGETS: { id: string; label: string }[] = [
     { id: "ignore", label: "Ignore" },
     { id: "email", label: "Email" },
@@ -22,6 +30,12 @@ export const STANDARD_TARGETS: { id: string; label: string }[] = [
     { id: "subscribed", label: "Subscribed" },
     { id: "categories", label: "Labels" },
     { id: "verification_status", label: "Verification status" },
+    // A handle per social channel, and the consent basis for outreach there (opt_in, existing_conversation,
+    // imported_with_consent or friend).
+    ...SOCIAL_IMPORT_CHANNELS.flatMap(([c, name]) => [
+        { id: `social.${c}`, label: name },
+        { id: `social.${c}.consent`, label: `${name} consent` },
+    ]),
 ];
 
 // Vocabularies the verification_status target can read, for the mapping

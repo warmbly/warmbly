@@ -11,7 +11,7 @@ import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { useUpgradeDialog } from "@/hooks/context/upgrade";
 import { useBalance, useBalanceCheckout, useTopUp } from "@/lib/api/hooks/app/subscription/useBalance";
 import { onInsufficientBalance } from "@/lib/insufficientBalance";
-import { DEFAULT_TOP_UP_USD, fmtUsd, fmtUsdTrim } from "@/lib/money";
+import { DEFAULT_TOP_UP_USD, fmtUsd, fmtUsdTrim, topUpCharge } from "@/lib/money";
 import { fmtDay, paymentMethodLabel } from "./balanceModel";
 
 export default function InsufficientBalanceDialog() {
@@ -130,7 +130,7 @@ function DialogBody({ onClose }: { onClose: () => void }) {
                                 className="h-7 px-3 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                             >
                                 {busy ? <Loader2Icon className="w-3 h-3 animate-spin" /> : pm ? <CreditCardIcon className="w-3 h-3" /> : null}
-                                {pm ? `Pay ${fmtUsdTrim(amount)} with ${paymentMethodLabel(pm)}` : `Add ${fmtUsdTrim(amount)}`}
+                                {pm ? `Pay ${fmtUsd(topUpCharge(amount).totalUsd)} with ${paymentMethodLabel(pm)}` : `Add ${fmtUsdTrim(amount)}`}
                             </button>
                         </>
                     ) : canManage && access.billing ? (

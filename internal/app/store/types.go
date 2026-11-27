@@ -29,6 +29,10 @@ type Status struct {
 	Configured bool `json:"configured"`
 	// Reason says why Enabled is false: ReasonNotConfigured or ReasonPartnerManaged.
 	Reason string `json:"reason,omitempty"`
+	// SalesPaused is set while the operator has paused new purchases; everything already bought keeps working.
+	SalesPaused bool `json:"sales_paused"`
+	// MailboxOrdersPaused is set while new mailboxes cannot be ordered; domains alone still can.
+	MailboxOrdersPaused bool `json:"mailbox_orders_paused"`
 	// Locked is set with ReasonNotConfigured on a self-host, which shows buying as a feature to set up; a hosted instance hides it.
 	Locked bool `json:"locked"`
 	// CanConfigure is set with Locked for an instance admin who may add the GraphKit API key.
@@ -71,9 +75,11 @@ const (
 
 // NextBundle is the next mailbox charge: on charge_on, for mailboxes, of amount_micros.
 type NextBundle struct {
-	ChargeOn     time.Time `json:"charge_on"`
-	Mailboxes    int       `json:"mailboxes"`
-	AmountMicros int64     `json:"amount_micros"`
+	ChargeOn  time.Time `json:"charge_on"`
+	Mailboxes int       `json:"mailboxes"`
+	// SocialSeats are the social accounts collected in the same charge.
+	SocialSeats  int   `json:"social_seats"`
+	AmountMicros int64 `json:"amount_micros"`
 }
 
 // Offer is one domain search result at retail.

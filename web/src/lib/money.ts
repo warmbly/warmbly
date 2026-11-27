@@ -49,3 +49,15 @@ export function parseUsd(text: string): number | null {
 export function roundCents(n: number): number {
     return Math.round(n * 100) / 100;
 }
+
+/** A card payment into a balance adds a 3% processing fee on top of the amount added (models.TopUpFeeBasisPoints). */
+export const TOP_UP_FEE_BPS = 300;
+export const TOP_UP_FEE_LABEL = "Processing fee (3%)";
+
+/** What adding an amount by card costs: the fee, rounded half up to the cent, and the total charged. */
+export function topUpCharge(usd: number): { feeUsd: number; totalUsd: number } {
+    const cents = Math.round(usd * 100);
+    if (!(cents > 0)) return { feeUsd: 0, totalUsd: Math.max(0, cents) / 100 };
+    const fee = Math.floor((cents * TOP_UP_FEE_BPS + 5000) / 10000);
+    return { feeUsd: fee / 100, totalUsd: (cents + fee) / 100 };
+}

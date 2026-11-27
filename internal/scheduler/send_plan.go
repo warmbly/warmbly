@@ -247,8 +247,9 @@ func (s *schedulerService) planMailbox(ctx context.Context, pass *campaignPass, 
 		local := openAt.In(bhv.Loc)
 		workEnd := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, bhv.Loc).Add(time.Duration(plan.WorkEndMinute) * time.Minute)
 		secondsLeft = min(secondsLeft, max(0, int(workEnd.Sub(openAt).Seconds())))
-		// The hourly ceiling is the plan's own clamp, so it is charged to it.
-		if plan.HourlyLimit > 0 {
+		// The hourly ceiling is the plan's own clamp, so it is charged to it;
+		// a closed campaign window is the window's clamp, reported below.
+		if plan.HourlyLimit > 0 && windowSecondsLeft > 0 {
 			hours := (secondsLeft + 3599) / 3600
 			if byHour := plan.HourlyLimit * hours; byHour < r {
 				d.byBehavior += r - byHour

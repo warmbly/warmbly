@@ -53,7 +53,8 @@ export default function StepPicker({
     title?: string;
     // Horizontal distance from the button to keep clear (half a card).
     clearance?: number;
-    onPick: (item: PickerItem) => void;
+    // The search the item was picked from, so an item can preselect what it was found by.
+    onPick: (item: PickerItem, query: string) => void;
     onClose: () => void;
 }) {
     const panelRef = React.useRef<HTMLDivElement>(null);
@@ -82,7 +83,7 @@ export default function StepPicker({
             setQuery("");
             return;
         }
-        onPick(item);
+        onPick(item, query);
     };
 
     const onKey = (e: React.KeyboardEvent) => {

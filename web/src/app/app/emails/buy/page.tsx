@@ -6,7 +6,7 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-m
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast/headless";
-import { ArrowLeftIcon, Loader2Icon, StoreIcon } from "lucide-react";
+import { ArrowLeftIcon, Loader2Icon, PauseCircleIcon, StoreIcon } from "lucide-react";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { Page } from "@/components/layout/Page";
 import DomainSearch from "@/components/app/store/DomainSearch";
@@ -21,7 +21,7 @@ import { useCheckout } from "@/components/app/store/useCheckout";
 import { useUserProfile } from "@/hooks/context/user";
 import { LG_QUERY, useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePermission } from "@/hooks/usePermission";
-import { orderQuery, storeState, useOrder, useStoreStatus } from "@/lib/api/hooks/app/store/useStore";
+import { orderQuery, storeSalesPaused, storeState, useOrder, useStoreStatus } from "@/lib/api/hooks/app/store/useStore";
 import usePartnerManaged from "@/hooks/usePartnerManaged";
 import { storePhotoFromProfile } from "@/lib/api/client/app/store/store";
 import { storeErrorCode } from "@/lib/buy/errors";
@@ -39,6 +39,8 @@ export default function BuyMailboxesPage() {
     if (!canView) return <NoAccess feature="buying mailboxes" permissionLabel="Manage mailboxes" />;
     if (status.isPending) return <Shell />;
     const store = storeState(status.data, managed);
+    // Paused sales still follow an order already placed.
+    if (store.kind === "on" && storeSalesPaused(store.status) && !orderId) return <SalesPaused />;
     if (store.kind === "on") return <Store status={store.status} orderId={orderId} />;
     if (store.kind === "hidden") return <Unavailable failed={status.isError} />;
     // A workspace with live purchases can still follow an order it placed before GraphKit was disconnected.
@@ -153,6 +155,14 @@ function Checkout({ status }: { status: StoreStatus }) {
                         A sending domain next to your main one, with Google or Microsoft mailboxes set up, connected and warming for you.
                     </p>
                 </div>
+                {status.mailbox_orders_paused && (
+                    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50/60 px-3.5 py-2.5 flex items-start gap-2.5">
+                        <PauseCircleIcon className="w-4 h-4 text-amber-600 mt-px shrink-0" />
+                        <p className="text-[12px] text-amber-900 leading-relaxed">
+                            New mailboxes are paused for a short while and will be available again soon. You can still buy domains on their own.
+                        </p>
+                    </div>
+                )}
                 <DomainSearch
                     query={query}
                     onQuery={setQuery}
@@ -183,6 +193,7 @@ function Setup({ id }: { id: string }) {
     const reduced = useReducedMotion();
     const navigate = useNavigate();
     const order = useOrder(id);
+    const paused = storeSalesPaused(useStoreStatus().data);
     useApprovalReturn(id);
     return (
         <div className="max-w-[680px] mx-auto">
@@ -192,7 +203,7 @@ function Setup({ id }: { id: string }) {
                 className="rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-24px_rgba(15,23,42,0.28)] px-5 py-6 sm:px-7 sm:py-7"
             >
                 <motion.div initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: reduced ? 0 : 0.15, duration: 0.25 }}>
-                    <SetupTrack order={order.data} loading={order.isPending} onBuyMore={() => void navigate({ to: "/app/emails/buy" })} />
+                    <SetupTrack order={order.data} loading={order.isPending} onBuyMore={paused ? undefined : () => void navigate({ to: "/app/emails/buy" })} />
                     {order.isError && !order.data && (
                         <p className="mt-6 text-[12.5px] text-slate-500">
                             This order could not be loaded. It may belong to another workspace.{" "}
@@ -262,6 +273,26 @@ function ShellSkeleton() {
             </div>
             <div className="hidden lg:block h-64 rounded-2xl skeleton-shimmer" />
         </div>
+    );
+}
+
+function SalesPaused() {
+    return (
+        <Shell>
+            <div role="status" className="py-16 flex flex-col items-center text-center">
+                <div className="size-10 rounded-full bg-amber-50 text-amber-600 inline-flex items-center justify-center mb-3">
+                    <PauseCircleIcon className="w-4 h-4" />
+                </div>
+                <p className="text-[13px] text-slate-800 font-medium">Buying new mailboxes is paused</p>
+                <p className="mt-1 text-[12px] text-slate-500 max-w-[46ch] leading-relaxed">
+                    It will be available again soon. The domains and mailboxes you already bought keep working and renewing as usual, and you can still connect
+                    mailboxes you already have.
+                </p>
+                <Link to="/app/emails" className="mt-4 h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] font-medium text-slate-700 inline-flex items-center">
+                    Back to mailboxes
+                </Link>
+            </div>
+        </Shell>
     );
 }
 

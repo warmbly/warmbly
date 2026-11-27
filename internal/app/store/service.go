@@ -176,6 +176,11 @@ type Service struct {
 	// settings is the admin panel's stored connection, wired after construction.
 	settings ConnectionSettings
 	envCfg   config.GraphKit
+	// links and signIns mint and remember purchased mailboxes' sign-in links (signin.go), wired after construction.
+	links   ConnectLinks
+	signIns repository.StoreSignInLinkRepository
+	// social is the social add-on (social.go), wired after construction.
+	social Social
 }
 
 // WireManaged attaches the partner core's check, built after the store.
@@ -291,6 +296,9 @@ func (s *Service) requireBuyer(ctx context.Context, orgID uuid.UUID) error {
 	if s.managed(ctx, orgID) {
 		return errManaged
 	}
+	if s.retail(ctx).SalesPaused {
+		return errSalesPaused
+	}
 	ok, err := s.planActive(ctx, orgID)
 	if err != nil {
 		return err
@@ -347,7 +355,7 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 		return off, nil
 	}
 	r := s.retail(ctx)
-	out := &Status{Enabled: true, Configured: true, Metered: s.metered(), Currency: "USD", MailboxMonthlyMicros: r.MailboxMonthly(),
+	out := &Status{Enabled: true, Configured: true, SalesPaused: r.SalesPaused, Metered: s.metered(), Currency: "USD", MailboxMonthlyMicros: r.MailboxMonthly(),
 		DomainMarkup: "at_cost", Limits: defaultLimits, Providers: []string{graphkit.ProviderGoogle, graphkit.ProviderMicrosoft}}
 	if !atCost(r) {
 		out.DomainMarkup = "markup"
@@ -356,6 +364,7 @@ func (s *Service) Status(ctx context.Context, orgID uuid.UUID) (*Status, error) 
 		if p.Limits.MailboxesPerDomainMax > 0 {
 			out.Limits = p.Limits
 		}
+		out.MailboxOrdersPaused = p.MailboxOrdersPaused
 	}
 	active, err := s.planActive(ctx, orgID)
 	if err != nil {
@@ -652,6 +661,8 @@ func NewAPI(cfg config.GraphKit) (graphkit.API, *graphkit.Fake, error) {
 	}
 	if cfg.Fake() {
 		f := graphkit.NewFake()
+		// The simulator's GraphKit link page is a stand-in the backend serves itself.
+		f.SetLinkPage(func(id string) string { return config.BackendPublicURL() + "/v1/social/sandbox/link/" + id })
 		return f, f, nil
 	}
 	if cfg.APIKey == "" {

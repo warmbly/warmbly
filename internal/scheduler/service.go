@@ -56,6 +56,8 @@ type schedulerService struct {
 	// workers says whether a mailbox's worker is heartbeating. Optional/
 	// nil-safe: without it every mailbox is taken to be reachable.
 	workers WorkerLiveness
+	// social lets a campaign with no sending mailbox run its social steps (WireSocial). Optional/nil-safe.
+	social SocialWake
 }
 
 // WorkerLiveness reports whether a worker is heartbeating, the check the send

@@ -49,6 +49,10 @@ type Fake struct {
 	// verified holds the registrant emails already verified, so only the first registration asks.
 	verified  map[string]bool
 	suspended bool
+
+	social *fakeSocial
+	// linkPage builds a link session URL when a stand-in consent page is served.
+	linkPage func(sessionID string) string
 }
 
 type fakeQuote struct {
@@ -144,6 +148,7 @@ func NewFake() *Fake {
 		verified:   map[string]bool{},
 		settings:   PartnerSettings{RegistrantNotices: "registrar", DMARCPolicyDefault: "none"},
 		balance:    250_000_000,
+		social:     newFakeSocial(),
 	}
 }
 
@@ -431,7 +436,8 @@ func (f *Fake) Pricing(context.Context) (*Pricing, error) {
 		Mailboxes: []MailboxPrice{{Provider: ProviderGoogle, MonthlyMicros: fakeMailboxMonthly}, {Provider: ProviderMicrosoft, MonthlyMicros: fakeMailboxMonthly}},
 		Limits:    Limits{MailboxesPerDomainMax: 5, MailboxesPerDomainRecommended: 3},
 		Sending: &SendingPrices{AddonMonthlyMicros: 30_000_000, BoughtMonthlyMicros: 2_000_000, OutsideMonthlyMicros: 3_000_000,
-			Modes: []string{"sending_warmup", "warmup_only"}, SendsPerMailboxPerDay: 50}}
+			Modes: []string{"sending_warmup", "warmup_only"}, SendsPerMailboxPerDay: 50},
+		Social: &SocialPrices{Channels: fakeSocialCatalog()}}
 	for _, tld := range fakeDefaultTLDs {
 		v := fakeTLDPrices[tld]
 		p.Domains = append(p.Domains, TLDPrice{TLD: tld, RegisterMicros: v, RenewMicros: v, TransferMicros: v, PrivacyIncluded: true,

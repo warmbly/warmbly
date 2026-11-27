@@ -208,7 +208,7 @@ func (s *Service) Reload(ctx context.Context, orgID uuid.UUID) error {
 		return nil
 	}
 	c, err := s.charges.Create(ctx, &models.SavedCardCharge{
-		OrgID: orgID, Kind: models.SavedCardAutoReload, Amount: amount, AmountCents: amount.Cents(),
+		OrgID: orgID, Kind: models.SavedCardAutoReload, Amount: amount, AmountCents: chargedCents(models.SavedCardAutoReload, amount),
 		Currency: "usd", CustomerID: customerID, PaymentMethodID: pm.ID,
 	})
 	if errors.Is(err, repository.ErrChargeInFlight) {
@@ -218,6 +218,15 @@ func (s *Service) Reload(ctx context.Context, orgID uuid.UUID) error {
 		return err
 	}
 	return s.run(ctx, c, true)
+}
+
+// chargedCents is what a charge puts on the card: a balance top-up adds the processing fee, a store charge pays its order as priced.
+func chargedCents(kind string, amount models.Micro) int64 {
+	if kind == models.SavedCardStore {
+		return amount.Cents()
+	}
+	_, total := models.TopUpCharge(amount.Cents())
+	return total
 }
 
 func (s *Service) paymentMethod(ctx context.Context, orgID uuid.UUID) (string, *stripe.PaymentMethodSummary, error) {
@@ -437,6 +446,8 @@ func (s *Service) changed(ctx context.Context, orgID uuid.UUID) {
 type TopUpResult struct {
 	Status string
 	Amount models.Micro
+	// ChargedCents is what the card pays, the processing fee included.
+	ChargedCents int64
 }
 
 // TopUp charges the saved card now, with the buyer present. A refusal comes
@@ -488,7 +499,7 @@ func (s *Service) chargeCard(ctx context.Context, in *models.SavedCardCharge, of
 		if pm == nil {
 			return nil, ErrNoPaymentMethod
 		}
-		in.AmountCents, in.Currency, in.CustomerID, in.PaymentMethodID = in.Amount.Cents(), "usd", customerID, pm.ID
+		in.AmountCents, in.Currency, in.CustomerID, in.PaymentMethodID = chargedCents(in.Kind, in.Amount), "usd", customerID, pm.ID
 		c, err = s.charges.Create(ctx, in)
 		if errors.Is(err, ErrChargeInFlight) && s.supersedeSnoozedReload(ctx, in.OrgID) {
 			c, err = s.charges.Create(ctx, in)
@@ -513,12 +524,12 @@ func (s *Service) chargeCard(ctx context.Context, in *models.SavedCardCharge, of
 	}
 	switch done.Status {
 	case "succeeded":
-		return &TopUpResult{Status: "paid", Amount: done.Amount}, nil
+		return &TopUpResult{Status: "paid", Amount: done.Amount, ChargedCents: done.AmountCents}, nil
 	case "pending":
 		if runErr != nil {
 			log.Warn().Err(runErr).Str("charge_id", c.ID.String()).Msg("card charge left for the sweep to finish")
 		}
-		return &TopUpResult{Status: "processing", Amount: done.Amount}, nil
+		return &TopUpResult{Status: "processing", Amount: done.Amount, ChargedCents: done.AmountCents}, nil
 	case "failed":
 		// Final for its key, whatever ended it, so the caller moves on rather than waiting on it.
 		return nil, &DeclinedError{Code: chargeFailureCode(done.FailureCode)}

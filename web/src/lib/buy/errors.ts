@@ -7,6 +7,7 @@ import { REGISTRANT_FIELDS, type RegistrantField } from "./registrant";
 
 const COPY: Record<string, string> = {
     store_disabled: "Buying domains and mailboxes is not available on this workspace.",
+    store_sales_paused: "Buying new mailboxes is paused for now. It will be available again soon.",
     store_unavailable: "The store is taking a moment. Try again shortly.",
     rate_limited: "Too many requests at once. Wait a moment and try again.",
     registrant_required: "Add the domain registrant's details to see the total.",
@@ -29,6 +30,7 @@ const COPY: Record<string, string> = {
     domain_premium: "That domain is a premium name, which the store does not sell. Try a variation.",
     tld_unsupported: "That domain ending is not offered. Try another one.",
     provider_mixed: "A domain can use either Google or Microsoft, not both.",
+    mailbox_orders_paused: "New mailboxes can't be ordered for a short while. You can still buy the domains on their own.",
     provider_unavailable: "Mailboxes from that provider aren't available right now. Choose another provider.",
     mailbox_exists: "One of these addresses already exists. Change it and try again.",
     local_part_invalid: "One of the addresses cannot be used. Use letters, digits, dots, dashes or underscores.",

@@ -2,7 +2,11 @@
 // opens carries: it is sold to businesses, with taxes excluded.
 package businesscheckout
 
-import "github.com/stripe/stripe-go/v86"
+import (
+	"github.com/stripe/stripe-go/v86"
+
+	"github.com/warmbly/warmbly/internal/models"
+)
 
 // Notice sits beside the pay button; it states the terms' business-only and tax clauses.
 const Notice = "Warmbly is sold to businesses for business use only. Prices exclude taxes: where we do not charge tax, your business accounts for any tax due in its own country, for example under the reverse charge."
@@ -24,3 +28,23 @@ func Apply(p *stripe.CheckoutSessionParams) {
 
 // TaxExclusive is the tax behaviour of every price built inside a Checkout.
 const TaxExclusive = "exclusive"
+
+// TopUpLineItems are a balance top-up's lines: the amount added, then the processing fee on its own line.
+func TopUpLineItems(name string, cents int64) []*stripe.CheckoutSessionLineItemParams {
+	line := func(name string, cents int64) *stripe.CheckoutSessionLineItemParams {
+		return &stripe.CheckoutSessionLineItemParams{
+			Quantity: stripe.Int64(1),
+			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+				Currency:    stripe.String("usd"),
+				UnitAmount:  stripe.Int64(cents),
+				TaxBehavior: stripe.String(TaxExclusive),
+				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{Name: stripe.String(name)},
+			},
+		}
+	}
+	items := []*stripe.CheckoutSessionLineItemParams{line(name, cents)}
+	if fee, _ := models.TopUpCharge(cents); fee > 0 {
+		items = append(items, line(models.TopUpFeeLabel, fee))
+	}
+	return items
+}

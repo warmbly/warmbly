@@ -29,6 +29,12 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import useCampaignSenders from "@/lib/api/hooks/app/campaigns/useCampaignSenders";
 import useReplaceCampaignSenders from "@/lib/api/hooks/app/campaigns/useReplaceCampaignSenders";
+import { SocialAccountsSection } from "@/components/app/campaigns/preferences/CampaignSocialAccounts";
+import { useCampaignSocialAccounts, useSocialStatus, usePutCampaignSocialAccounts } from "@/lib/api/hooks/app/social/useSocial";
+import { useQuery } from "@tanstack/react-query";
+import getSequences from "@/lib/api/client/app/campaigns/sequences/getSequences";
+import { isSocialAction } from "@/lib/api/models/app/campaigns/sequences/Action";
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
 
 const DAILY_MIN = 3;
 const DAILY_MAX = 5000;
@@ -42,6 +48,11 @@ const SECTIONS = [
         id: "senders",
         label: "Sending accounts",
         description: "Which mailboxes send this campaign — by tag, individually, or both — and the per-mailbox daily cap.",
+    },
+    {
+        id: "social",
+        label: "Social accounts",
+        description: "Which LinkedIn, Instagram, WhatsApp, Telegram and Facebook accounts run this campaign's social steps.",
     },
     {
         id: "deliverability",
@@ -182,7 +193,25 @@ export default function CampaignPreferences() {
     const [explicitAccounts, setExplicitAccounts] = React.useState<string[]>([]);
     const [savedAccounts, setSavedAccounts] = React.useState<string[]>([]);
 
-    const ids = React.useMemo(() => SECTIONS.map((s) => s.id), []);
+    // Social senders: their own endpoint, shown when the workspace has social accounts or the campaign already uses them.
+    const socialStatus = useSocialStatus();
+    const putSocial = usePutCampaignSocialAccounts(campaign.id);
+    const { data: socialSaved } = useCampaignSocialAccounts(campaign.id, !!socialStatus.data?.available || !!campaign.social_account_ids?.length);
+    const [socialIds, setSocialIds] = React.useState<string[]>([]);
+    React.useEffect(() => {
+        if (socialSaved) setSocialIds(socialSaved);
+    }, [socialSaved]);
+    const showSocial = !!socialStatus.data?.available || !!socialSaved?.length;
+    const socialDirty = !!socialSaved && !sameIdSet(socialIds, socialSaved);
+    // The channels the sequence's social steps use, so their sender groups come first.
+    const steps = useQuery({ queryKey: ["campaigns", campaign.id, "sequences"], queryFn: () => getSequences(campaign.id), enabled: showSocial });
+    const stepChannels = React.useMemo(
+        () => [...new Set((steps.data ?? []).flatMap((s) => (s.kind === "action" && isSocialAction(s.action?.type ?? "") && s.action?.social?.channel ? [s.action.social.channel] : [])))] as SocialChannel[],
+        [steps.data],
+    );
+    const sections = React.useMemo(() => SECTIONS.filter((s) => s.id !== "social" || showSocial), [showSocial]);
+
+    const ids = React.useMemo(() => sections.map((s) => s.id), [sections]);
     const { activeId, scrollTo } = useScrollSpy(ids);
 
     React.useEffect(() => {
@@ -332,6 +361,7 @@ export default function CampaignPreferences() {
             // CampaignSender with weight 1 so volume splits evenly. An empty list
             // clears the explicit pool (falling back to tags / all mailboxes).
             const writeSenders = accountsDirty;
+            const writeSocial = socialDirty ? socialIds : null;
             await toast.promise(
                 (async () => {
                     if (Object.keys(data).length > 0) {
@@ -343,6 +373,7 @@ export default function CampaignPreferences() {
                         );
                         setSavedAccounts(explicitAccounts);
                     }
+                    if (writeSocial) await putSocial.mutateAsync(writeSocial);
                 })(),
                 {
                     loading: "Saving…",
@@ -383,6 +414,8 @@ export default function CampaignPreferences() {
                         setExplicitAccounts={setExplicitAccounts}
                     />
                 );
+            case "social":
+                return <SocialAccountsSection value={socialIds} onChange={setSocialIds} stepChannels={stepChannels} />;
             case "deliverability":
                 return <DeliverabilitySection newCampaign={newData} setNewCampaign={setNewData} />;
             case "rotation":
@@ -412,7 +445,7 @@ export default function CampaignPreferences() {
         }
     };
 
-    const hasChanges = Object.keys(getChanges()).length > 0 || accountsDirty;
+    const hasChanges = Object.keys(getChanges()).length > 0 || accountsDirty || socialDirty;
     const blocked = validationError() !== null;
 
     return (
@@ -424,7 +457,7 @@ export default function CampaignPreferences() {
                         On this page
                     </p>
                     <div className="flex md:flex-col gap-0.5 overflow-x-auto no-scrollbar py-2 md:py-0 border-b md:border-0 border-slate-200/60">
-                        {SECTIONS.map(({ id, label }) => {
+                        {sections.map(({ id, label }) => {
                             const active = activeId === id;
                             return (
                                 <button
@@ -455,7 +488,7 @@ export default function CampaignPreferences() {
             {/* Stacked sections */}
             <div className="flex-1 min-w-0">
                 <div className="divide-y divide-slate-200/60">
-                    {SECTIONS.map(({ id, label, description }) => (
+                    {sections.map(({ id, label, description }) => (
                         <section key={id} id={id} className="scroll-mt-24 md:scroll-mt-6 py-7 first:pt-0">
                             <div className="mb-4">
                                 <h2 className="text-[13.5px] font-semibold text-slate-900">{label}</h2>
@@ -486,6 +519,7 @@ export default function CampaignPreferences() {
                                 onClick={() => {
                                     setNewData(campaign);
                                     setExplicitAccounts(savedAccounts);
+                                    if (socialSaved) setSocialIds(socialSaved);
                                 }}
                             >
                                 Reset

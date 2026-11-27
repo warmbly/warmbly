@@ -136,7 +136,7 @@ describe("Billing > Balance", () => {
     it("lets a lapsed workspace see and turn off its auto top-up", async () => {
         api.updateAutoReload.mockImplementation(async (patch) => balance({ can_add_money: false, auto_reload: reload({ ...patch }) }));
         await open(balance({ can_add_money: false, auto_reload: reload({ enabled: true }) }));
-        expect(screen.getByText(/Auto top-up adds \$25 when the balance drops below \$5\.00/)).toBeInTheDocument();
+        expect(screen.getByText(/Auto top-up adds \$25 \(charged \$25\.75 with the 3% processing fee\) when the balance drops below \$5\.00/)).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Change" }));
         await screen.findByRole("dialog");
         fireEvent.click(within(dialog()!).getByRole("switch", { name: "Auto top-up" }));

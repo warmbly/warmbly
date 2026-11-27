@@ -25,7 +25,7 @@ import { formatNumber } from "@/components/app/agency/styles";
 import ExtraSends from "@/components/app/agency/ExtraSends";
 import { AIAutoTopup } from "@/components/app/agency/AutoTopup";
 import { AGENCY_PLAN_FEATURES } from "@/components/app/agency/planFeatures";
-import { fmtUsd, fmtUsdTrim, roundCents } from "@/lib/money";
+import { TOP_UP_FEE_LABEL, fmtUsd, fmtUsdTrim, roundCents, topUpCharge } from "@/lib/money";
 
 const STATUS_LABEL: Record<string, string> = {
     active: "Active",
@@ -61,6 +61,7 @@ function BuyAIBalance({ agencyId, balance, canManage }: { agencyId: string; bala
     const [amount, setAmount] = React.useState(balance.top_up.default_usd || 25);
     const usd = roundCents(amount);
     const valid = usd >= balance.top_up.min_usd && usd <= balance.top_up.max_usd;
+    const charge = topUpCharge(usd);
 
     const buy = async () => {
         if (!valid) return;
@@ -77,7 +78,7 @@ function BuyAIBalance({ agencyId, balance, canManage }: { agencyId: string; bala
             <div className="flex-1 min-w-[220px]">
                 <div className="text-[12.5px] text-slate-900">{fmtUsd(balance.balance_usd)} left in the shared AI balance</div>
                 <div className="text-[11.5px] text-slate-500">
-                    Dollar for dollar. Bought balance never expires and is spent after this period's {fmtUsd(balance.allowance_usd)}{" "}
+                    Dollar for dollar, plus a 3% card processing fee. Bought balance never expires and is spent after this period's {fmtUsd(balance.allowance_usd)}{" "}
                     included with the plan.
                 </div>
             </div>
@@ -115,9 +116,14 @@ function BuyAIBalance({ agencyId, balance, canManage }: { agencyId: string; bala
                         className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 disabled:opacity-60"
                     >
                         {topup.isPending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <SparklesIcon className="w-3 h-3" />}
-                        Buy AI balance
+                        {valid ? `Pay ${fmtUsd(charge.totalUsd)}` : "Buy AI balance"}
                     </button>
                 </div>
+            )}
+            {canManage && valid && (
+                <p className="basis-full text-right text-[11px] text-slate-400 tabular-nums">
+                    {TOP_UP_FEE_LABEL} {fmtUsd(charge.feeUsd)} · Charged {fmtUsd(charge.totalUsd)}
+                </p>
             )}
             {canManage && !valid && (
                 <p className="basis-full text-[11.5px] text-red-600">

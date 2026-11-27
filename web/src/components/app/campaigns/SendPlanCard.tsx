@@ -159,7 +159,14 @@ function fmtDay(iso: string | Date | undefined, tz: string): string {
     const opts: Intl.DateTimeFormatOptions = { timeZone: tz };
     const sameDay = d.toLocaleDateString("en-US", opts) === today.toLocaleDateString("en-US", opts);
     if (sameDay) return fmtTime(iso, tz);
-    return `${d.toLocaleDateString("en-US", { weekday: "short", timeZone: tz })} ${fmtTime(iso, tz)}`;
+    // A weekday alone is ambiguous past the coming week, so name the date there.
+    const withinWeek = Math.abs(d.getTime() - today.getTime()) < 6 * 24 * 3600 * 1000;
+    const dayOpts: Intl.DateTimeFormatOptions = withinWeek
+        ? { weekday: "short", timeZone: tz }
+        : { weekday: "short", month: "short", day: "numeric", timeZone: tz };
+    const yearIn = (x: Date) => x.toLocaleDateString("en-US", { year: "numeric", timeZone: tz });
+    if (!withinWeek && yearIn(d) !== yearIn(today)) dayOpts.year = "numeric";
+    return `${d.toLocaleDateString("en-US", dayOpts)} ${fmtTime(iso, tz)}`;
 }
 
 function shortTz(tz: string): string {
@@ -187,6 +194,9 @@ function headline(plan: SendPlan): string {
         case "leads":
             return `Only ${(plan.leads.due_now + plan.leads.due_later_today).toLocaleString()} steps are due today; the mailboxes could send more.`;
         case "sending_window":
+            if (plan.window.starts_at && new Date(plan.window.starts_at).getTime() > Date.now()) {
+                return `The campaign's start date is ${fmtDay(plan.window.starts_at, plan.timezone)} (${shortTz(plan.timezone)} time); nothing goes out before then.`;
+            }
             return plan.window.opens_at
                 ? `Outside the sending window; it opens ${fmtDay(plan.window.opens_at, plan.timezone)}.`
                 : "Outside the sending window.";

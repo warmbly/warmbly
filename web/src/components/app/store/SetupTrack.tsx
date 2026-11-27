@@ -18,7 +18,7 @@ import { EASE, HOVER_LIFT, PRESS_SPRING } from "@/lib/buy/motion";
 
 const NODE = 28;
 
-export default function SetupTrack({ order, loading, onBuyMore }: { order: Order | undefined; loading: boolean; onBuyMore: () => void }) {
+export default function SetupTrack({ order, loading, onBuyMore }: { order: Order | undefined; loading: boolean; onBuyMore?: () => void }) {
     const reduced = useReducedMotion();
     const track = deriveTrack(order);
     const done = track.phase === "done";
@@ -319,7 +319,7 @@ function chip(m: StoreMailbox): { label: string; tone: string } {
     }
 }
 
-function DoneMoment({ order, onBuyMore }: { order: Order; onBuyMore: () => void }) {
+function DoneMoment({ order, onBuyMore }: { order: Order; onBuyMore?: () => void }) {
     const reduced = useReducedMotion();
     const count = order.mailboxes.length;
     const domains = order.domains.map((d) => d.name);
@@ -410,9 +410,11 @@ function DoneMoment({ order, onBuyMore }: { order: Order; onBuyMore: () => void 
                     </Link>
                 </motion.span>
             </motion.div>
-            <button type="button" onClick={onBuyMore} className="mt-3 text-[12px] text-slate-500 hover:text-slate-800 transition-colors">
-                Buy more domains
-            </button>
+            {onBuyMore && (
+                <button type="button" onClick={onBuyMore} className="mt-3 text-[12px] text-slate-500 hover:text-slate-800 transition-colors">
+                    Buy more domains
+                </button>
+            )}
         </div>
     );
 }

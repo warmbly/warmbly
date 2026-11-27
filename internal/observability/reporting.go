@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rs/zerolog"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/version"
@@ -18,6 +19,7 @@ import (
 // in every environment, including prod, and an unconfigured service logs its
 // errors locally instead.
 func Init(ctx context.Context, cfg *config.Config, service string) error {
+	applyLogLevel(cfg.Env)
 	dsn, err := cfg.LoadSentryDSNBackend(ctx)
 	if err != nil {
 		dsn = ""
@@ -47,6 +49,7 @@ func InitEnv(service string) error {
 	if env == "" {
 		env = "dev"
 	}
+	applyLogLevel(env)
 
 	var posthogKey string
 	if config.PostHogErrorTracking() {
@@ -75,4 +78,18 @@ func Release() string {
 		return c
 	}
 	return "dev"
+}
+
+// applyLogLevel sets the process log level from LOG_LEVEL, defaulting to debug in dev and info elsewhere.
+func applyLogLevel(env string) {
+	level := zerolog.InfoLevel
+	if env == "dev" {
+		level = zerolog.DebugLevel
+	}
+	if v := strings.TrimSpace(os.Getenv("LOG_LEVEL")); v != "" {
+		if parsed, err := zerolog.ParseLevel(strings.ToLower(v)); err == nil && parsed != zerolog.NoLevel {
+			level = parsed
+		}
+	}
+	zerolog.SetGlobalLevel(level)
 }

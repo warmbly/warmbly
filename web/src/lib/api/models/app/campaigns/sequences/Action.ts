@@ -1,3 +1,5 @@
+import type { SocialActionType, SocialChannel } from "@/lib/api/models/app/social/Social";
+
 // Typed config for an action sequence node. Mirrors the Go models.ActionConfig.
 // Stored in the sequence's `action` jsonb column. Spacing/delays are NOT actions:
 // per-step "wait before sending" (wait_after) covers that, so there is no
@@ -15,7 +17,60 @@ export type SequenceActionType =
     | "run_automation"
     | "fire_event"
     | "switch"
-    | "ai_step";
+    | "ai_step"
+    // A social step (LinkedIn, Instagram, WhatsApp, Telegram or Facebook), run from one of the campaign's social
+    // accounts on its channel. Its config is `social`.
+    | "social";
+
+export function isSocialAction(type: string | undefined | null): boolean {
+    return type === "social";
+}
+
+/** Bounds the backend holds a social step to beyond the channel catalog (models/social_step.go). */
+export const SOCIAL_MAX_VARIANTS = 4;
+export const SOCIAL_MAX_COMMENTS = 10;
+export const SOCIAL_MAX_POST_AGE_DAYS = 365;
+export const SOCIAL_INMAIL_SUBJECT_MAX = 200;
+export const SOCIAL_VOICE_SCRIPT_MAX = 2000;
+export const SOCIAL_BASE_VARIANT = "a";
+
+export interface SocialVoice {
+    mode: "recording" | "written";
+    audio_id?: string;
+    duration_seconds?: number;
+    script?: string;
+    fallback_script?: string;
+}
+
+/** An A/B alternative of an invite, message or InMail. Parts it leaves empty fall back to the base copy. */
+export interface SocialVariant {
+    id: string;
+    weight: number;
+    note?: string;
+    subject?: string;
+    body?: string;
+}
+
+export interface SocialStepConfig {
+    channel: SocialChannel;
+    action: SocialActionType | string;
+    note?: string;
+    fallback_note?: string;
+    body?: string;
+    fallback_body?: string;
+    subject?: string;
+    fallback_subject?: string;
+    reaction?: string;
+    post_age_days?: number;
+    comments?: string[];
+    voice?: SocialVoice;
+    max_skills?: number;
+    variants?: SocialVariant[];
+    /** A variant id that takes every contact; "" splits by weight. */
+    winner?: string;
+    /** What happens to a contact with no handle (or no consent basis on a consent channel): passed over, or out of the campaign. */
+    if_missing?: "skip" | "stop";
+}
 
 // One templated input passed to a launched automation (value supports the same
 // {{.FirstName}}/{{.Company}} contact templating campaign copy uses).
@@ -101,6 +156,8 @@ export interface SequenceAction {
     ai_remove_tags?: AITagRef[];
     ai_labels?: AITagRef[];
     ai_allow_create_tags?: boolean;
+    // social — the channel, the action and its copy.
+    social?: SocialStepConfig;
 }
 
 export interface AITagRef {

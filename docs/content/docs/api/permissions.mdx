@@ -45,6 +45,8 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `AGENCY_MIGRATE` | 31 | 2147483648 | agency | Migrate client accounts in from another outreach tool |
 | `READ_STORE` | 32 | 4294967296 | read | View purchased domains, mailboxes, orders and store prices |
 | `MANAGE_STORE` | 33 | 8589934592 | write | Buy, renew and cancel domains and mailboxes, and edit their DNS |
+| `READ_SOCIAL` | 34 | 17179869184 | read | View social accounts and conversations, and search LinkedIn for leads |
+| `MANAGE_SOCIAL` | 35 | 34359738368 | write | Connect, configure and remove social accounts, upload voice notes, import leads and reply to conversations |
 
 Bits 26 to 29 and bit 31 exist only on [agency API keys](/api/authentication/#agency-api-keys). A workspace key or OAuth app never holds them, and `POST /api-keys` refuses them as unknown bits.
 
@@ -59,6 +61,8 @@ Bits 26 to 29 and bit 31 exist only on [agency API keys](/api/authentication/#ag
 `SEND_CAMPAIGNS` is intentionally separate from `WRITE_CAMPAIGNS`: editing a campaign draft and starting one that actually transmits mail are different blast radii, so a key can be granted the first without the second. An [inbox placement test](/guides/placement-tests/) sends real mail from a real mailbox too, so starting or cancelling one, and scheduling a campaign's placement monitor, takes `SEND_CAMPAIGNS`, while reading results takes `READ_ANALYTICS`.
 
 `READ_STORE` and `MANAGE_STORE` cover the [store](/guides/buy-mailboxes/), the `/store` routes where the workspace buys domains and mailboxes. `READ_STORE` reads the store status and domain search, orders, purchased and connected domains, their DNS checks, and purchased mailboxes. `MANAGE_STORE` covers asking for a quote, connecting a domain the workspace already owns, editing DNS records, renaming a mailbox and changing a forwarding URL. Anything that charges the workspace or changes what it is charged (placing an order, renewing a domain, turning auto-renew on or off, cancelling or resuming a mailbox, getting a transfer code, and saving the registrant) also needs the member behind the key to hold `manage_billing`, checked on every request rather than when the key was made, so a key stops paying the moment that member loses it. Buying spends the workspace balance. `MANAGE_STORE` can also fetch a purchased mailbox's sign-in (`POST /store/mailboxes/:id/sign-in`), which reveals its username and password, so treat a key holding it like one that can read mailbox credentials. See the [store routes](/api/endpoints/#domains-and-mailboxes) for each route's scope.
+
+`READ_SOCIAL` and `MANAGE_SOCIAL` cover [social accounts](/guides/social/) on every channel (LinkedIn, Instagram, WhatsApp, Telegram and Facebook), the `/social` routes. `READ_SOCIAL` reads the status, the channel catalog, accounts, connections and the connect price, searches LinkedIn (catalog, search, typeahead, address parsing, profiles, saved searches and the AI search builder, which spends the AI balance), and reads conversations. `MANAGE_SOCIAL` covers signing in and answering checks on a connection, an account's settings, pausing, resuming and resyncing it, uploading and deleting voice note recordings, saving searches, adding results to contacts and replying in conversations. Each route also needs a member permission: `manage_emails` for accounts, `view_contacts` for search (`manage_contacts` to add results to contacts), and `access_unibox` for conversations. Connecting an account charges its first month, so connecting, removing an account and linking or unlinking a GraphKit workspace also need the member to hold `manage_billing`. Picking a campaign's social senders needs `WRITE_CAMPAIGNS` as well. See the [social routes](/api/endpoints/#social).
 
 ## Categories
 
@@ -102,7 +106,7 @@ An API key or an OAuth grant acts for a member of the workspace, so it never hol
 | `READ_CONTACTS`, `READ_CRM` | `view_contacts` |
 | `READ_UNIBOX`, `WRITE_UNIBOX` | `access_unibox` |
 | `READ_ANALYTICS`, `READ_AUDIT_LOGS` | `view_analytics` |
-| `WRITE_EMAILS`, `CONNECT_EMAILS`, `READ_STORE`, `MANAGE_STORE` | `manage_emails` |
+| `WRITE_EMAILS`, `CONNECT_EMAILS`, `READ_STORE`, `MANAGE_STORE`, `READ_SOCIAL`, `MANAGE_SOCIAL` | `manage_emails` |
 | `WRITE_CAMPAIGNS`, `WRITE_TEMPLATES`, `BULK_CAMPAIGNS` | `manage_campaigns` |
 | `WRITE_CONTACTS`, `WRITE_CRM`, `BULK_CONTACTS`, `IMPORT_TOOLS` | `manage_contacts` |
 | `SEND_CAMPAIGNS` | `send_campaigns` |
@@ -127,31 +131,31 @@ Where it applies:
 
 Both presets are returned by `GET /api-keys/permissions` for convenience. The same response carries `grantable`, the mask the caller may put on a key (its role's reach, or the calling key's own permissions), and `app_scopes`, the mask an OAuth app may request.
 
-### Read only (4295655455)
+### Read only (21475524639)
 
 All read permissions combined:
 
 ```
 READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
-  | READ_TEMPLATES | READ_CRM | READ_AUDIT_LOGS | READ_STORE
-= 1 | 2 | 4 | 8 | 16 | 32768 | 131072 | 524288 | 4294967296
-= 4295655455
+  | READ_TEMPLATES | READ_CRM | READ_AUDIT_LOGS | READ_STORE | READ_SOCIAL
+= 1 | 2 | 4 | 8 | 16 | 32768 | 131072 | 524288 | 4294967296 | 17179869184
+= 21475524639
 ```
 
-### Full access (14008975359)
+### Full access (65548582911)
 
 Every workspace permission except `CONNECT_EMAILS`, which is granted by hand:
 
 ```
-(((1 << 26) - 1) & ~16777216) | (1 << 30) | (1 << 32) | (1 << 33) = 14008975359
+(((1 << 26) - 1) & ~16777216) | (1 << 30) | (1 << 32) | (1 << 33) | (1 << 34) | (1 << 35) = 65548582911
 ```
 
 ### Agency key presets
 
 `GET /agency/:agencyId/api-keys/permissions` returns the bits an agency key may hold, grouped as `workspace` and `agency`, with two presets:
 
-- **Read only (4631199775)**: the workspace read set plus `AGENCY_READ` and `AGENCY_READ_USAGE`, `4295655455 | 67108864 | 268435456`.
-- **Full access (17163081727)**: every bit an agency key may hold, which is every workspace bit except `API_KEYS`, `REALTIME_SUBSCRIBE` and `CONNECT_EMAILS` (14008965119) plus the five agency bits (3154116608).
+- **Read only (21811068959)**: the workspace read set plus `AGENCY_READ` and `AGENCY_READ_USAGE`, `21475524639 | 67108864 | 268435456`.
+- **Full access (68702689279)**: every bit an agency key may hold, which is every workspace bit except `API_KEYS`, `REALTIME_SUBSCRIBE` and `CONNECT_EMAILS` (65548572671) plus the five agency bits (3154116608).
 
 ## Working with bitmasks
 
@@ -179,7 +183,7 @@ hasPermission(16387, 64);    // false: WRITE_CAMPAIGNS missing
 
 ### Values above 2^31
 
-JavaScript's bitwise operators (`&`, `|`, `~`, `<<`) work on 32-bit integers, so they give wrong answers for `AGENCY_MIGRATE` (bit 31), `READ_STORE` (bit 32), `MANAGE_STORE` (bit 33) and any mask that contains them, such as the presets. Use `BigInt` for masks in JavaScript and TypeScript:
+JavaScript's bitwise operators (`&`, `|`, `~`, `<<`) work on 32-bit integers, so they give wrong answers for `AGENCY_MIGRATE` (bit 31), `READ_STORE` (bit 32), `MANAGE_STORE` (bit 33), `READ_SOCIAL` (bit 34), `MANAGE_SOCIAL` (bit 35) and any mask that contains them, such as the presets. Use `BigInt` for masks in JavaScript and TypeScript:
 
 ```javascript
 const READ_STORE = 1n << 32n;    // 4294967296n
@@ -191,14 +195,14 @@ function hasPermission(permissions, required) {
   return (p & r) === r;
 }
 
-hasPermission(14008975359, MANAGE_STORE); // true: full access holds it
+hasPermission(65548582911, MANAGE_STORE); // true: full access holds it
 ```
 
 Every value fits in a JSON number exactly (all are below 2^53), so only the arithmetic needs `BigInt`. Python and Go integers have no such limit.
 
 ### Rejecting unknown bits
 
-`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `14025752575`. `POST /agency/:agencyId/api-keys` does the same against `17163081727` and answers `400` `invalid_agency_key_permissions`.
+`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `65565360127`. `POST /agency/:agencyId/api-keys` does the same against `68702689279` and answers `400` `invalid_agency_key_permissions`.
 
 ## Common permission sets
 
@@ -294,6 +298,9 @@ export const Permissions = {
   // Store (workspace permissions); above 2^31, so use BigInt for bitwise math
   READ_STORE: 4294967296,
   MANAGE_STORE: 8589934592,
+  // Social accounts (workspace permissions)
+  READ_SOCIAL: 17179869184,
+  MANAGE_SOCIAL: 34359738368,
 } as const;
 ```
 
@@ -341,6 +348,9 @@ class Permissions:
     # Store (workspace permissions)
     READ_STORE = 4294967296
     MANAGE_STORE = 8589934592
+    # Social accounts (workspace permissions)
+    READ_SOCIAL = 17179869184
+    MANAGE_SOCIAL = 34359738368
 ```
 
 </Tab>
@@ -387,6 +397,9 @@ const (
     // Store (workspace permissions)
     APIPermReadStore                            // 4294967296
     APIPermManageStore                          // 8589934592
+    // Social accounts (workspace permissions)
+    APIPermReadSocial                           // 17179869184
+    APIPermManageSocial                         // 34359738368
 )
 ```
 

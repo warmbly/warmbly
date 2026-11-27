@@ -141,6 +141,9 @@ func normalizeExportScope(s models.ContactExportScope) (models.ContactExportScop
 // sees an explicit error instead of a column full of blanks.
 func validateFieldList(fields []string) *errx.Error {
 	for _, f := range fields {
+		if _, _, ok := models.SocialImportTarget(f); ok {
+			continue
+		}
 		if strings.HasPrefix(f, "custom:") {
 			key := strings.TrimPrefix(f, "custom:")
 			if key == "" {
@@ -175,6 +178,12 @@ func validateFieldList(fields []string) *errx.Error {
 // header human-readable (capitalised, no underscores) since the file
 // is meant to be opened in Excel/Sheets and stared at.
 func fieldHeader(f string) string {
+	if ch, consent, ok := models.SocialImportTarget(f); ok {
+		if consent {
+			return models.SocialChannelLabel(ch) + " Consent"
+		}
+		return models.SocialChannelLabel(ch)
+	}
 	if strings.HasPrefix(f, "custom:") {
 		return strings.TrimPrefix(f, "custom:")
 	}
@@ -217,6 +226,19 @@ func fieldHeader(f string) string {
 // types are stringified consistently so the same exported file produces
 // the same hash if exported twice with no data changes (helps QA).
 func fieldValue(c *models.Contact, f string) string {
+	if ch, consent, ok := models.SocialImportTarget(f); ok {
+		id, has := c.Social[ch]
+		switch {
+		case !has:
+			return ""
+		case consent:
+			if id.ConsentBasis == nil {
+				return ""
+			}
+			return *id.ConsentBasis
+		}
+		return id.Handle
+	}
 	if strings.HasPrefix(f, "custom:") {
 		key := strings.TrimPrefix(f, "custom:")
 		if c.CustomFields != nil {

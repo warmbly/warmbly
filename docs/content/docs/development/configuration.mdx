@@ -39,6 +39,7 @@ Anything flagged on [Instance health](/development/instance-health/) links back 
 | `DEPLOYMENT_MODE` | `self_hosted` or `cloud`. Picks the auth defaults in [authentication](#authentication); every one stays individually overridable. A joining node receives the mode its control plane resolved | `self_hosted` under compose | yes |
 | `ALLOW_INSECURE_DEFAULTS` | `true` lets the backend boot even when a secret still holds its published default. Only for a throwaway instance | unset | yes |
 | `GIN_MODE` | `debug` or `release` | `release` | yes |
+| `LOG_LEVEL` | Lowest level of the structured log lines the Go services (backend, consumer, worker, forms) write: `debug`, `info`, `warn` or `error`. Startup messages and the HTTP access log are not filtered by it. `debug` adds a line for every event a service reads or publishes, so leave it off unless you are tracing something | `debug` when `APP_ENV=dev`, `info` otherwise | yes |
 | `ENV_LABEL` | A label the admin panel shows next to the instance name | unset | yes (container start) |
 | `WARMBLY_CLOUD_URL` | The Warmbly Cloud API an already linked self-hosted instance talks to for the hosted warmup pool ([guide](/guides/warmbly-cloud/)). Warmbly Cloud links no new instances. Outbound HTTPS only | `https://api.warmbly.com` | no |
 | `INSTANCE_NAME` | The name an instance gave Warmbly Cloud when it linked. Warmbly Cloud no longer links new instances, so it has no effect on one that is not linked | the hostname | no |
@@ -985,6 +986,19 @@ The routes behind the card need the `manage_settings` admin permission, and ever
 
 If the key is removed while purchased mailboxes or unexpired domains exist, their renewals, monthly billing and Google mailbox connections are paused until a key is configured again. The backend logs a warning at boot, **Setup and health** lists an error (`store_purchases_without_graphkit`) with the counts, and each affected workspace sees a banner on its **Purchased** domains tab and in its purchased mailboxes' drawers. Their purchases stay listed. A Google mailbox whose access comes through GraphKit's token broker stops syncing and sending until then.
 
+### Pausing new purchases
+
+**Instance > Configuration > Settings > Domains and mailboxes > Pause new purchases** (`store.sales_paused`) stops the instance selling new domains and mailboxes without disconnecting GraphKit. It is off by default and takes effect within 30 seconds, with no restart.
+
+While it is on:
+
+- `POST /store/quotes` and `POST /store/domains/connect` answer `503` `store_sales_paused`, and so does `POST /store/orders` for a quote that has not made an order yet. A retry of an order that was already placed still finishes it.
+- `GET /store/status` keeps answering `enabled: true` and adds `sales_paused: true`.
+- In the dashboard, **Add account** keeps the **Buy new mailboxes** row, marked **Paused**, with the line "Will be available again soon", and it opens nothing. The buy page says the same, and the buy buttons elsewhere are not shown. **Orders** and every order already placed stay reachable.
+- Everything already bought is unaffected: domains renew, mailboxes are billed and connected, DNS, cancelling and resuming all work. [Social accounts](/guides/social/) are not part of the pause.
+
+Turning it off puts buying back as it was. A backend from before this setting ignores it and keeps selling, so finish the rollout before relying on it.
+
 ### Rolling back
 
 The store and the partner API are off until an operator adds a key or a partner, so an instance that never turned them on has no purchased mailboxes and can roll back as before.
@@ -1342,6 +1356,10 @@ These are the only settings a browser can change, and no environment variable ow
 | `store.domain_markup_fixed_micros` | integer micro-USD, 0 to 100000000 ($0 to $100) | `0` | Added to every domain price after the percent. The retail price is wholesale times (1 + percent / 100) plus this, rounded up to the cent. With both markups at `0` the dashboard shows domains as sold at cost |
 | `store.mailbox_bill_lead_days` | integer, 2 to 10 | `5` | How many days before a workspace's monthly billing day all its mailboxes are charged together. Each mailbox is paid before GraphKit starts its next month, and a payment that keeps failing cancels the unpaid mailboxes at GraphKit a day before that month would start, so a longer lead gives a failed card more time to be fixed |
 | `store.min_card_charge_micros` | integer micro-USD, 500000 to 100000000 ($0.50 to $100) | `10000000` | The least a store charge puts on a card when the balance falls short. The card tops the balance up by at least this (or by the workspace's automatic reload amount when that is larger), the store charge comes out of the balance, and the rest stays there for the next one. Fewer, larger card charges cost less in card fees. No card is charged when the balance covers the charge |
+| `store.sales_paused` | boolean | `false` | Pauses new purchases: a new domain, new mailboxes, or connecting a domain for new mailboxes is refused with `503` `store_sales_paused`, and the dashboard says buying will be available again soon. Everything already bought keeps renewing, billing and connecting. See [pausing new purchases](#pausing-new-purchases) |
+| `store.social_seat_monthly_micros` | integer micro-USD, 0 to 500000000 ($0 to $500) | `49000000` | What a workspace pays per [connected social account](/guides/social/#pricing) per month, on any channel, on every plan but the agency ones ($49.00 by default) |
+| `store.social_seat_agency_micros` | integer micro-USD, 0 to 500000000 ($0 to $500) | `32000000` | The same on the Agency plan, and for its client workspaces ($32.00 by default) |
+| `store.social_seat_agency_pro_micros` | integer micro-USD, 0 to 500000000 ($0 to $500) | `19000000` | The same on the Agency Pro plan, and for its client workspaces ($19.00 by default) |
 | `usage.markup_percent` | integer, 0 to 500 | `25` | The markup added to every provider price when a workspace balance is charged. See [usage pricing](#usage-pricing) |
 | `usage.models` | list of `{model, input_per_mtok, output_per_mtok}` | Sonnet 4 class $3 / $15, Haiku 4 class $1 / $5, Claude 3.5 Haiku $0.80 / $4, `gpt-6-luna` $0.10 / $0.50, `*` $3 / $15 | Provider price per million input and output tokens, in dollars before the markup. A `*` row is required and is added back if missing |
 | `usage.units` | map of unit to dollars | `web_search` $0.01, `placement_test` $0.40, `lead_website_read` $0.016, `lead_person_email` $0.016, `lead_search_page` $0.032 | Provider price of one unit, in dollars before the markup. `0` for `placement_test` turns paid placement tests off |
@@ -1362,7 +1380,7 @@ The two `deliverability.*` values are read on every scheduling pass and every wa
 
 The `placement.*` allowance, seed and spacing values are read when a test starts, so a change applies to the next test and never to one already sending. The four `placement.batch_*` values are read on every pass of the batch runner, about every 30 seconds, so a change reaches running batches within a minute; lowering the concurrency never stops a mailbox already sending, it only delays the next start. A value of zero or below resolves to the default, and one above the range to its ceiling. Which mailboxes form the instance seed panel is not a setting: an administrator marks them from the admin panel.
 
-The three `store.*` values are read when a quote is made, so a change applies to the next quote and never to one a workspace is already paying from. A value outside its range is clamped to the nearest end rather than refused. They only charge anything on an instance that bills (`BILLING_PROVIDER=stripe`); with billing off, workspaces pay nothing whatever they say. The admin panel edits them in dollars and percent and previews what a customer pays.
+The mailbox and domain `store.*` values are read when a quote is made, so a change applies to the next quote and never to one a workspace is already paying from. The three `store.social_seat_*` prices are read when each month of a social account is charged, so a change applies to the next month of every account, at the price of the plan the workspace has on that day. A value outside its range is clamped to the nearest end rather than refused. They only charge anything on an instance that bills (`BILLING_PROVIDER=stripe`); with billing off, workspaces pay nothing whatever they say. The admin panel edits them in dollars and percent and previews what a customer pays.
 
 Changing them is audited, and every value is validated and clamped server side on write as well as on read, so a row written by an older version still resolves.
 

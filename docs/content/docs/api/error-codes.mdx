@@ -145,7 +145,9 @@ Resource IDs on email, campaign and contact routes must be UUIDs. Email `tags` a
 | `no_contacts` | `POST /contacts/verification` selected no contacts: neither `contacts` nor a `campaign_id` with refused leads |
 | `list_bounce_risk` | `POST /campaigns/:id/start` refused the launch on the list's projected bounce rate. Clean or verify the list, or repeat the request with `acknowledge_list_risk: true` |
 | `leads_undeliverable` | `POST /campaigns/:id/start` found nothing to send because address verification refused every remaining lead; the campaign is parked at `paused_undeliverable` until they are re-verified or marked deliverable |
-| `empty_step_body` | `POST /campaigns/:id/start` found an email step with nothing in either body, so it would send a blank message to every lead it reached. Write the step's body and start again |
+| `empty_step_body` | `POST /campaigns/:id/start` found an email step with nothing in either body, or a social message or InMail step with no message (a comment step with no comment, a voice note with no recording or script), so it would send a blank message to every lead it reached. Write the step's body and start again |
+| `social_accounts_required` | `POST /campaigns/:id/start` on a campaign with social steps on a channel it has no account for among its social senders. The `message` names the channels. Add them with `PUT /campaigns/:id/social-accounts` |
+| `social_needs_mailbox` | `POST /campaigns/:id/start` on a campaign of only social steps in a workspace with no mailbox. Campaigns are scheduled through a mailbox even when they send no email, so connect one first |
 | `invalid_template` | A step, A/B variant or new campaign was written (or a campaign started) with a subject, HTML body or plain-text body that would not render as written: an `{{if}}` with no `{{end}}`, an unknown function, an unknown `.Sender` field, or a bare name such as `{{frist_name}}` that is not a built-in field. The `message` names the field, the line and the problem. Fix the copy and send it again; see [personalization](/guides/expressions/) |
 | `no_leads` | `POST /campaigns/:id/start` on a campaign that has never had a lead, with `continuous` off. Add contacts, or set `continuous` so it starts empty and waits for them. A campaign whose leads have all finished is a different case: it starts and waits |
 | `no_remaining_leads` | A platform-initiated restart of a campaign with nothing left to send and `continuous` off found nothing to do; the campaign is `completed` again. A start you request never answers this: it turns `continuous` on and waits |
@@ -817,6 +819,7 @@ The [Buy mailboxes](/guides/buy-mailboxes/) routes (`/store/*`, see [domains and
 | `plan_required` | 402 | `POST /store/quotes`, `POST /store/orders` or `POST /store/domains/connect` from a workspace without an active paid plan, which buying needs. `GET /store/status` shows it in advance as `plan_active: false`. Choose a plan under **Settings > Billing** and try again. An instance that does not bill its users, the self-host default, never answers it |
 | `reauth_required` | 403 | The change needs a recent confirmation: paying, renewing, transferring out, cancelling or resuming a mailbox, showing a mailbox's sign-in, or changing a domain's `auto_renew`. Confirm with `POST /auth/reauth` and retry. Only a dashboard session gets it; an API key or OAuth token passes this check |
 | `store_managed_by_partner` | 403 | A write to the store from a workspace a partner manages. Its domains and mailboxes are bought through the partner, and `GET /store/status` answers `enabled: false` |
+| `store_sales_paused` | 503 | `POST /store/quotes`, `POST /store/orders` for a quote that has not made an order yet, or `POST /store/domains/connect` while the instance operator has [paused new purchases](/development/configuration/#pausing-new-purchases). Nothing is charged. `GET /store/status` shows it in advance as `sales_paused: true`, and everything already bought keeps working. Try again once buying is back |
 | `store_disabled` | 404 | The instance has no GraphKit API key configured, so nothing can be bought or changed. The message says an instance admin adds the key under **Setup and health > Integrations** in the admin panel. `GET /store/status` answers `enabled: false` with `reason: not_configured` instead, and the list reads keep answering |
 | `store_configured_by_environment` | 409 | `PUT`, `DELETE /admin/store/connection` or `POST /admin/store/connection/test` while `GRAPHKIT_API_KEY` (or `GRAPHKIT_API_URL=fake`) is set. The environment takes precedence; change it there |
 | `store_sealing_unavailable` | 409 | `PUT /admin/store/connection` on an instance without `CREDENTIALS_ENCRYPTION_KEY`. The GraphKit API key is stored sealed under it, so set it first |
@@ -855,6 +858,7 @@ The [Buy mailboxes](/guides/buy-mailboxes/) routes (`/store/*`, see [domains and
 | `domain_premium` | 422 | The domain is a premium name, priced by its registry above the standard rate. Premium names are not sold |
 | `tld_unsupported` | 422 | The store does not sell that domain extension |
 | `provider_mixed` | 422 | A domain's mailboxes must all use one provider, Google or Microsoft |
+| `mailbox_orders_paused` | 503 | `POST /store/quotes` or `POST /store/orders` with mailboxes while new mailbox orders are paused for a while. Nothing is charged. `GET /store/status` shows it in advance as `mailbox_orders_paused: true`. Domains without mailboxes can still be bought, and everything already bought keeps working. Try again later |
 | `provider_unavailable` | 422 | Mailboxes from a provider that is not offered right now. Only the providers `GET /store/status` lists in `providers` can be ordered. Nothing is charged |
 | `mailbox_limit` | 422 | The order would put more mailboxes on one domain than `limits.mailboxes_per_domain_max` |
 | `renewal_not_due` | 422 | `POST /store/domains/:id/renew` before the domain's renewal window opens |
@@ -867,6 +871,39 @@ The [Buy mailboxes](/guides/buy-mailboxes/) routes (`/store/*`, see [domains and
 Store charges and refunds also appear on the balance ledger, and `GET /subscription/credits/transactions?category=store` lists only those. A `category` other than `store` answers `400` `invalid_category`.
 
 A key or OAuth token whose member lacks `manage_billing` gets `403` `forbidden` on the routes that charge, the same answer the member gets in the dashboard.
+
+#### Social refusals
+
+The [social accounts](/guides/social/) routes (`/social/*`, see [social](/api/endpoints/#social)) answer these codes. Payment refusals on a connection (`payment_method_required`, `insufficient_balance`, a card decline) are the store's, above, and nothing is charged when one comes back; the AI search builder answers the usual AI balance refusals.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `social_invalid_request` | 400 | A value is malformed or out of range: a `query` that is not a JSON object, a time zone that is not one, an empty sign-in, or a limit above its ceiling (`details.fields` names those). The `message` says which |
+| `social_acknowledgement_required` | 400 | `POST /social/connections` without `acknowledged: true` |
+| `invalid_social_handle` | 400 | A handle in a contact's `social` map does not fit its channel, or names a consent basis the channel does not take. Send a LinkedIn profile address or public id; an Instagram username, profile address or numeric id; a WhatsApp phone number in international format (`+` and the country code); a Telegram `@username`, `t.me` link or numeric id (not a phone number); or a Facebook numeric id, `profile.php?id=` address or `/people/…/<id>` address (not a vanity name). Also answered by contact create, update and import |
+| `social_plan_required` | 402 | Connecting an account Warmbly bills needs a Warmbly plan. Choose a plan, or link a GraphKit workspace |
+| `social_checkout_required` | 402 | The linked GraphKit workspace's plan has no free seat. `details.url` is GraphKit's billing page |
+| `social_unpaid` | 402 | `POST /social/accounts/:id/resume` on an account paused because its month went unpaid. Paying the month resumes it |
+| `store_managed_by_partner` | 403 | The workspace's seats are bought through its partner |
+| `social_mode_conflict` | 409 | Linking a GraphKit workspace while accounts Warmbly bills are connected. Remove them first |
+| `social_accept_required` | 409 | The connection is charged and `accept` was not `true`. `details.quote` is what it costs: `{"monthly_micros", "currency", "billed_by"}`, `billed_by` being `warmbly` or `linked_workspace` |
+| `social_session_expired` | 409 | The connection expired or was never paid for. Start a new one |
+| `social_state_conflict` | 409 | The connection or account changed while the request was in flight. Read it again and retry |
+| `capability_unavailable` | 409 | The account cannot do that action on its channel (the provider has it switched off for the account, or a written voice note on an account with no voice). The `message` says why |
+| `licence_required` | 409 | The search needs an account with a Sales Navigator or Recruiter licence |
+| `search_limit_reached` | 409 | The account used its searches for the day; `usage.resets_at` says when they return |
+| `stale_cursor` | 409 | The query changed since the cursor was issued. Search again from the first page |
+| `account_unavailable` | 409 | The account cannot be used now (restricted, reconnect required, removed), or the workspace has no account and no linked workspace to search with |
+| `social_sign_in_failed` | 422 | The network refused the sign-in. The session takes at most 5 attempts |
+| `recipient_invalid` | 422 | The profile does not exist or cannot be reached |
+| `consent_required` | 422 | A WhatsApp, Telegram or Facebook message without a consent basis for the contact on that channel. Record one on the contact first |
+| `social_too_many_sign_ins` | 429 | Too many refused sign-ins for the account today. Wait for `Retry-After` |
+| `linkedin_email_finder_unavailable` | 503 | `POST /social/search/import` with `find_emails: true` on an instance without the lead finder. Import without it |
+| `social_unavailable` | 503 | The instance has no GraphKit connection, or social accounts are unavailable right now. Retry after `Retry-After` when it is sent |
+| `search_busy` | 503 | LinkedIn search is busy. Wait for `Retry-After` and try again |
+| `ai_unavailable` | 503 | The AI search builder is unavailable. Nothing was charged |
+
+A social step that GraphKit passes over is not an error: the action ends `skipped` with a `skip_reason` (see `GET /social/contacts/:contact_id/activity`). The reasons are `no_recent_post`, `not_connected`, `no_skills`, `recipient_unavailable`, `consent_missing` and `already_commented`, alongside LinkedIn's `already_connected`, `invite_pending` and `no_inmail_credits`. A failed one carries `error_code`, which can be `capability_unavailable` or `consent_required` with GraphKit's message.
 
 #### `google_personal_app_password`
 

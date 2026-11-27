@@ -91,6 +91,11 @@ export default interface Campaign {
     // entered the campaign. 0 sends it as soon as the schedule allows.
     entry_delay_minutes: number;
 
+    // Social accounts (any channel) that run the campaign's social steps.
+    social_account_ids?: string[];
+    // Leads with no handle on a channel the campaign's social steps use, who skip or leave at those steps.
+    social_missing_handle_count?: number;
+
     // Keep running for new leads: out of leads, the campaign waits (idle_since
     // set) instead of finishing. Linking a segment turns it on.
     continuous: boolean;

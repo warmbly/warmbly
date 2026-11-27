@@ -55,6 +55,7 @@
 # you want to change. See docs.warmbly.com/development/deployment-guide/.
 x-selfhost-env: &selfhost-env
   APP_ENV: ${APP_ENV:-dev}
+  LOG_LEVEL: ${LOG_LEVEL:-}
   AWS_CONFIG_ENABLED: ${AWS_CONFIG_ENABLED:-false}
   # Both are read by the published-default-secrets check. Without the
   # passthrough it could neither detect SECRET_KEY_BASE nor be overridden.
@@ -508,6 +509,7 @@ services:
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8080}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-local-dev-internal-token}
       APP_ENV: ${APP_ENV:-dev}
+      LOG_LEVEL: ${LOG_LEVEL:-}
       # Two audiences, two sets of credentials: the bare names are this Go
       # process, and the WARMBLY_ ones are stamped into the public form page
       # for the browser app. All unset means neither reports and no host is

@@ -467,6 +467,7 @@ const STORE_PREVIEW_TLD = "com";
 const STORE_LEAD_MIN = 2;
 const STORE_LEAD_MAX = 10;
 const STORE_MIN_CARD_FLOOR = 0.5;
+const SOCIAL_USD_MAX = 500;
 
 const STORE_DEFAULTS: StoreSettings = {
     mailbox_monthly_micros: 3_000_000,
@@ -474,6 +475,10 @@ const STORE_DEFAULTS: StoreSettings = {
     domain_markup_fixed_micros: 0,
     mailbox_bill_lead_days: 5,
     min_card_charge_micros: 10_000_000,
+    social_seat_monthly_micros: 49_000_000,
+    social_seat_agency_micros: 32_000_000,
+    social_seat_agency_pro_micros: 19_000_000,
+    sales_paused: false,
 };
 
 interface StoreForm {
@@ -482,6 +487,10 @@ interface StoreForm {
     markupFixed: string;
     billLead: string;
     minCard: string;
+    socialSeat: string;
+    socialAgency: string;
+    socialAgencyPro: string;
+    salesPaused: boolean;
 }
 
 function microsToDollars(micros: number): string {
@@ -501,6 +510,10 @@ function toStoreForm(s: StoreSettings | undefined): StoreForm {
         markupFixed: microsToDollars(store.domain_markup_fixed_micros),
         billLead: String(store.mailbox_bill_lead_days ?? 5),
         minCard: microsToDollars(store.min_card_charge_micros ?? 10_000_000),
+        socialSeat: microsToDollars(store.social_seat_monthly_micros ?? 49_000_000),
+        socialAgency: microsToDollars(store.social_seat_agency_micros ?? 32_000_000),
+        socialAgencyPro: microsToDollars(store.social_seat_agency_pro_micros ?? 19_000_000),
+        salesPaused: store.sales_paused === true,
     };
 }
 
@@ -516,7 +529,10 @@ function storeFormValid(f: StoreForm): boolean {
         dollarsValid(f.markupFixed, STORE_USD_MAX) &&
         syncFieldValid(f.billLead, STORE_LEAD_MIN, STORE_LEAD_MAX) &&
         dollarsValid(f.minCard, STORE_USD_MAX) &&
-        Number(f.minCard) >= STORE_MIN_CARD_FLOOR
+        Number(f.minCard) >= STORE_MIN_CARD_FLOOR &&
+        dollarsValid(f.socialSeat, SOCIAL_USD_MAX) &&
+        dollarsValid(f.socialAgency, SOCIAL_USD_MAX) &&
+        dollarsValid(f.socialAgencyPro, SOCIAL_USD_MAX)
     );
 }
 
@@ -841,6 +857,10 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 domain_markup_fixed_micros: dollarsToMicros(form.store.markupFixed),
                 mailbox_bill_lead_days: Number(form.store.billLead),
                 min_card_charge_micros: dollarsToMicros(form.store.minCard),
+                social_seat_monthly_micros: dollarsToMicros(form.store.socialSeat),
+                social_seat_agency_micros: dollarsToMicros(form.store.socialAgency),
+                social_seat_agency_pro_micros: dollarsToMicros(form.store.socialAgencyPro),
+                sales_paused: form.store.salesPaused,
             },
         });
     }
@@ -1326,7 +1346,7 @@ function StorePricingGroup({
             description={
                 <>
                     What a workspace pays for the domains and mailboxes it buys under Buy mailboxes,
-                    charged from its balance. Only used when the store is configured with{" "}
+                    and for each social account (LinkedIn, Instagram, WhatsApp, Telegram or Facebook) it connects, charged from its balance. Only used when the store is configured with{" "}
                     <code className="font-mono text-[12px]">GRAPHKIT_API_KEY</code>. A change applies
                     to quotes made after it; a mailbox already bought keeps the monthly price it was
                     bought at. A self-hosted instance with billing off charges workspaces nothing and
@@ -1334,6 +1354,15 @@ function StorePricingGroup({
                 </>
             }
         >
+            <SettingsRow
+                label="Pause new purchases"
+                description="On, nobody can buy a new domain or mailbox, or connect a domain for new mailboxes. The dashboard keeps the Buy new mailboxes row in the Add account menu and says it will be available again soon. Everything already bought keeps renewing, billing and connecting, and social accounts are not affected."
+            >
+                <Switch
+                    checked={store.salesPaused}
+                    onCheckedChange={(v) => onChange({ ...store, salesPaused: v })}
+                />
+            </SettingsRow>
             <NumberRow
                 id="store-mailbox-monthly"
                 label="Mailbox price ($ per month)"
@@ -1343,6 +1372,39 @@ function StorePricingGroup({
                 onChange={(v) => onChange({ ...store, mailboxMonthly: v })}
                 valid={dollarsValid(store.mailboxMonthly, STORE_USD_MAX)}
                 error={`Enter a dollar amount between 0 and ${STORE_USD_MAX}.`}
+                inputMode="decimal"
+            />
+            <NumberRow
+                id="store-social-seat"
+                label="Social account price ($ per month)"
+                help="What one connected social account costs each month, on any channel and every plan except the agency plans. A workspace that links its own GraphKit workspace pays GraphKit instead and nothing here."
+                range={`Between $0 and $${SOCIAL_USD_MAX}.`}
+                value={store.socialSeat}
+                onChange={(v) => onChange({ ...store, socialSeat: v })}
+                valid={dollarsValid(store.socialSeat, SOCIAL_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${SOCIAL_USD_MAX}.`}
+                inputMode="decimal"
+            />
+            <NumberRow
+                id="store-social-agency"
+                label="Social account price on Agency ($ per month)"
+                help="The same price for workspaces on the Agency plan, and the client workspaces of an Agency."
+                range={`Between $0 and $${SOCIAL_USD_MAX}.`}
+                value={store.socialAgency}
+                onChange={(v) => onChange({ ...store, socialAgency: v })}
+                valid={dollarsValid(store.socialAgency, SOCIAL_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${SOCIAL_USD_MAX}.`}
+                inputMode="decimal"
+            />
+            <NumberRow
+                id="store-social-agency-pro"
+                label="Social account price on Agency Pro ($ per month)"
+                help="The same price for workspaces on the Agency Pro plan, and the client workspaces of an Agency Pro."
+                range={`Between $0 and $${SOCIAL_USD_MAX}.`}
+                value={store.socialAgencyPro}
+                onChange={(v) => onChange({ ...store, socialAgencyPro: v })}
+                valid={dollarsValid(store.socialAgencyPro, SOCIAL_USD_MAX)}
+                error={`Enter a dollar amount between 0 and ${SOCIAL_USD_MAX}.`}
                 inputMode="decimal"
             />
             <NumberRow

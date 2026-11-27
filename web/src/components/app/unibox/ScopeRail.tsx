@@ -68,6 +68,7 @@ import {
   BanIcon,
   TriangleAlertIcon,
   XIcon,
+  MessagesSquareIcon,
 } from "lucide-react";
 import { useAppStore } from "@/stores";
 import {
@@ -107,6 +108,7 @@ export type UniboxScope =
   | { kind: "agent_drafts" }
   | { kind: "snoozed" }
   | { kind: "scheduled" }
+  | { kind: "social" }
   | { kind: "folder"; folder: UniboxFolder }
   | { kind: "mailbox"; mailboxId: string }
   | { kind: "tag"; tagId: string }
@@ -192,6 +194,8 @@ interface ScopeRailProps {
   browseKey?: string;
   scope: UniboxScope;
   onChange: (s: UniboxScope) => void;
+  // The Social scope, offered when the workspace has a social account.
+  social?: { unread: number };
 }
 
 // What a section needs to fold its siblings and move itself among them.
@@ -227,7 +231,7 @@ function undoToast(id: string, message: string, onUndo: () => void) {
   );
 }
 
-export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailProps) {
+export function ScopeRail({ scope, onChange, browseKey = "desktop", social }: ScopeRailProps) {
   const overview = useUniboxOverview();
   const data = overview.data;
   const markSeen = useMarkSeen();
@@ -322,6 +326,13 @@ export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailP
       data?.scheduled_pending,
       { accent: !!data?.scheduled_pending },
     ),
+    ...(social
+      ? [
+          scopeRow({ kind: "social" }, "Social", <MessagesSquareIcon className={ICON} />, social.unread || undefined, {
+            accent: social.unread > 0,
+          }),
+        ]
+      : []),
     ...MAIL_FOLDERS.slice(2).map((f) => folderRow(f.folder, f.label, f.icon)),
   ];
 

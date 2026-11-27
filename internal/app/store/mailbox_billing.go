@@ -80,6 +80,9 @@ func (s *Service) ensureAnchor(ctx context.Context, orgID uuid.UUID) (*models.St
 			first = boxes[i].CreatedAt
 		}
 	}
+	if seat := s.firstSeatAt(ctx, orgID); seat != nil && seat.Before(first) {
+		first = *seat
+	}
 	day := billDay(first)
 	next := anchorAfter(day, s.now().Add(s.billLead(ctx)))
 	if err := s.Repo.SetBillAnchor(ctx, orgID, day, next); err != nil {
@@ -110,6 +113,17 @@ func (s *Service) billMailboxes(ctx context.Context) error {
 		billed[orgID] = true
 		errs = append(errs, s.billOrg(ctx, orgID, false))
 	}
+	// Social seats ride on the same run, also in a workspace with no mailboxes.
+	if sc := s.socialAddon(); sc != nil {
+		seated, err := sc.OrgsWithSeats(ctx, 10_000)
+		errs = append(errs, err)
+		for _, orgID := range seated {
+			if !billed[orgID] {
+				billed[orgID] = true
+				errs = append(errs, s.billOrg(ctx, orgID, false))
+			}
+		}
+	}
 	// A workspace whose last mailboxes ended still gets back a month they paid for.
 	unsettled, err := s.Repo.OrgsWithUnsettledCancels(ctx, 10_000)
 	if err != nil {
@@ -132,6 +146,9 @@ func (s *Service) billOrg(ctx context.Context, orgID uuid.UUID, retryNow bool) e
 	now, lead := s.now(), s.billLead(ctx)
 	var errs []error
 	keys, err := s.Repo.PendingChargeKeys(ctx, orgID, now.Add(-replayAfter))
+	if err == nil {
+		keys, err = s.pendingSeatKeys(ctx, orgID, keys, now.Add(-replayAfter))
+	}
 	if err != nil {
 		return err
 	}
@@ -147,6 +164,8 @@ func (s *Service) billOrg(ctx context.Context, orgID uuid.UUID, retryNow bool) e
 	run := !acct.NextBillAnchor.Add(-lead).After(now)
 	next := anchorAfter(acct.BillDay, *acct.NextBillAnchor)
 	var rows []models.StoreMailbox
+	// Seats due before seatsDue, and unpaid ones last tried before retryBefore, join the charge.
+	seatsDue, retryBefore := next.Add(lead), farFuture
 	if run {
 		rows, err = s.Repo.MailboxesDue(ctx, orgID, next.Add(lead), now)
 	} else {
@@ -154,6 +173,7 @@ func (s *Service) billOrg(ctx context.Context, orgID uuid.UUID, retryNow bool) e
 		if retryNow {
 			before = now
 		}
+		seatsDue, retryBefore = now.Add(2*unpaidStopLead), before
 		rows, err = s.Repo.UnpaidMailboxes(ctx, orgID, now, before, false)
 		if err == nil {
 			// A mailbox no run collected for (a month given back, then resumed at GraphKit) is still paid before its period starts.
@@ -176,6 +196,11 @@ func (s *Service) billOrg(ctx context.Context, orgID uuid.UUID, retryNow bool) e
 				break
 			}
 		}
+		if err == nil {
+			if sc := s.socialAddon(); sc != nil {
+				err = sc.ExtendUnmeteredSeats(ctx, orgID, seatsDue)
+			}
+		}
 		if err == nil && run {
 			err = s.Repo.SetBillAnchor(ctx, orgID, acct.BillDay, next)
 		}
@@ -183,20 +208,38 @@ func (s *Service) billOrg(ctx context.Context, orgID uuid.UUID, retryNow bool) e
 		// The run's date moves with its reservation, so a run happens once and leaves no mailbox a month behind.
 		key = "store:mailboxes:" + orgID.String() + ":" + now.Format("20060102") + ":" + uuid.NewString()[:8]
 		var ran bool
-		if ran, err = s.Repo.ReserveRun(ctx, orgID, rows, key, *acct.NextBillAnchor, next); !ran || len(rows) == 0 {
+		ran, err = s.Repo.ReserveRun(ctx, orgID, rows, key, *acct.NextBillAnchor, next)
+		seats := 0
+		if ran && err == nil {
+			seats, err = s.reserveSeats(ctx, orgID, key, seatsDue, retryBefore)
+		}
+		if !ran || (len(rows) == 0 && seats == 0) {
 			key = ""
 		}
-	case len(rows) > 0:
+	default:
 		key = "store:mailboxes:" + orgID.String() + ":" + now.Format("20060102") + ":" + uuid.NewString()[:8]
-		if _, err = s.Repo.ReserveMailboxCharge(ctx, orgID, rows, key); err != nil {
-			key = ""
+		if len(rows) > 0 {
+			if _, err = s.Repo.ReserveMailboxCharge(ctx, orgID, rows, key); err != nil {
+				key = ""
+			}
+		}
+		if key != "" {
+			seats, serr := s.reserveSeats(ctx, orgID, key, seatsDue, retryBefore)
+			err = errors.Join(err, serr)
+			if len(rows) == 0 && seats == 0 {
+				key = ""
+			}
 		}
 	}
 	errs = append(errs, err)
 	if key != "" {
 		errs = append(errs, s.chargeBatch(ctx, orgID, key))
 	}
-	return errors.Join(append(errs, s.settleCancels(ctx, orgID), s.enforceUnpaid(ctx, orgID))...)
+	errs = append(errs, s.settleCancels(ctx, orgID), s.enforceUnpaid(ctx, orgID))
+	if sc := s.socialAddon(); sc != nil {
+		errs = append(errs, sc.EnforceUnpaidSeats(ctx, orgID))
+	}
+	return errors.Join(errs...)
 }
 
 // nextBundle is what the workspace's next billing run will charge, from what is known now.
@@ -207,10 +250,17 @@ func (s *Service) nextBundle(ctx context.Context, acct *models.StoreAccount) *Ne
 	lead := s.billLead(ctx)
 	window := anchorAfter(acct.BillDay, *acct.NextBillAnchor).Add(lead)
 	rows, err := s.Repo.MailboxesDue(ctx, acct.OrganizationID, window, s.now())
-	if err != nil || len(rows) == 0 {
+	if err != nil {
 		return nil
 	}
-	out := &NextBundle{ChargeOn: acct.NextBillAnchor.Add(-lead), Mailboxes: len(rows)}
+	var seats SeatBatch
+	if sc := s.socialAddon(); sc != nil {
+		seats, _ = sc.SeatsDue(ctx, acct.OrganizationID, window)
+	}
+	if len(rows) == 0 && seats.Count == 0 {
+		return nil
+	}
+	out := &NextBundle{ChargeOn: acct.NextBillAnchor.Add(-lead), Mailboxes: len(rows), SocialSeats: seats.Count, AmountMicros: seats.Micros}
 	if out.ChargeOn.Before(s.now()) {
 		out.ChargeOn = s.now()
 	}
@@ -242,28 +292,33 @@ func bundleReason(rows []models.StoreMailbox) string {
 // next month will start are moved on; the rest get their share back.
 func (s *Service) chargeBatch(ctx context.Context, orgID uuid.UUID, key string) error {
 	rows, err := s.Repo.MailboxesByChargeKey(ctx, orgID, key)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
+		return err
+	}
+	seats, err := s.seatBatch(ctx, orgID, key)
+	if err != nil || (len(rows) == 0 && seats.Count == 0) {
 		return err
 	}
 	if err := s.refreshCancelled(ctx, rows); err != nil {
 		// Whether a cancelled mailbox was resumed decides the batch: ask again next pass.
 		return err
 	}
-	var total int64
+	var boxes int64
 	for i := range rows {
-		total += reserved(&rows[i])
+		boxes += reserved(&rows[i])
 	}
+	total := boxes + seats.Micros
 	if s.metered() && total > 0 {
 		prior, err := s.Credits.ChargeOf(ctx, orgID, key)
 		if err != nil {
 			return err
 		}
 		if prior == nil {
-			if !s.anyStarting(rows) {
+			if seats.Count == 0 && !s.anyStarting(rows) {
 				// Nothing in it will start a month: nothing to collect.
 				return s.finishBatch(ctx, orgID, key, rows)
 			}
-			reason := bundleReason(rows)
+			reason := batchReason(rows, seats)
 			err := s.collect(ctx, orgID, total, key, reason, true)
 			if err == nil {
 				_, err = s.Credits.ChargeAmount(ctx, orgID, micro(total), reason, key)
@@ -276,13 +331,25 @@ func (s *Service) chargeBatch(ctx context.Context, orgID uuid.UUID, key string) 
 				if err := s.Repo.ReleaseMailboxCharge(ctx, orgID, key); err != nil {
 					return err
 				}
-				s.mailboxesUnpaid(ctx, orgID, rows, total, err)
+				if seats.Count > 0 {
+					if err := s.socialAddon().SeatsUnpaid(ctx, orgID, key, err); err != nil {
+						return err
+					}
+				}
+				if len(rows) > 0 {
+					s.mailboxesUnpaid(ctx, orgID, rows, boxes, err)
+				}
 				return nil
 			}
 		}
 	}
 	if _, err := s.Repo.SettleMailboxCharge(ctx, orgID, key, s.now()); err != nil {
 		return err
+	}
+	if seats.Count > 0 {
+		if err := s.socialAddon().SettleSeats(ctx, orgID, key); err != nil {
+			return err
+		}
 	}
 	return s.finishBatch(ctx, orgID, key, rows)
 }

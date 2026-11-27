@@ -57,7 +57,7 @@ Every field is optional; an empty body matches all contacts in the organization.
 
 ### Response
 
-Returns a `data` array of contacts plus a `pagination` envelope. Paginate by passing `pagination.next_cursor` back as `cursor` until `has_more` is `false`; `pagination.total` is the count for the whole filtered set and is only sent on the first page.
+Returns a `data` array of contacts plus a `pagination` envelope. `social` holds the contact's handle on each channel that has one, with its consent basis; channels without a handle are left out. Paginate by passing `pagination.next_cursor` back as `cursor` until `has_more` is `false`; `pagination.total` is the count for the whole filtered set and is only sent on the first page.
 
 ```json
 {
@@ -70,6 +70,7 @@ Returns a `data` array of contacts plus a `pagination` envelope. Paginate by pas
       "company": "Acme",
       "phone": "+15551234567",
       "custom_fields": { "title": "VP Sales" },
+      "social": { "linkedin": { "handle": "dana-reyes", "consent_basis": null } },
       "subscribed": true,
       "campaigns": [{ "id": "c1...", "name": "Q3 Outbound" }],
       "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
@@ -177,6 +178,7 @@ A JSON array of contact objects (at least one, up to the per-request maximum; an
 | `categories` | string[] | No | Label IDs to put on the contact. |
 | `segments` | string[] | No | Segment IDs to pin the contact into, as a manual include override, so it belongs whether or not the conditions match it. An unknown id is rejected with `400` before any contact is written, and the override is written in the same transaction as the contact, so a success response always means the membership exists. |
 | `custom_fields` | object | No | String key/value custom fields. Keys may use letters, numbers, underscores, spaces, and dashes. |
+| `social` | object | No | Handles by channel, each `{"handle", "consent_basis"}`, for example `{"linkedin": {"handle": "jane-doe", "consent_basis": null}, "whatsapp": {"handle": "+447700900123", "consent_basis": "opt_in"}}`. Channels are `linkedin`, `instagram`, `whatsapp`, `telegram` and `facebook`; `consent_basis` is `opt_in`, `existing_conversation`, `imported_with_consent` or (Facebook only) `friend`. A handle that does not fit its channel answers `400` `invalid_social_handle`; see [social on contacts](/guides/social/#social-on-contacts) for the forms each takes. |
 | `subscribed` | boolean | No | Marketing-consent flag. Omit it to let a new contact default to subscribed and an existing one keep whatever it already had. |
 | `verification_status` | string | No | A verdict you already hold for the address, in Warmbly's vocabulary (`valid`, `risky`, `invalid`, `unknown`) or any known service's (`ok`, `catch-all`, `do_not_mail`, `deliverable`, `ok_for_all`, ...). Stored as an imported verdict that the background check leaves alone. A value no known service writes is rejected with `unknown_verification_status`. |
 | `verification_provider` | string | No | The vocabulary `verification_status` is written in: `zerobounce`, `millionverifier`, `cleanmylist`, `neverbounce`, `bouncer`, `kickbox`, `emailable`, `debounce`, `clearout`, `emaillistverify`, or `warmbly`. Omit it to have the value recognised by itself. An unknown name is rejected with `unknown_verification_provider`. |
@@ -775,6 +777,7 @@ Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
 | `company` | string | No | Company. |
 | `phone` | string | No | Phone. |
 | `custom_fields` | object | No | Replaces the custom-fields map. |
+| `social` | object | No | Handles by channel, in the shape create takes. Only the channels you send change; `null` for a channel clears its handle and consent basis. |
 | `subscribed` | boolean | No | Subscription status. |
 | `campaigns` | string[] | No | Set the full campaign membership (nil leaves as-is). |
 | `categories` | string[] | No | Set the full list of label IDs (nil leaves as-is). |

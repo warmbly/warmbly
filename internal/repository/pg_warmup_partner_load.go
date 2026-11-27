@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -13,9 +14,82 @@ import (
 
 // partnerWeekTTL bounds how stale a candidate's seven-day counts may be. They
 // weight the draw and size the inbound cap, and move by a handful of messages
-// a minute across the whole pool; today's counts, which decide the cap, are
-// always read live.
+// a minute across the whole pool.
 const partnerWeekTTL = time.Minute
+
+// partnerDayTTL bounds how stale the cohorts, today's counts and bounces the
+// draw reads may be. Send admission re-checks the recipient's cap live.
+const partnerDayTTL = 20 * time.Second
+
+// poolSnapshotRefreshTimeout bounds one pool-wide refresh, which runs detached
+// from the caller that started it.
+const poolSnapshotRefreshTimeout = 30 * time.Second
+
+// poolSnapshot is one pool-wide read shared by every sender in the process.
+// An expired snapshot is served while one refresh replaces it, so no sender
+// waits on the pool-wide scan once the first one has landed.
+type poolSnapshot[T any] struct {
+	ttl  time.Duration
+	db   sendResultDB
+	load func(context.Context, sendResultDB) (T, error)
+
+	mu   sync.Mutex
+	at   time.Time
+	data T
+	ok   bool
+	// refreshing is closed when the refresh in flight ends; nil when none is.
+	refreshing chan struct{}
+}
+
+func newPoolSnapshot[T any](db sendResultDB, ttl time.Duration, load func(context.Context, sendResultDB) (T, error)) *poolSnapshot[T] {
+	return &poolSnapshot[T]{ttl: ttl, db: db, load: load}
+}
+
+// get returns the snapshot. Until a first refresh lands the caller waits for
+// it, then reads through fallback if it failed; only the caller's own context
+// ending fails the draw, which a fallback read could not survive either.
+func (c *poolSnapshot[T]) get(ctx context.Context, fallback sendResultDB) (T, error) {
+	c.mu.Lock()
+	data, ok := c.data, c.ok
+	wait := c.refreshing
+	if (!ok || time.Since(c.at) >= c.ttl) && wait == nil {
+		wait = make(chan struct{})
+		c.refreshing = wait
+		go c.refresh(context.WithoutCancel(ctx), wait)
+	}
+	c.mu.Unlock()
+	if ok {
+		return data, nil
+	}
+	select {
+	case <-wait:
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
+	}
+	c.mu.Lock()
+	data, ok = c.data, c.ok
+	c.mu.Unlock()
+	if ok {
+		return data, nil
+	}
+	return c.load(ctx, fallback)
+}
+
+// refresh replaces the snapshot and keeps the old one on failure.
+func (c *poolSnapshot[T]) refresh(ctx context.Context, done chan struct{}) {
+	ctx, cancel := context.WithTimeout(ctx, poolSnapshotRefreshTimeout)
+	defer cancel()
+	// The pool, not a caller's transaction: the snapshot is shared.
+	data, err := c.load(ctx, c.db)
+	c.mu.Lock()
+	if err == nil {
+		c.data, c.at, c.ok = data, time.Now(), true
+	}
+	c.refreshing = nil
+	c.mu.Unlock()
+	close(done)
+}
 
 // partnerWeek is what a mailbox sent, received and had junked over seven days,
 // and what the pool handed off to it, how much of that arrived and how many
@@ -43,43 +117,24 @@ var warmupInboundSQL = fmt.Sprintf(`
 const warmupInboundColumns = `COUNT(*) AS delivered, COUNT(wt.consumed_at) AS arrived,
 		       COUNT(DISTINCT s.organization_id) FILTER (WHERE wt.consumed_at IS NULL) AS lost_by`
 
-// partnerWeekRefreshTimeout bounds one pool-wide refresh, which runs detached
-// from the caller that started it.
-const partnerWeekRefreshTimeout = 30 * time.Second
-
-// partnerWeekCache holds the pool-wide seven-day counts for one process, so
-// every sender shares one aggregate instead of rescanning the window per call.
-type partnerWeekCache struct {
-	ttl  time.Duration
-	mu   sync.Mutex
-	at   time.Time
-	data map[uuid.UUID]partnerWeek
-	// refreshing is closed when the refresh in flight ends; nil when none is.
-	refreshing chan struct{}
-}
-
-func newPartnerWeekCache(ttl time.Duration) *partnerWeekCache {
-	return &partnerWeekCache{ttl: ttl}
-}
-
-const partnerWeekSQL = `
+var partnerWeekSQL = `
 	WITH recv AS (
 		SELECT wr.email_account_id AS id, COUNT(*) AS week, COUNT(sr.id) AS junk
 		FROM warmup_received wr
 		LEFT JOIN warmup_spam_reports sr
 		  ON sr.reporter_account_id = wr.email_account_id AND sr.message_id = wr.message_id
 		 AND sr.report_type = 'spam_placement' AND wr.message_id <> ''
-		WHERE wr.created_at >= NOW() - interval '7 days' %[1]s
+		WHERE wr.created_at >= NOW() - interval '7 days'
 		GROUP BY 1
 	),
 	sent AS (
 		SELECT wt.sender_account_id AS id, COUNT(*) AS week
 		FROM warmup_tokens wt
-		WHERE wt.created_at >= NOW() - interval '7 days' AND wt.sent_message_id <> '' %[2]s
+		WHERE wt.created_at >= NOW() - interval '7 days' AND wt.sent_message_id <> ''
 		GROUP BY 1
 	),
 	inbound AS (
-		SELECT wt.recipient_account_id AS id, %[4]s %[5]s %[3]s
+		SELECT wt.recipient_account_id AS id, ` + warmupInboundColumns + warmupInboundSQL + `
 		GROUP BY 1
 	)
 	SELECT COALESCE(recv.id, sent.id, inbound.id), COALESCE(sent.week, 0), COALESCE(recv.week, 0), COALESCE(recv.junk, 0),
@@ -87,66 +142,8 @@ const partnerWeekSQL = `
 	FROM recv FULL JOIN sent ON sent.id = recv.id
 	FULL JOIN inbound ON inbound.id = COALESCE(recv.id, sent.id)`
 
-var (
-	partnerWeekAllSQL = fmt.Sprintf(partnerWeekSQL, "", "", "", warmupInboundColumns, warmupInboundSQL)
-	partnerWeekIDsSQL = fmt.Sprintf(partnerWeekSQL,
-		"AND wr.email_account_id = ANY($1::uuid[])", "AND wt.sender_account_id = ANY($1::uuid[])",
-		"AND wt.recipient_account_id = ANY($1::uuid[])", warmupInboundColumns, warmupInboundSQL)
-)
-
-// partnerWeeks returns the seven-day counts for ids: from the shared cache
-// when the repository has one, otherwise read exactly for those ids. An
-// expired snapshot is served while one refresh replaces it, so no sender waits
-// on the pool-wide scan once the first one has landed.
-func (r *warmupRepository) partnerWeeks(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]partnerWeek, error) {
-	c := r.partnerWeeks7d
-	if c == nil {
-		return scanPartnerWeeks(ctx, resultDB(ctx, r.db), partnerWeekIDsSQL, ids)
-	}
-	c.mu.Lock()
-	data, fresh := c.data, c.data != nil && time.Since(c.at) < c.ttl
-	wait := c.refreshing
-	if !fresh && wait == nil {
-		wait = make(chan struct{})
-		c.refreshing = wait
-		go r.refreshPartnerWeeks(context.WithoutCancel(ctx), c, wait)
-	}
-	c.mu.Unlock()
-	if data != nil {
-		return data, nil
-	}
-	select {
-	case <-wait:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	c.mu.Lock()
-	data = c.data
-	c.mu.Unlock()
-	if data != nil {
-		return data, nil
-	}
-	// The first refresh failed; this caller reads its own ids exactly.
-	return scanPartnerWeeks(ctx, resultDB(ctx, r.db), partnerWeekIDsSQL, ids)
-}
-
-// refreshPartnerWeeks replaces the snapshot and keeps the old one on failure.
-func (r *warmupRepository) refreshPartnerWeeks(ctx context.Context, c *partnerWeekCache, done chan struct{}) {
-	ctx, cancel := context.WithTimeout(ctx, partnerWeekRefreshTimeout)
-	defer cancel()
-	// The pool, not a caller's transaction: the snapshot is shared.
-	data, err := scanPartnerWeeks(ctx, r.db, partnerWeekAllSQL)
-	c.mu.Lock()
-	if err == nil {
-		c.data, c.at = data, time.Now()
-	}
-	c.refreshing = nil
-	c.mu.Unlock()
-	close(done)
-}
-
-func scanPartnerWeeks(ctx context.Context, db sendResultDB, query string, args ...any) (map[uuid.UUID]partnerWeek, error) {
-	rows, err := db.Query(ctx, query, args...)
+func loadPartnerWeeks(ctx context.Context, db sendResultDB) (map[uuid.UUID]partnerWeek, error) {
+	rows, err := db.Query(ctx, partnerWeekSQL)
 	if err != nil {
 		return nil, err
 	}
@@ -169,26 +166,54 @@ type partnerToday struct {
 	received, inflight int
 }
 
-// partnerTodays reads today's arrivals and dispatches live. A reserved send
-// being revalidated is left out of its own recipient's count.
-func (r *warmupRepository) partnerTodays(ctx context.Context, ids []uuid.UUID, excludeTask uuid.UUID) (map[uuid.UUID]partnerToday, error) {
-	rows, err := resultDB(ctx, r.db).Query(ctx, `
-		SELECT wr.email_account_id, COUNT(*), 0
-		FROM warmup_received wr
-		WHERE wr.created_at >= date_trunc('day', NOW()) AND wr.email_account_id = ANY($1::uuid[])
-		  AND `+newThreadSQL("wr")+`
-		GROUP BY 1
-		UNION ALL
-		SELECT wt.recipient_account_id, 0, COUNT(*)
-		FROM warmup_tokens wt
-		WHERE wt.created_at >= date_trunc('day', NOW()) AND wt.recipient_account_id = ANY($1::uuid[])
-		  AND wt.task_id <> $2 AND `+newThreadSQL("wt")+`
-		GROUP BY 1`, ids, excludeTask)
+// partnerDay is the pool's new threads per recipient today and the sender
+// workspaces each bounced recipient bounced.
+type partnerDay struct {
+	todays  map[uuid.UUID]partnerToday
+	bounced map[uuid.UUID][]uuid.UUID
+}
+
+var partnerTodaySQL = `
+	SELECT wr.email_account_id, COUNT(*), 0
+	FROM warmup_received wr
+	WHERE wr.created_at >= date_trunc('day', NOW()) AND ` + newThreadSQL("wr") + `
+	GROUP BY 1
+	UNION ALL
+	SELECT wt.recipient_account_id, 0, COUNT(*)
+	FROM warmup_tokens wt
+	WHERE wt.created_at >= date_trunc('day', NOW()) AND ` + newThreadSQL("wt") + `
+	GROUP BY 1`
+
+// reservedRecipientTodaySQL recounts today for the recipients of reserved task
+// $1, leaving that task out, so a revalidated send is not held against itself.
+var reservedRecipientTodaySQL = `
+	SELECT r.id,
+	       (SELECT COUNT(*) FROM warmup_received wr
+	        WHERE wr.email_account_id = r.id AND wr.created_at >= date_trunc('day', NOW()) AND ` + newThreadSQL("wr") + `),
+	       (SELECT COUNT(*) FROM warmup_tokens wt
+	        WHERE wt.recipient_account_id = r.id AND wt.created_at >= date_trunc('day', NOW())
+	          AND wt.task_id <> $1 AND ` + newThreadSQL("wt") + `)
+	FROM (SELECT DISTINCT recipient_account_id AS id FROM warmup_tokens WHERE task_id = $1) r`
+
+func loadPartnerDay(ctx context.Context, db sendResultDB) (partnerDay, error) {
+	todays, err := scanPartnerTodays(ctx, db, partnerTodaySQL)
+	if err != nil {
+		return partnerDay{}, err
+	}
+	bounced, err := scanBounced(ctx, db, warmupBouncedAllSQL)
+	if err != nil {
+		return partnerDay{}, err
+	}
+	return partnerDay{todays: todays, bounced: bounced}, nil
+}
+
+func scanPartnerTodays(ctx context.Context, db sendResultDB, query string, args ...any) (map[uuid.UUID]partnerToday, error) {
+	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make(map[uuid.UUID]partnerToday, len(ids))
+	out := make(map[uuid.UUID]partnerToday)
 	for rows.Next() {
 		var id uuid.UUID
 		var received, inflight int
@@ -201,6 +226,26 @@ func (r *warmupRepository) partnerTodays(ctx context.Context, ids []uuid.UUID, e
 		out[id] = t
 	}
 	return out, rows.Err()
+}
+
+// partnerDayFor is the day's snapshot, with the recipient of a reserved send
+// being revalidated recounted live so the send is not counted against itself.
+func (r *warmupRepository) partnerDayFor(ctx context.Context) (partnerDay, error) {
+	day, err := r.partnerDay.get(ctx, resultDB(ctx, r.db))
+	if err != nil {
+		return partnerDay{}, err
+	}
+	excludeTask, _ := ctx.Value(warmupExecutionExclusion{}).(uuid.UUID)
+	if excludeTask == uuid.Nil {
+		return day, nil
+	}
+	live, err := scanPartnerTodays(ctx, resultDB(ctx, r.db), reservedRecipientTodaySQL, excludeTask)
+	if err != nil || len(live) == 0 {
+		return day, err
+	}
+	todays := maps.Clone(day.todays)
+	maps.Copy(todays, live)
+	return partnerDay{todays: todays, bounced: day.bounced}, nil
 }
 
 // newThreadSQL is true for warmup mail (alias has task_id) that opens a thread. A
@@ -245,28 +290,19 @@ func (r *warmupRepository) capPartnerCandidates(ctx context.Context, poolType st
 	if len(cands) == 0 {
 		return cands, nil
 	}
-	ids := make([]uuid.UUID, len(cands))
-	for i, c := range cands {
-		ids[i] = c.ID
-	}
-	weeks, err := r.partnerWeeks(ctx, ids)
+	weeks, err := r.partnerWeeks7d.get(ctx, resultDB(ctx, r.db))
 	if err != nil {
 		return nil, err
 	}
-	excludeTask, _ := ctx.Value(warmupExecutionExclusion{}).(uuid.UUID)
-	todays, err := r.partnerTodays(ctx, ids, excludeTask)
-	if err != nil {
-		return nil, err
-	}
-	bounced, err := r.bouncedRecipients(ctx, ids)
+	day, err := r.partnerDayFor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	share := inboundSharePercent(poolType)
 	out := cands[:0]
 	for _, c := range cands {
-		w, t := weeks[c.ID], todays[c.ID]
-		c.BouncedBy = bounced[c.ID]
+		w, t := weeks[c.ID], day.todays[c.ID]
+		c.BouncedBy = day.bounced[c.ID]
 		if w.unreachable() || models.WarmupRecipientBouncedOut(len(c.BouncedBy)) ||
 			max(t.received, t.inflight) >= partnerInboundCap(w.sent, share) {
 			continue
@@ -295,12 +331,16 @@ func warmupBouncedFromSQL(recipient string) string {
 		recipient, config.WarmupRecipientBounceDays)
 }
 
-var warmupBouncedSQL = `SELECT wt.recipient_account_id, s.organization_id` +
-	warmupBouncedFromSQL("wt.recipient_account_id = ANY($1::uuid[])") + ` GROUP BY 1, 2`
+var (
+	warmupBouncedAllSQL = `SELECT wt.recipient_account_id, s.organization_id` +
+		warmupBouncedFromSQL("wt.bounced_at IS NOT NULL") + ` GROUP BY 1, 2`
+	warmupBouncedOneSQL = `SELECT wt.recipient_account_id, s.organization_id` +
+		warmupBouncedFromSQL("wt.recipient_account_id = $1") + ` GROUP BY 1, 2`
+)
 
-// bouncedRecipients maps each bounced recipient in ids to the sender workspaces it bounced.
-func (r *warmupRepository) bouncedRecipients(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
-	rows, err := resultDB(ctx, r.db).Query(ctx, warmupBouncedSQL, ids)
+// scanBounced maps each bounced recipient to the sender workspaces it bounced.
+func scanBounced(ctx context.Context, db sendResultDB, query string, args ...any) (map[uuid.UUID][]uuid.UUID, error) {
+	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +359,8 @@ func (r *warmupRepository) bouncedRecipients(ctx context.Context, ids []uuid.UUI
 // WarmupRecipientBounced reports whether senderOrg may not mail recipient
 // because its address bounced that workspace's warmup, or enough workspaces'.
 func (r *warmupRepository) WarmupRecipientBounced(ctx context.Context, recipient, senderOrg uuid.UUID) (bool, error) {
-	bounced, err := r.bouncedRecipients(ctx, []uuid.UUID{recipient})
+	// Live: the reply path decides on this one recipient.
+	bounced, err := scanBounced(ctx, resultDB(ctx, r.db), warmupBouncedOneSQL, recipient)
 	if err != nil {
 		return false, err
 	}

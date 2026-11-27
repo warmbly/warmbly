@@ -1,7 +1,6 @@
 const dns = require("node:dns/promises");
 const https = require("node:https");
 const { Client } = require("pg");
-const { Kafka, logLevel } = require("kafkajs");
 const { createClient } = require("redis");
 const { connect, credsAuthenticator } = require("nats");
 const { KMSClient, DecryptCommand } = require("@aws-sdk/client-kms");
@@ -88,23 +87,10 @@ async function main() {
     finally { client.destroy(); }
     return { tls_verified: true };
   });
-  const provider = process.env.EVENTBUS_PROVIDER || "kafka";
-  const codec = process.env.CODEC_PROVIDER || "avro";
-  if (!["kafka", "nats"].includes(provider) || !["avro", "json"].includes(codec)) throw new Error("Invalid messaging provider");
-  const enabled = (value) => ["1", "t", "T", "true", "TRUE", "True"].includes(value);
-  if (provider === "kafka" || enabled(process.env.EVENTBUS_READ_BOTH)) await check("kafka_access", async () => {
-    const kafka = new Kafka({ clientId: "aws-migration-validation", brokers: process.env.KAFKA_BOOTSTRAP_SERVERS.split(","), ssl: true, sasl: { mechanism: "plain", username: process.env.KAFKA_SASL_USERNAME, password: process.env.KAFKA_SASL_PASSWORD }, logLevel: logLevel.NOTHING, connectionTimeout: 10000, requestTimeout: 15000, retry: { retries: 1 } });
-    const admin = kafka.admin({ allowAutoTopicCreation: false });
-    try { await admin.connect(); const out = await admin.fetchTopicMetadata({ topics: ["tracking-events"] }); return { existing_topics: out.topics.length }; }
-    finally { await admin.disconnect(); }
-  });
-  if (codec === "avro" || enabled(process.env.CODEC_READ_BOTH)) await check("schema_registry_access", async () => {
-    const authorization = "Basic " + Buffer.from(process.env.SCHEMA_REGISTRY_KEY + ":" + process.env.SCHEMA_REGISTRY_SECRET).toString("base64");
-    const subjects = await requestJSON(process.env.SCHEMA_REGISTRY_URL.replace(/\/$/, "") + "/subjects", { authorization });
-    if (!Array.isArray(subjects)) throw new Error("Invalid Schema Registry response");
-    return { subjects: subjects.length };
-  });
-  if (provider === "nats" || enabled(process.env.EVENTBUS_READ_BOTH)) await check("private_nats", async () => {
+  // The hosted deployment runs NATS with JSON only; it no longer reads Kafka or Avro.
+  if (process.env.EVENTBUS_PROVIDER !== "nats" || process.env.CODEC_PROVIDER !== "json") throw new Error("The AWS deployment requires EVENTBUS_PROVIDER=nats and CODEC_PROVIDER=json");
+  if (["EVENTBUS_READ_BOTH", "CODEC_READ_BOTH", "EVENTBUS_HOLD_READS"].some((name) => !["", "0", "false", undefined].includes(process.env[name]))) throw new Error("The AWS deployment no longer reads a second bus or codec");
+  await check("private_nats", async () => {
     const nc = await connect({
       servers: process.env.NATS_URL.split(","),
       authenticator: credsAuthenticator(Buffer.from(process.env.NATS_CREDS_B64, "base64")),

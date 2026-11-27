@@ -79,6 +79,13 @@ func (s *Service) apply(ctx context.Context, ev graphkit.Event) error {
 	if err != nil {
 		return nil
 	}
+	if strings.HasPrefix(ev.Type, "social.") {
+		// The add-on ignores a workspace it never set up here, as for another instance on the same key.
+		if sc := s.socialAddon(); sc != nil {
+			return sc.ApplySocialEvent(ctx, orgID, ev)
+		}
+		return nil
+	}
 	// An account this instance never opened is another instance's on the same partner key.
 	acct, err := s.Repo.GetAccount(ctx, orgID)
 	if err != nil {
@@ -122,6 +129,7 @@ func (s *Service) apply(ctx context.Context, ev graphkit.Event) error {
 		if err != nil || row == nil {
 			return err
 		}
+		s.syncSignIn(ctx, row, &m)
 		s.connectLater(ctx, row, &m)
 	}
 	return nil
@@ -174,7 +182,7 @@ func (s *Service) domainNoticeFor(ctx context.Context, typ string, row *models.S
 func (s *Service) Reconcile(ctx context.Context) error {
 	var errs []error
 	errs = append(errs, s.drainEvents(ctx), s.refreshOpenOrders(ctx), s.recoverOrders(ctx), s.retryConnects(ctx), s.retireEnded(ctx), s.setupTrackingDue(ctx),
-		s.retryPhotos(ctx), s.sweepPhotos(ctx), s.retrySignatures(ctx))
+		s.retryPhotos(ctx), s.sweepPhotos(ctx), s.retrySignatures(ctx), s.reconcileSocial(ctx))
 	return errors.Join(errs...)
 }
 
@@ -354,9 +362,19 @@ func (s *Service) PushDelegation(ctx context.Context) error {
 	if s.Delegator != nil {
 		if id, scopes, ok := s.Delegator.GoogleAppIdentity(); ok {
 			d.Google = &graphkit.GoogleDelegation{ClientID: id, Scopes: scopes}
+			// New Workspaces connect by sign-in to this instance's OAuth client: new domain-wide delegation
+			// grants are retired. Not in the sandbox or simulator, where no vendor team signs anything in.
+			if !s.Simulate && s.links != nil {
+				d.Google.SignInClientID = config.GoogleOAuthClientID()
+			}
 		}
 		if app, perms, ok := s.Delegator.MicrosoftAppIdentity(); ok {
 			d.Microsoft = &graphkit.MicrosoftDelegation{AppID: app, Permissions: perms}
+			// New tenants connect by sign-in to this instance's Outlook app too, so the store never needs
+			// the admin mailbox's password to approve the app in the tenant.
+			if !s.Simulate && s.links != nil {
+				d.Microsoft.SignInClientID = config.OutlookOAuthClientID()
+			}
 		}
 	}
 	if d.Empty() {

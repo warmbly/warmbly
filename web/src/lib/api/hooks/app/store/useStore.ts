@@ -67,11 +67,15 @@ export function useStoreStatus(enabled = true) {
 }
 
 /** True only once the instance has said the store is on, and never in a workspace a reseller manages (its customers buy there). */
-export function useStoreEnabled(enabled = true): { enabled: boolean; status: StoreStatus | undefined } {
+export function useStoreEnabled(enabled = true): { enabled: boolean; selling: boolean; status: StoreStatus | undefined } {
     const managed = usePartnerManaged() !== null;
     const q = useStoreStatus(enabled && !managed);
-    return { enabled: !managed && q.data?.enabled === true, status: managed ? undefined : q.data };
+    const on = !managed && q.data?.enabled === true;
+    return { enabled: on, selling: on && !storeSalesPaused(q.data), status: managed ? undefined : q.data };
 }
+
+/** The store is on but the operator paused new purchases; what is already bought is still managed as usual. */
+export const storeSalesPaused = (status: StoreStatus | undefined) => status?.enabled === true && status.sales_paused === true;
 
 /**
  * The store as this workspace sees it: on, locked (a self-host with no GraphKit connection yet, shown as a feature to set up),

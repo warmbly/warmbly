@@ -12,6 +12,12 @@ type StoreRetail struct {
 	MailboxBillLeadDays *int `json:"mailbox_bill_lead_days"`
 	// MinCardChargeMicros is the least a store charge puts on the card; the rest stays on the balance.
 	MinCardChargeMicros *int64 `json:"min_card_charge_micros"`
+	// Social seats a month, one price whatever the channel: every plan but the agency ones, Agency, and Agency Pro.
+	SocialSeatMonthlyMicros   *int64 `json:"social_seat_monthly_micros"`
+	SocialSeatAgencyMicros    *int64 `json:"social_seat_agency_micros"`
+	SocialSeatAgencyProMicros *int64 `json:"social_seat_agency_pro_micros"`
+	// SalesPaused refuses new domain and mailbox purchases; what is already bought keeps renewing and billing.
+	SalesPaused bool `json:"sales_paused"`
 }
 
 const (
@@ -27,13 +33,19 @@ const (
 	StoreMinCardDefault int64 = 10_000_000
 	StoreMinCardFloor   int64 = 500_000
 	StoreMinCardMax     int64 = 100_000_000
+	// Social seat prices a month, by plan tier.
+	SocialSeatMonthlyDefault   int64 = 49_000_000
+	SocialSeatAgencyDefault    int64 = 32_000_000
+	SocialSeatAgencyProDefault int64 = 19_000_000
+	SocialSeatMax              int64 = 500_000_000
 )
 
 // DefaultStoreRetail sells mailboxes at $3 a month and domains at cost.
 func DefaultStoreRetail() StoreRetail {
 	monthly, pct, fixed, lead, minCard := StoreMailboxMonthlyDefault, 0, int64(0), StoreBillLeadDefault, StoreMinCardDefault
+	seat, agency, agencyPro := SocialSeatMonthlyDefault, SocialSeatAgencyDefault, SocialSeatAgencyProDefault
 	return StoreRetail{MailboxMonthlyMicros: &monthly, DomainMarkupPercent: &pct, DomainMarkupFixedMicros: &fixed, MailboxBillLeadDays: &lead,
-		MinCardChargeMicros: &minCard}
+		MinCardChargeMicros: &minCard, SocialSeatMonthlyMicros: &seat, SocialSeatAgencyMicros: &agency, SocialSeatAgencyProMicros: &agencyPro}
 }
 
 // Normalize clamps every price into its accepted range and fills what is missing.
@@ -53,6 +65,30 @@ func (s *StoreRetail) Normalize() {
 	lead, minCard := s.MailboxBillLead(), s.MinCardCharge()
 	s.MailboxMonthlyMicros, s.DomainMarkupPercent, s.DomainMarkupFixedMicros, s.MailboxBillLeadDays = &monthly, &pct, &fixed, &lead
 	s.MinCardChargeMicros = &minCard
+	seat, agency, agencyPro := s.SocialSeatMonthly(), s.SocialSeatAgency(), s.SocialSeatAgencyPro()
+	s.SocialSeatMonthlyMicros, s.SocialSeatAgencyMicros, s.SocialSeatAgencyProMicros = &seat, &agency, &agencyPro
+}
+
+func seatPrice(v *int64, def int64) int64 {
+	if v == nil {
+		return def
+	}
+	return max(0, min(*v, SocialSeatMax))
+}
+
+// SocialSeatMonthly is the resolved monthly social seat price on every plan but the agency ones.
+func (s StoreRetail) SocialSeatMonthly() int64 {
+	return seatPrice(s.SocialSeatMonthlyMicros, SocialSeatMonthlyDefault)
+}
+
+// SocialSeatAgency is the resolved monthly social seat price on the Agency plan.
+func (s StoreRetail) SocialSeatAgency() int64 {
+	return seatPrice(s.SocialSeatAgencyMicros, SocialSeatAgencyDefault)
+}
+
+// SocialSeatAgencyPro is the resolved monthly social seat price on the Agency Pro plan.
+func (s StoreRetail) SocialSeatAgencyPro() int64 {
+	return seatPrice(s.SocialSeatAgencyProMicros, SocialSeatAgencyProDefault)
 }
 
 // MinCardCharge is the resolved least card charge, never under what the card processor accepts.

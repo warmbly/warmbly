@@ -20,7 +20,7 @@ import {
 import type { Balance } from "@/lib/api/models/app/subscription/Credits";
 import buildError from "@/lib/helper/buildError";
 import { EASE, PRESS_SPRING } from "@/lib/buy/motion";
-import { MAX_TOP_UP_USD, fmtUsd, fmtUsdTrim, roundCents } from "@/lib/money";
+import { MAX_TOP_UP_USD, TOP_UP_FEE_LABEL, fmtUsd, fmtUsdTrim, roundCents, topUpCharge } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { RELOAD_FAILURE_COPY, expiresSoon, fmtClock, fmtDay, paymentMethodExpiry, paymentMethodLabel } from "./balanceModel";
 import { DEFAULT_FUND_USD, FUND_STEP_USD, RELOAD_THRESHOLD_MIN_USD, clampFund, lastsDays, lastsLabel, type FundsPolicy } from "./funds";
@@ -271,6 +271,7 @@ function OneTime({ b, policy, canBuy, onBusy, onDone }: { b: Balance; policy: Fu
     const inFlight = !!b.charge_in_progress;
     const busy = saving || pay.isPending || checkout.isPending;
     React.useEffect(() => onBusy(busy), [busy, onBusy]);
+    const { feeUsd, totalUsd } = topUpCharge(amount);
 
     const reason = !canBuy
         ? "Adding funds needs an active paid plan."
@@ -359,12 +360,22 @@ function OneTime({ b, policy, canBuy, onBusy, onDone }: { b: Balance; policy: Fu
                 </p>
             )}
 
-            <div className="mt-5 -mx-5 px-5 pt-4 border-t border-slate-100 flex items-baseline justify-between">
+            <div className="mt-5 -mx-5 px-5 pt-4 border-t border-slate-100 space-y-1 text-[12px] tabular-nums">
+                <div className="flex items-baseline justify-between text-slate-500">
+                    <span>Added to balance</span>
+                    <span className="text-slate-700">{fmtUsd(amount)}</span>
+                </div>
+                <div className="flex items-baseline justify-between text-slate-500">
+                    <span>{TOP_UP_FEE_LABEL}</span>
+                    <span className="text-slate-700">{fmtUsd(feeUsd)}</span>
+                </div>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between">
                 <span className="text-[12.5px] text-slate-500">Total</span>
-                <span className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900 tabular-nums">{fmtUsd(amount)}</span>
+                <span className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900 tabular-nums">{fmtUsd(totalUsd)}</span>
             </div>
             <PrimaryButton busy={busy} blocked={!!reason} onClick={() => void submit()}>
-                {busy ? (saving && card.entering ? "Saving your card…" : "Paying…") : card.pm || card.inline ? `Pay ${fmtUsd(amount)}` : `Continue to pay ${fmtUsd(amount)}`}
+                {busy ? (saving && card.entering ? "Saving your card…" : "Paying…") : card.pm || card.inline ? `Pay ${fmtUsd(totalUsd)}` : `Continue to pay ${fmtUsd(totalUsd)}`}
             </PrimaryButton>
             {card.pm && !card.entering && (
                 <button
@@ -418,6 +429,7 @@ function AutoTopUp({
     const [saving, setSaving] = React.useState(false);
     const busy = saving || save.isPending || addCard.isPending;
     React.useEffect(() => onBusy(busy), [busy, onBusy]);
+    const charge = topUpCharge(amount);
 
     const needsCard = enabled && !card.pm;
     // Only turning it on needs a paid plan; a lapsed workspace can always turn it off.
@@ -491,6 +503,11 @@ function AutoTopUp({
                     <AmountField id="auto-limit" label="At most a month" value={limit} onChange={setLimit} min={Math.max(minUsd, amount)} max={LIMIT_MAX} disabled={!enabled} />
                 </div>
             </div>
+            {enabled && amount > 0 && (
+                <p className="mt-2 text-[11px] text-slate-400 tabular-nums">
+                    {TOP_UP_FEE_LABEL} {fmtUsd(charge.feeUsd)} · Charged {fmtUsd(charge.totalUsd)} each top-up
+                </p>
+            )}
             {bundle > 0 && enabled && (
                 <p className="mt-2 text-[11px] text-slate-400">Next month&apos;s mailboxes come to {fmtUsdTrim(bundle)}, so a threshold at or above it keeps them paid from the balance.</p>
             )}

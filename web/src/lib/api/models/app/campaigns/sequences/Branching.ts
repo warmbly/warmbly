@@ -1,3 +1,5 @@
+import type { SocialChannel } from "@/lib/api/models/app/social/Social";
+
 // Step branching — the routing drawn on the flow canvas. Each branch fires when
 // its condition matches (the recipient opened / clicked / replied, or did NOT,
 // optionally within N days; or a random split) and routes the contact to a
@@ -32,7 +34,35 @@ export type BranchField =
     // Automatic inbox tagging stored this intent for the contact's human reply
     // (campaign_contact_progress.reply_intent). Operator is "is"; the intent
     // rides in `label`. Empty when tagging is off or the classifier was unsure.
-    | "reply_intent";
+    | "reply_intent"
+    // Social signals, read from the contact's social state in this campaign. Connected and replied take
+    // "within_days" with a value, or "ever"; replied may name a channel. Invite pending and Open Profile are LinkedIn.
+    | "social_connected"
+    | "not_social_connected"
+    | "social_replied"
+    | "not_social_replied"
+    | "social_invite_pending"
+    | "social_open_profile"
+    | "not_social_open_profile";
+
+export const SOCIAL_BRANCH_FIELDS: BranchField[] = [
+    "social_replied",
+    "not_social_replied",
+    "social_connected",
+    "not_social_connected",
+    "social_invite_pending",
+    "social_open_profile",
+    "not_social_open_profile",
+];
+
+export function isSocialBranchField(field: string): boolean {
+    return field.startsWith("social_") || field.startsWith("not_social_");
+}
+
+/** The social fields that are a state, not an event, so they take no day window. */
+export function isSocialStateField(field: string): boolean {
+    return field === "social_invite_pending" || field === "social_open_profile" || field === "not_social_open_profile";
+}
 
 export type BranchOperator = "within_days" | "ever" | "chance" | "is";
 
@@ -80,6 +110,8 @@ export interface BranchCondition {
     // The AI-step label an `ai_label` condition, or the intent a `reply_intent`
     // condition, compares against (operator "is").
     label?: string;
+    // Narrows social_replied / not_social_replied to one channel; absent is any channel.
+    channel?: SocialChannel;
 }
 
 export interface SequenceBranch {
@@ -113,6 +145,13 @@ export const BRANCH_FIELD_LABELS: Record<BranchField, string> = {
     reply_automated: "auto-reply / out of office",
     ai_label: "AI label is",
     reply_intent: "reply intent is",
+    social_replied: "replied on social",
+    not_social_replied: "didn’t reply on social",
+    social_connected: "accepted the LinkedIn invite",
+    not_social_connected: "didn’t accept the LinkedIn invite",
+    social_invite_pending: "LinkedIn invite still pending",
+    social_open_profile: "has an Open Profile",
+    not_social_open_profile: "has no Open Profile",
 };
 
 // The intents automatic inbox tagging can store for a human reply, as a

@@ -58,6 +58,8 @@ export default interface UniboxOverview {
    * the user sees their position before hitting the wall.
    */
   scheduled_pending_max: number;
+  /** Unread social messages across the workspace's conversations, every channel. */
+  social_unread?: number;
   folders: UniboxFolderOverview[];
   mailboxes: UniboxMailboxOverview[];
   tags: UniboxTagOverview[];

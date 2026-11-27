@@ -611,6 +611,9 @@ type CreateSequenceInput struct {
 	// ThreadReply defaults to true: a step written here is a follow-up and
 	// belongs in the conversation the first email started.
 	ThreadReply *bool `json:"thread_reply,omitempty"`
+	// Kind and Action make the step an action or wait node (a social step is an action); empty is an email.
+	Kind   string        `json:"kind,omitempty"`
+	Action *ActionConfig `json:"action,omitempty"`
 }
 
 // ThreadReplyDefaults decides, for a sequence written in one shot, which steps

@@ -53,8 +53,10 @@ type AutoTopup struct {
 type chargeRequest struct {
 	ClaimID uuid.UUID
 	// InvoiceID is the invoice already made for it; empty until Saved has run.
-	InvoiceID   string
-	Cents       int64
+	InvoiceID string
+	Cents     int64
+	// FeeCents is the processing fee charged on top of Cents, on its own line; 0 for a send pack.
+	FeeCents    int64
 	Description string
 	Meta        map[string]string
 	// Cancel closes an unpaid invoice without charging it.
@@ -372,14 +374,16 @@ func (s *Service) settleAutoTopup(ctx context.Context, a *models.Agency, c *mode
 	}
 	noCard := card == nil && !cancel
 	description := "Agency send pack: 50,000 sends (automatic top-up)"
+	var fee int64
 	if c.Kind == models.AgencyAutoTopupAI {
 		description = "Agency AI balance (automatic top-up)"
+		fee, _ = models.TopUpCharge(c.AmountCents)
 	}
 	res, err := charger.Charge(ctx, a, card, chargeRequest{
-		ClaimID: c.ID, InvoiceID: c.StripeInvoiceID, Cents: c.AmountCents, Description: description,
+		ClaimID: c.ID, InvoiceID: c.StripeInvoiceID, Cents: c.AmountCents, FeeCents: fee, Description: description,
 		Meta: map[string]string{
 			metaPurpose: purposeAgencyAutoTopup, metaAgencyID: a.ID.String(), "claim_id": c.ID.String(), "kind": string(c.Kind),
-			"sends": strconv.Itoa(c.Sends), "amount_cents": strconv.FormatInt(c.AmountCents, 10),
+			"sends": strconv.Itoa(c.Sends), "amount_cents": strconv.FormatInt(c.AmountCents, 10), "fee_cents": strconv.FormatInt(fee, 10),
 		},
 		Cancel: cancel || noCard,
 		Saved: func(invoiceID string) error {
@@ -625,14 +629,26 @@ func (c stripeCharger) Charge(ctx context.Context, a *models.Agency, card *Saved
 			}
 			return chargeResult{Cancelled: true}, nil
 		}
-		if inv.Total == 0 {
+		line := func(cents int64, description, key string) error {
 			item := &stripe.InvoiceItemParams{
 				Params: stripe.Params{Context: ctx}, Customer: a.StripeCustomerID, Invoice: stripe.String(inv.ID),
-				Amount: stripe.Int64(req.Cents), Currency: stripe.String("usd"), Description: stripe.String(req.Description),
+				Amount: stripe.Int64(cents), Currency: stripe.String("usd"), Description: stripe.String(description),
 			}
-			item.SetIdempotencyKey("agency-autotopup-" + req.ClaimID.String() + "-item")
-			if _, err := invoiceitem.New(item); err != nil {
+			item.SetIdempotencyKey("agency-autotopup-" + req.ClaimID.String() + key)
+			_, err := invoiceitem.New(item)
+			return err
+		}
+		// Whichever of the two lines a crash left out is added now.
+		total := inv.Total
+		if total == 0 {
+			if err := line(req.Cents, req.Description, "-item"); err != nil {
 				return chargeResult{}, fmt.Errorf("add invoice line: %w", err)
+			}
+			total = req.Cents
+		}
+		if req.FeeCents > 0 && total < req.Cents+req.FeeCents {
+			if err := line(req.Cents+req.FeeCents-total, models.TopUpFeeLabel, "-fee"); err != nil {
+				return chargeResult{}, fmt.Errorf("add fee line: %w", err)
 			}
 		}
 		fin := &stripe.InvoiceFinalizeInvoiceParams{Params: stripe.Params{Context: ctx}, AutoAdvance: stripe.Bool(false)}

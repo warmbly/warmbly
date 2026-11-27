@@ -1,7 +1,9 @@
 # Control plane infrastructure
 
 Use separate Terraform roots and state keys for each provider. AWS provisioning
-can proceed independently of PlanetScale and Confluent operator authentication.
+can proceed independently of PlanetScale operator authentication. The hosted
+deployment's event bus is the private NATS cluster (`aws/nats`); Confluent
+(Kafka and Schema Registry) was retired on 2026-11-25.
 
 | Root | Scope | State |
 | --- | --- | --- |
@@ -10,7 +12,6 @@ can proceed independently of PlanetScale and Confluent operator authentication.
 | `aws/runtime` | Application task roles, ECS services, HTTPS ingress and dependency checks | `warmbly/production/runtime.tfstate` |
 | `aws/workers` | ARM EC2 worker hosts, static IPs, encrypted disks and configuration containers | `warmbly/production/workers.tfstate` |
 | `planetscale` | Existing Postgres branch, with a database metadata lookup | `warmbly/production/planetscale.tfstate` |
-| `confluent` | Existing environment, Basic Kafka cluster and service account, with a Schema Registry lookup | `warmbly/production/confluent.tfstate` |
 
 The remote states use the bootstrap bucket with encryption, versioning and
 S3 locking. Provider lock files belong in source control. State, saved plans,
@@ -19,27 +20,23 @@ credentials and installation-specific tfvars belong outside the checkout.
 ## Adopt existing data services
 
 Initialize each root with `-backend-config="bucket=$STATE_BUCKET"`. The
-PlanetScale and Confluent roots contain import blocks and require the actual
+PlanetScale root contains import blocks and require the actual
 identifiers and configuration of the existing resources. Supply those values in
 private tfvars files.
 
 Authenticate PlanetScale with `PLANETSCALE_SERVICE_TOKEN_ID` and
-`PLANETSCALE_SERVICE_TOKEN`. Authenticate Confluent with
-`CONFLUENT_CLOUD_API_KEY` and `CONFLUENT_CLOUD_API_SECRET`. Supply operator
+`PLANETSCALE_SERVICE_TOKEN`. Supply operator
 credentials through the process environment from a protected source. Keep them
 separate from the application credentials and out of Terraform input variables.
 Short-lived, read-scoped credentials are sufficient for the initial adoption.
-Set `kafka_region` to the existing cluster's actual region before planning its
-adoption. Compute placement in AWS does not relocate a Kafka cluster.
 
 Review the adoption plan before applying it. Its managed resources must show
 imports only, with zero creates, updates, replacements or deletes. Correct any
 configuration mismatch before applying. Apply the saved plan, then verify a
 subsequent plan reports no changes. Imported resources have `prevent_destroy`.
 
-Terraform manages configuration metadata. SQL rows and migrations, Kafka
-messages and consumer offsets, runtime-created worker topics, schema versions,
-access rules and existing application credentials retain their current owners.
+Terraform manages configuration metadata. SQL rows and migrations, NATS
+messages and consumer state, access rules and existing application credentials retain their current owners.
 Bring additional resource types under Terraform only after checking their
 current settings and ownership. Resource import does not copy or restore data.
 
@@ -84,7 +81,7 @@ Preserving current values in a new store is separate from rotating them.
 | Mailbox encryption key | Re-encrypt affected stored credentials and coordinate every worker before replacing it. |
 | Organization KMS key | Preserve access to existing wrapped DEKs. IAM access changes and KMS key-material rotation are separate operations. |
 | Internal and broker tokens | Update both ends of internal APIs, including forms, tracking and external workers. |
-| Kafka and Schema Registry keys | Create replacements, validate scopes, update every producer and consumer, then retire old access. |
+| NATS credentials | Create replacements, validate permissions, update every publisher and subscriber, then retire old access. |
 | OAuth and integration secrets | Coordinate provider-side credentials, backend and worker token refresh paths, and any callbacks. |
 | Valkey password and endpoint | Update every cache client together and verify shared-state behavior before draining the old cache. |
 
@@ -100,9 +97,7 @@ verification. The cache uses private subnets and permits access from the app
 security group. Local tools and external workers need a suitable private network
 path before they can use those endpoints.
 
-Keep Confluent Basic on TLS/SASL during adoption. PrivateLink for Kafka requires
-a compatible Confluent cluster offering and connectivity for every worker, so it
-is a separate topology and cost decision. The S3 gateway endpoint provides a
+NATS runs in private subnets with TLS (`aws/nats`). The S3 gateway endpoint provides a
 private route to S3. Other dependencies still require a working egress path.
 
 See [AWS provisioning](aws/README.md) for the foundation and cache setup.

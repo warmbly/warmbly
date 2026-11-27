@@ -207,9 +207,11 @@ DNS changes are separate from deploying the services.
 
 Run `validation_task_definition` once in a public subnet with a public IP and the
 task security group. It checks private database DNS and logins, stored mailbox
-and MFA decryption, KMS, both caches, Kafka metadata, Schema Registry and S3 using
+and MFA decryption, KMS, both caches, the private NATS cluster and S3 using
 the actual backend task role. It writes no production data, logs only counts and
-results, and exits. Observe its stopped exit code and logs before activation.
+results, and exits. It refuses a configuration that still reads Kafka or Avro
+(`EVENTBUS_READ_BOTH`, `CODEC_READ_BOTH`, `EVENTBUS_HOLD_READS`): the hosted
+deployment runs NATS with JSON only. Observe its stopped exit code and logs before activation.
 The pinned validation packages are installed in temporary task storage.
 
 Keep one cache authoritative throughout deployment overlap. A backend starts
