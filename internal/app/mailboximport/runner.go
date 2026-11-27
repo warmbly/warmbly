@@ -333,7 +333,7 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 var unansweredBackoff = 5 * time.Second
 
 // unansweredReserve is what one more connect needs of the row's lease: two silent workers, then saving the mailbox.
-var unansweredReserve = 48 * time.Second
+var unansweredReserve = 90 * time.Second
 
 // retryUnanswered repeats a connect whose check no worker answered, while the row's lease leaves room.
 func retryUnanswered(ctx context.Context, connect func() *errx.Error) *errx.Error {

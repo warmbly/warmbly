@@ -52,13 +52,13 @@ func VerifyImap(ctx context.Context, host string, port int, user, pass, security
 	var c *imapclient.Client
 
 	if resolved == models.MailSecurityNone {
-		if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		if err := conn.SetDeadline(time.Now().Add(probeConversation)); err != nil {
 			return probeFail(ctx, models.MailProbeProtocol, err)
 		}
 		c = imapclient.New(conn, nil)
 	} else if resolved == models.MailSecurityStartTLS {
 		// The greeting arrives in cleartext and the upgrade happens in-band.
-		if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		if err := conn.SetDeadline(time.Now().Add(probeConversation)); err != nil {
 			return probeFail(ctx, models.MailProbeProtocol, err)
 		}
 		c, err = imapclient.NewStartTLS(conn, &imapclient.Options{TLSConfig: tlsConf})
@@ -67,7 +67,7 @@ func VerifyImap(ctx context.Context, host string, port int, user, pass, security
 		}
 	} else {
 		tlsConn := tls.Client(conn, tlsConf)
-		if err := tlsConn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		if err := tlsConn.SetDeadline(time.Now().Add(probeConversation)); err != nil {
 			return probeFail(ctx, models.MailProbeProtocol, err)
 		}
 		if err := tlsConn.HandshakeContext(ctx); err != nil {

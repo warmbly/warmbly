@@ -206,7 +206,7 @@ func awaitVerdict(ctx context.Context, sub *redis.PubSub, workerID, processID uu
 // validationWait is how long the caller waits for a worker's verdict. It
 // covers worker.validationBudget plus worker.replyBudget with room for the
 // bus both ways, so a verdict produced at the worker's limit is still heard.
-const validationWait = 14 * time.Second
+const validationWait = 35 * time.Second
 
 // adoptProbedPort stores the port the worker actually signed in on. It is the
 // one field a verdict may correct: a mailbox that kept naming a port the fleet

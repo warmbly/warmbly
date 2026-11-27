@@ -310,7 +310,7 @@ func (c *Client) personalPrefixLocked() string {
 		return *c.nsPrefix
 	}
 	prefix := ""
-	if c.client.Caps().Has(imap.CapNamespace) {
+	if c.caps().Has(imap.CapNamespace) {
 		if data, err := c.client.Namespace().Wait(); err == nil && data != nil && len(data.Personal) > 0 {
 			prefix = data.Personal[0].Prefix
 		}
@@ -369,7 +369,7 @@ func (c *Client) moveUIDLocked(src, dst string, uid uint32) error {
 	}
 
 	set := imap.UIDSetNum(imap.UID(uid))
-	if c.client.Caps().Has(imap.CapMove) {
+	if c.caps().Has(imap.CapMove) {
 		if _, err := c.client.Move(set, dst).Wait(); err != nil {
 			return fmt.Errorf("move uid %d %q→%q: %w", uid, src, dst, err)
 		}
@@ -556,7 +556,7 @@ func (c *Client) DeleteUID(ctx context.Context, mailboxName, trashName string, u
 	defer c.lifecycle.RUnlock()
 	defer c.begin()()
 	name := c.qualifyMailboxLocked(mailboxName)
-	caps := c.client.Caps()
+	caps := c.caps()
 
 	if caps.Has(imap.CapUIDPlus) {
 		if _, err := c.selectMailbox(name, nil); err != nil {

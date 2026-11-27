@@ -26,7 +26,7 @@ func (c *Client) AllFolders(ctx context.Context) ([]models.Mailbox, error) {
 	defer c.lifecycle.RUnlock()
 	defer c.begin()()
 
-	opts, _ := listOptionsFor(c.client.Caps(), nil)
+	opts, _ := listOptionsFor(c.caps(), nil)
 	var out []models.Mailbox
 	cmd := c.client.List("", "*", opts)
 	for f := cmd.Next(); f != nil; f = cmd.Next() {

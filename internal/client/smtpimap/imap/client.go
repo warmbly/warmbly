@@ -113,6 +113,10 @@ type Client struct {
 	// because a session the server's reply just closed reports no caps.
 	eSearch atomic.Bool
 
+	// plainCommands is set once the server answers any command with BAD; the
+	// mailbox then stops using IMAP extensions (see plainCaps).
+	plainCommands atomic.Bool
+
 	// folderOverflow is what the last Folders call had to leave out for the
 	// cap, folderConflicts what it left out for a duplicate UIDVALIDITY.
 	folderOverflow  atomic.Int32
@@ -339,8 +343,8 @@ func (c *Client) connectLocked() *errx.MailError {
 	// Dovecot, ...) typically advertise it only after authentication, so the
 	// check must run post-auth. Without it (Outlook.com, Microsoft 365 over
 	// IMAP, Yahoo, many hosted servers) the sync loop keys on UIDNEXT instead.
-	c.condStore.Store(c.client.Caps().Has(imap.CapCondStore) && changedSinceMode(c.changedSince.Load()) != changedSinceNone)
-	c.eSearch.Store(c.client.Caps().Has(imap.CapESearch))
+	c.condStore.Store(c.caps().Has(imap.CapCondStore) && changedSinceMode(c.changedSince.Load()) != changedSinceNone)
+	c.eSearch.Store(c.caps().Has(imap.CapESearch))
 	if !stopSetup() || setupCtx.Err() != nil {
 		_ = client.Close()
 		return errx.ErrMailServerUnreachable
@@ -549,7 +553,7 @@ func (c *Client) ReleaseMailbox() {
 
 	// Between folders: no view for a step to resume.
 	c.syncView = nil
-	if c.client == nil || !c.selected.Load() || !c.client.Caps().Has(imap.CapUnselect) {
+	if c.client == nil || !c.selected.Load() || !c.caps().Has(imap.CapUnselect) {
 		return
 	}
 	defer c.begin()()

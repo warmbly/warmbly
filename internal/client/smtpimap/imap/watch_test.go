@@ -56,7 +56,8 @@ func TestWatchInboxReportsNewMailWithinIdle(t *testing.T) {
 }
 
 func TestSyncSessionOptionsUnchangedWithoutWatcher(t *testing.T) {
-	if (&Client{}).options(nil) != nil {
-		t.Fatal("a sync session without TLS config must keep go-imap's default options")
+	opts := (&Client{}).options(nil)
+	if opts == nil || opts.TLSConfig != nil || opts.UnilateralDataHandler != nil || opts.DebugWriter == nil {
+		t.Fatal("a sync session without TLS config must keep go-imap's defaults plus the refused-command log")
 	}
 }

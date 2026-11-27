@@ -64,7 +64,7 @@ func (c *Client) listFoldersStatus(limit int) (FolderListing, map[string]struct{
 	defer c.lifecycle.RUnlock()
 	defer c.begin()()
 
-	caps := c.client.Caps()
+	caps := c.caps()
 	status := &imap.StatusOptions{
 		UIDValidity: true,
 		UIDNext:     true,

@@ -16,7 +16,7 @@ import (
 
 func TestRetryUnansweredRetriesOnlyASilentFleet(t *testing.T) {
 	unansweredBackoff, unansweredReserve = time.Millisecond, 0
-	t.Cleanup(func() { unansweredBackoff, unansweredReserve = 5*time.Second, 48*time.Second })
+	t.Cleanup(func() { unansweredBackoff, unansweredReserve = 5*time.Second, 90*time.Second })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
