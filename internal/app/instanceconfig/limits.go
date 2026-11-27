@@ -62,7 +62,7 @@ func Limits() []LimitGroup {
 			Title: "Organization hard caps",
 			Entries: []LimitEntry{
 				{"Campaigns created", n(config.HardCapCampaignsTotal), "per organization", "Total campaigns ever created."},
-				{"Active campaigns", n(config.HardCapCampaignsActive), "per organization", "Running at the same time."},
+				{"Active campaigns", n(config.HardCapCampaignsActive), "per organization", "Running at the same time. An organization override replaces it."},
 				{"Team members", n(config.HardCapTeamMembers), "seats", "Members in one organization."},
 				{"Contacts", n(config.HardCapContacts), "per organization", "Stored contacts."},
 				{"Campaign sends", n(config.HardCapDailyCampaignSends), "emails/day", "Across every mailbox in one organization."},

@@ -158,7 +158,22 @@ type campaignService struct {
 	planMaxAge atomic.Int64
 	// variants lists A/B variants so a start checks their copy too. Optional/nil-safe.
 	variants VariantLister
+	// limits resolves the organization's active-campaign ceiling; nil falls back to the hard cap.
+	limits LimitResolver
 }
+
+// LimitResolver reads the limits the runtime enforces for an organization.
+type LimitResolver interface {
+	GetEffectiveLimits(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimits, *errx.Error)
+}
+
+// LimitsAware lets main attach the organization's effective limits.
+type LimitsAware interface {
+	WireLimits(l LimitResolver)
+}
+
+// WireLimits makes a start honour the organization's active-campaign limit, overrides included.
+func (s *campaignService) WireLimits(l LimitResolver) { s.limits = l }
 
 // VariantLister is the slice of the advanced-outreach repository Start reads.
 type VariantLister interface {

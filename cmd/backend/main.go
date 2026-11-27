@@ -1693,6 +1693,10 @@ func main() {
 		if aware, ok := campaignService.(campaign.SegmentAware); ok {
 			aware.WireSegments(segmentService)
 		}
+		// A start counts against the organization's own active-campaign limit, overrides included.
+		if aware, ok := campaignService.(campaign.LimitsAware); ok {
+			aware.WireLimits(organizationService)
+		}
 		if aware, ok := campaignService.(campaign.CustomHostsAware); ok {
 			aware.WireCustomHosts(customHosts)
 		}
