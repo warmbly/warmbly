@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,14 +12,17 @@ import (
 )
 
 type stubLinks struct {
-	hint, back string
-	required   string
-	ok         bool
-	connected  int
+	hint, back  string
+	required    string
+	requiredErr error
+	ok          bool
+	connected   int
 }
 
-func (s *stubLinks) LoginHint(context.Context, uuid.UUID) string       { return s.hint }
-func (s *stubLinks) RequiredAddress(context.Context, uuid.UUID) string { return s.required }
+func (s *stubLinks) LoginHint(context.Context, uuid.UUID) string { return s.hint }
+func (s *stubLinks) RequiredAddress(context.Context, uuid.UUID) (string, error) {
+	return s.required, s.requiredErr
+}
 func (s *stubLinks) Connected(context.Context, uuid.UUID, *models.Email) {
 	s.connected++
 }
@@ -42,12 +46,16 @@ func TestPartnerLinksChainAsksEachInTurn(t *testing.T) {
 	if got := c.LoginHint(ctx, id); got != "store@b.com" {
 		t.Fatalf("store hint first: %q", got)
 	}
-	if got := c.RequiredAddress(ctx, id); got != "" {
-		t.Fatalf("a hint alone requires no address: %q", got)
+	if got, err := c.RequiredAddress(ctx, id); got != "" || err != nil {
+		t.Fatalf("a hint alone requires no address: %q %v", got, err)
 	}
 	storeLinks.required = "store@b.com"
-	if got := c.RequiredAddress(ctx, id); got != "store@b.com" {
-		t.Fatalf("required %q", got)
+	if got, err := c.RequiredAddress(ctx, id); got != "store@b.com" || err != nil {
+		t.Fatalf("required %q %v", got, err)
+	}
+	storeLinks.required, storeLinks.requiredErr = "", errors.New("db down")
+	if _, err := c.RequiredAddress(ctx, id); err == nil {
+		t.Fatal("a failed lookup must not read as any account")
 	}
 }
 

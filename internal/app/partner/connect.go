@@ -123,7 +123,7 @@ func (s *Service) LoginHint(ctx context.Context, linkID uuid.UUID) string {
 }
 
 // RequiredAddress implements connectlink.PartnerLinks: a partner's hint only pre-fills, so any account may sign in.
-func (s *Service) RequiredAddress(context.Context, uuid.UUID) string { return "" }
+func (s *Service) RequiredAddress(context.Context, uuid.UUID) (string, error) { return "", nil }
 
 // ReturnURL implements connectlink.PartnerLinks: the partner's URL with the mailbox and the outcome.
 func (s *Service) ReturnURL(ctx context.Context, linkID uuid.UUID, status string) (string, bool) {

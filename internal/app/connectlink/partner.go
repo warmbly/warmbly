@@ -19,7 +19,8 @@ type PartnerLinks interface {
 	LoginHint(ctx context.Context, linkID uuid.UUID) string
 	// RequiredAddress is the one mailbox a link may connect, "" when any account may sign in (a
 	// hint only pre-fills); a sign-in as another account is refused and leaves the link usable.
-	RequiredAddress(ctx context.Context, linkID uuid.UUID) string
+	// An error means it could not be told, and the sign-in is refused rather than let anyone in.
+	RequiredAddress(ctx context.Context, linkID uuid.UUID) (string, error)
 	// Connected hands the partner the mailbox its link connected.
 	Connected(ctx context.Context, linkID uuid.UUID, acc *models.Email)
 	// ReturnURL is where a partner's link sends the person after the provider; ok is false for any other link.
