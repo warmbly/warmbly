@@ -83,7 +83,7 @@ func (c *Client) sentMailbox() (string, error) {
 	// RETURN (SPECIAL-USE) is only legal when the server advertises it; without
 	// the capability the attributes may still arrive on an ordinary LIST.
 	opts := &imap.ListOptions{}
-	if c.client.Caps().Has(imap.CapSpecialUse) {
+	if c.caps().Has(imap.CapSpecialUse) {
 		opts.ReturnSpecialUse = true
 	}
 

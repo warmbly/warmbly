@@ -35,7 +35,7 @@ func (c *Client) MoveUIDs(ctx context.Context, src, dst string, uids []uint32) (
 	if strings.EqualFold(src, dst) {
 		return moved, 0, nil
 	}
-	caps := c.client.Caps()
+	caps := c.caps()
 	if !caps.Has(imap.CapMove) && !caps.Has(imap.CapUIDPlus) {
 		return nil, 0, ErrNoSingleMessageDelete
 	}

@@ -15,11 +15,11 @@ import (
 
 // validationBudget bounds unsealing plus both dials. With replyBudget it must
 // sit well inside the backend's validationWait, which starts before publish.
-const validationBudget = 7 * time.Second
+const validationBudget = 28 * time.Second
 
 // probeBudget bounds the two dials, and starts only once the credentials are
 // unsealed so a cold key cache cannot turn a slow host into a refusal.
-const probeBudget = 5 * time.Second
+const probeBudget = 25 * time.Second
 
 // replyBudget publishes the verdict on a context the probe deadline cannot cancel.
 const replyBudget = 3 * time.Second

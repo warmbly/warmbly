@@ -18,6 +18,15 @@ const idleRestart = 20 * time.Minute
 
 // options keeps a sync session's options exactly as before and adds the change handler to a watch session.
 func (c *Client) options(tlsConf *tls.Config) *imapclient.Options {
+	opts := c.baseOptions(tlsConf)
+	if opts == nil {
+		opts = &imapclient.Options{}
+	}
+	opts.DebugWriter = newRefusedCommandLog()
+	return opts
+}
+
+func (c *Client) baseOptions(tlsConf *tls.Config) *imapclient.Options {
 	if c.OnChange == nil {
 		if tlsConf == nil {
 			return nil
@@ -53,7 +62,7 @@ func (c *Client) WatchInbox(ctx context.Context, ready func()) *errx.MailError {
 	c.lifecycle.RLock()
 	defer c.lifecycle.RUnlock()
 	client := c.client
-	caps := client.Caps()
+	caps := c.caps()
 	if !caps.Has(imap.CapIdle) && !caps.Has(imap.CapIMAP4rev2) {
 		return ErrIdleUnsupported
 	}

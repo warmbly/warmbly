@@ -17,8 +17,10 @@ import (
 )
 
 // probeConversation bounds the SMTP conversation when the context carries no
-// deadline of its own.
-const probeConversation = 10 * time.Second
+// deadline of its own. Some hosted Microsoft relays (sending.ac) take up to 15
+// seconds to sign a mailbox in, so it leaves room for that. The IMAP probe
+// uses the same bound.
+const probeConversation = 25 * time.Second
 
 // VerifySMTP probes a mailbox's SMTP credentials the same way the send path
 // connects: the caller's security mode decides implicit TLS versus STARTTLS,

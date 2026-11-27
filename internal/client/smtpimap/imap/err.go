@@ -60,6 +60,13 @@ func (c *Client) handleError(err error) *errx.MailError {
 	}
 	var imapErr *imap.Error
 	if errors.As(err, &imapErr) {
+		if imapErr.Type == imap.StatusResponseTypeBad && !c.plainCommands.Swap(true) {
+			// From the next command on this mailbox asks without extensions;
+			// see plainCaps.
+			c.condStore.Store(false)
+			c.eSearch.Store(false)
+			log.Warn().Str("email", c.Email).Str("reply", imapErr.Text).Msg("imap server refused a command, using plain IMAP for this mailbox")
+		}
 		if throttle := c.loginThrottle(imapErr); throttle != nil {
 			return throttle
 		}
