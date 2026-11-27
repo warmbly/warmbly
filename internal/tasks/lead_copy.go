@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -392,9 +393,12 @@ func (s *tasksService) WriteLeadAI(ctx context.Context, orgID uuid.UUID, campaig
 	extra := templateContext(nil, PreviewUnsubscribeLink)
 	subject, bodyHTML, bodyPlain := renderLeadCopy(campaign.ID, step.ID, *contact, extra, src.subject, src.bodyHTML, src.bodyPlain)
 	if _, _, _, _, aerr := s.resolveAIVariablesWith(ctx, campaign, contact, step.ID, subject, bodyHTML, bodyPlain, w); aerr != nil {
+		var refusal *credits.AIRefusal
 		switch {
 		case errors.Is(aerr, repository.ErrLeadStepSent):
 			return sentErr
+		case errors.As(aerr, &refusal):
+			return errx.NewWithIdentifier(errx.PaymentRequired, refusal.Code, refusal.Message)
 		case errors.Is(aerr, ErrAIVarBalance):
 			return errx.NewWithIdentifier(errx.PaymentRequired, "insufficient_credits", "The workspace balance is too low. Add money under Billing to keep going.")
 		case errors.Is(aerr, ErrAIVarCap):

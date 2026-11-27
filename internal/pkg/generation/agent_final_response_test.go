@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -120,6 +121,13 @@ func TestAgentReturnsEarlyAnswerWithoutSpendingReservedTurn(t *testing.T) {
 			requests, charges := 0, 0
 			provider := agentFixtureProvider(kind, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests++
+				raw, rerr := io.ReadAll(r.Body)
+				if rerr != nil {
+					t.Error(rerr)
+				}
+				if strings.Contains(string(raw), "Do not invent findings") {
+					t.Error("early answer carried the final-turn instructions")
+				}
 				writeAgentFixture(w, kind, "The mailbox is paused.")
 			}))
 			result, err := provider.RunAgent(context.Background(), AgentRequest{
@@ -152,8 +160,11 @@ func TestAgentRejectsEmptyAnswer(t *testing.T) {
 				req.OnEvent = func(AgentEvent) {}
 			}
 			result, err := provider.RunAgent(context.Background(), req)
-			if err == nil {
-				t.Fatalf("empty answer returned as success: %+v", result)
+			if result == nil || err == nil || !strings.Contains(err.Error(), "empty agent response") {
+				t.Fatalf("empty answer: result=%+v err=%v", result, err)
+			}
+			if result.StopReason != "error" || result.Iterations != 1 || result.Pending != nil || len(result.Messages) != 1 || result.Messages[0].Role != "user" || result.Messages[0].Content != "Explain the sending status" {
+				t.Fatalf("empty answer result=%+v", result)
 			}
 		})
 	}
@@ -273,5 +284,94 @@ func TestAgentPreservesCompletedToolsWhenFinalResponseFails(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestPausedTurnStillEmitsItsText(t *testing.T) {
+	const sentence = "I'll update the contact."
+	for _, kind := range []string{"openai", "openai-stream", "anthropic"} {
+		t.Run(kind, func(t *testing.T) {
+			executions, texts, deltas := 0, 0, 0
+			var got string
+			provider := agentFixtureProvider(kind, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeAgentFixture(w, kind, sentence, ToolCall{ID: "write-1", Name: "write", Args: json.RawMessage(`{}`)})
+			}))
+			result, err := provider.RunAgent(context.Background(), AgentRequest{
+				Messages: []AgentMessage{{Role: "user", Content: "Update"}},
+				Tools: []ToolDef{{Name: "write", Risk: RiskWrite, Handler: func(context.Context, json.RawMessage) (string, error) {
+					executions++
+					return `{}`, nil
+				}}},
+				OnEvent: func(ev AgentEvent) {
+					switch ev.Type {
+					case EventText:
+						texts++
+						got = ev.Text
+					case EventTextDelta:
+						deltas++
+					}
+				},
+				Approve: func(context.Context, ToolDef, ToolCall) error { return ErrApprovalRequired },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if texts != 1 || got != sentence || executions != 0 || result.StopReason != "approval_required" {
+				t.Fatalf("text=%q texts=%d executions=%d result=%+v", got, texts, executions, result)
+			}
+			for _, m := range result.Messages {
+				if len(m.ToolCalls) > 0 || m.Content == sentence {
+					t.Fatalf("paused turn leaked into the provider transcript: %+v", m)
+				}
+			}
+			if kind == "anthropic" && deltas != 0 {
+				t.Fatalf("anthropic emitted %d deltas", deltas)
+			}
+		})
+	}
+}
+
+func TestPausedBatchRunsNoTool(t *testing.T) {
+	for _, kind := range []string{"openai", "openai-stream", "anthropic"} {
+		t.Run(kind, func(t *testing.T) {
+			reads, writes := 0, 0
+			provider := agentFixtureProvider(kind, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeAgentFixture(w, kind, "",
+					ToolCall{ID: "read-1", Name: "read", Args: json.RawMessage(`{}`)},
+					ToolCall{ID: "write-1", Name: "write", Args: json.RawMessage(`{}`)},
+				)
+			}))
+			result, err := provider.RunAgent(context.Background(), AgentRequest{
+				Messages: []AgentMessage{{Role: "user", Content: "Update"}},
+				Tools: []ToolDef{
+					{Name: "read", Risk: RiskRead, Handler: func(context.Context, json.RawMessage) (string, error) {
+						reads++
+						return `{}`, nil
+					}},
+					{Name: "write", Risk: RiskWrite, Handler: func(context.Context, json.RawMessage) (string, error) {
+						writes++
+						return `{}`, nil
+					}},
+				},
+				OnEvent: func(AgentEvent) {},
+				Approve: func(_ context.Context, tool ToolDef, _ ToolCall) error {
+					if tool.Name == "write" {
+						return ErrApprovalRequired
+					}
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reads != 0 || writes != 0 || result.StopReason != "approval_required" || result.Pending == nil || result.Pending.Call.Name != "write" {
+				t.Fatalf("reads=%d writes=%d result=%+v", reads, writes, result)
+			}
+			for _, m := range result.Messages {
+				if len(m.ToolCalls) > 0 {
+					t.Fatalf("paused batch leaked a tool call: %+v", m)
+				}
+			}
+		})
 	}
 }

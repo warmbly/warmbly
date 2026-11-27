@@ -265,7 +265,7 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 		finalTurn := req.ReserveFinalResponse && iter == maxIter-1
 		if finalTurn {
 			iterationTools = nil
-			system += agentFinalResponseInstructions
+			system = req.System + agentFinalResponseInstructions
 		}
 		resp, err := p.complete(ctx, model, maxTokens, system, transcriptToAnthropic(messages), iterationTools, nil)
 		if err != nil {
@@ -306,6 +306,13 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 		}
 		if finalTurn {
 			return result, errors.New("anthropic: unexpected tool call in final response")
+		}
+
+		// Emit accompanying text before the gate, the same way OpenAI does.
+		if req.OnEvent != nil {
+			if commentary := strings.TrimSpace(text.String()); commentary != "" {
+				req.OnEvent(AgentEvent{Type: EventText, Text: commentary})
+			}
 		}
 
 		// Approval gate before executing any tool (see OpenAI provider).

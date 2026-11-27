@@ -2,6 +2,7 @@ package advisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -181,7 +182,21 @@ func (s *service) FixWithAgent(ctx context.Context, inv aitools.Invocation, id u
 		_, _ = s.credits.Charge(ctx, inv.OrgID, credits.AIUsage(model, res.InputTokens, res.OutputTokens), "advisor_agent_fix", idemKey)
 	}
 	if creditErr != nil {
-		return nil, errx.New(errx.PaymentRequired, "the workspace balance is too low to run this fix")
+		var refusal *credits.AIRefusal
+		switch {
+		case errors.As(creditErr, &refusal):
+			return nil, errx.NewWithIdentifier(errx.PaymentRequired, refusal.Code, refusal.Message)
+		case errors.Is(creditErr, credits.ErrInsufficientCredits):
+			return nil, errx.New(errx.PaymentRequired, "the workspace balance is too low to run this fix")
+		case errors.Is(creditErr, credits.ErrCapExceeded):
+			return nil, errx.New(errx.TooManyRequests, "AI usage limit reached, please try again later.")
+		default:
+			var xerr *errx.Error
+			if errors.As(creditErr, &xerr) {
+				return nil, xerr
+			}
+			return nil, errx.New(errx.Internal, "the agent could not complete this fix")
+		}
 	}
 	if err != nil {
 		log.Printf("advisor: agent fix %s for org %s: %v", f.DetectorKey, inv.OrgID, err)

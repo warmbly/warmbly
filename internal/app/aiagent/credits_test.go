@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -117,5 +118,42 @@ func TestRunMessageChargesReservedAnswerWithinBudget(t *testing.T) {
 				t.Fatalf("event=%+v persisted rows=%d", last, len(repo.rows))
 			}
 		})
+	}
+}
+
+func TestResumeChargesAFreshKey(t *testing.T) {
+	requests, writes := 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			openAIChoice(w, "", "update_contact_fields", "approved-call")
+			return
+		}
+		openAIChoice(w, "Done.", "", "")
+	}))
+	defer srv.Close()
+	provider, err := generation.NewProvider(generation.ProviderConfig{
+		OpenAIAPIKey: "fixture", OpenAIBaseURL: srv.URL, OpenAIModelPaid: "fixture-model",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, inv := newRunSession()
+	reg := aitools.NewRegistry()
+	reg.Register(countingTool("update_contact_fields", generation.RiskWrite, &writes, `{"updated":true}`))
+	ledger := &runCreditLedger{balance: models.Micro(1_000_000), allowed: 50}
+	svc := NewService(repo, reg, provider, ledger, runFeatureGate{}, nil, nil, nil, nil)
+	const messageID = "resume-message"
+	if xerr := svc.RunMessage(context.Background(), inv, repo.session.ID, messageID, "Update the contact", "", "", func(StreamEvent) {}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if writes != 0 || len(ledger.charges) != 1 || ledger.keys[0] != messageID {
+		t.Fatalf("writes=%d charges=%+v keys=%v", writes, ledger.charges, ledger.keys)
+	}
+	if xerr := svc.Resume(context.Background(), inv, repo.session.ID, "approved-call", "approve", func(StreamEvent) {}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if writes != 1 || len(ledger.charges) != 2 || !strings.HasPrefix(ledger.keys[1], "resume:") || ledger.keys[1] == messageID {
+		t.Fatalf("writes=%d keys=%v", writes, ledger.keys)
 	}
 }

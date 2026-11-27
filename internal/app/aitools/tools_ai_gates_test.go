@@ -70,7 +70,7 @@ func TestAlwaysAskTools(t *testing.T) {
 	for _, name := range []string{
 		"set_campaign_status", "set_automation_enabled", "set_mailbox_warmup", "set_mailbox_send_hold",
 		"set_lead_hold", "set_campaign_segments", "add_segment_to_campaign",
-		"invite_member", "update_member_role", "create_api_key", "update_api_key",
+		"invite_member", "update_member_role", "remove_member", "create_api_key", "update_api_key", "revoke_api_key",
 	} {
 		tool, ok := r.Get(name)
 		if !ok {

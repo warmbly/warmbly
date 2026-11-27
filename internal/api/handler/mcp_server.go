@@ -79,6 +79,7 @@ func (h *Handler) MCPEndpoint(c *gin.Context) {
 		inv.UserID = uid
 	}
 	bindOAuthMember(c, &inv)
+	bindCallerKey(c, &inv)
 	bindAgencyKey(c, &inv)
 	switch req.Method {
 	case "tools/list":

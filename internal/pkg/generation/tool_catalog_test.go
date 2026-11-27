@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -183,4 +184,55 @@ func (c *toolCatalog) definitionsOrNil() []ToolDef {
 		return nil
 	}
 	return c.definitions()
+}
+
+// TestToolCatalogCapsCoreAtEightySeven locks the core slice at 128-40-1.
+// The expected 87 is literal so the test does not recompute the code's own formula.
+func TestToolCatalogCapsCoreAtEightySeven(t *testing.T) {
+	tools := catalogTestTools(101)
+	tools[100].Deferred = true
+	schema := map[string]any{"type": "object", "required": []any{"keep"}}
+	tools[87].InputSchema = schema
+	c := newToolCatalog(tools, nil)
+	if c == nil {
+		t.Fatal("one deferred tool should open a catalog")
+	}
+	defs := c.definitions()
+	if len(defs) != 88 {
+		t.Fatalf("definitions = %d, want 88", len(defs))
+	}
+	for i := 0; i < 87; i++ {
+		want := fmt.Sprintf("tool_%04d", i)
+		if defs[i].Name != want {
+			t.Fatalf("defs[%d] = %s, want %s", i, defs[i].Name, want)
+		}
+	}
+	if defs[87].Name != c.search.Name {
+		t.Fatalf("last tool = %s, want %s", defs[87].Name, c.search.Name)
+	}
+	for _, d := range defs {
+		if d.Name == "tool_0087" || d.Name == "tool_0100" {
+			t.Fatalf("initial wire included %s", d.Name)
+		}
+	}
+	found := findCatalogTools(t, c, "tool_0087", 0)
+	if len(found.Tools) != 1 || found.Tools[0].Name != "tool_0087" {
+		t.Fatalf("search = %+v", found.Tools)
+	}
+	defs = c.definitions()
+	if len(defs) != 89 {
+		t.Fatalf("definitions after search = %d, want 89", len(defs))
+	}
+	for i := 0; i < 87; i++ {
+		want := fmt.Sprintf("tool_%04d", i)
+		if defs[i].Name != want {
+			t.Fatalf("core moved at %d: %s", i, defs[i].Name)
+		}
+	}
+	if defs[87].Name != "tool_0087" || !reflect.DeepEqual(defs[87].InputSchema, schema) {
+		t.Fatalf("loaded tool = %+v", defs[87])
+	}
+	if defs[88].Name != c.search.Name {
+		t.Fatalf("search tool = %s", defs[88].Name)
+	}
 }

@@ -537,6 +537,8 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		return ev
 	}
 
+	// heldText is the commentary since the last iteration. A paused turn is not in the provider transcript.
+	var heldText string
 	skillsBlock := ""
 	if s.skills != nil {
 		skillsBlock = s.skills.EnabledPreamble(ctx, inv.OrgID)
@@ -555,16 +557,19 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		OnEvent: func(ev generation.AgentEvent) {
 			switch ev.Type {
 			case generation.EventText:
+				heldText = ev.Text
 				emit(StreamEvent{Type: evText, Text: ev.Text})
 			case generation.EventTextDelta:
 				emit(StreamEvent{Type: evTextDelta, Text: ev.Text})
 			case generation.EventToolStart:
 				emit(StreamEvent{Type: evTool, Tool: ev.ToolName, ArgsSummary: summarizeArgs(ev.ToolArgs), Args: ev.ToolArgs})
 			case generation.EventToolResult:
+				heldText = ""
 				emit(toolResultEvent(ev.ToolName, ev.ToolResult))
 			}
 		},
 		PreIteration: func(ctx context.Context, iter int) error {
+			heldText = ""
 			// Free/local backend: no debit, no cap. Omit CreditsRemaining so the
 			// client shows the free-model notice instead of a misleading balance.
 			if !chargeCredits {
@@ -626,6 +631,12 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	// Receipts and the charge get a bounded window after request cancellation.
 	finalizeCtx, cancelFinalize := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancelFinalize()
+	// Append before the baseline check: a first-turn pause leaves Messages at that length.
+	if result != nil && result.StopReason == "approval_required" {
+		if text := strings.TrimSpace(heldText); text != "" {
+			result.Messages = append(result.Messages, generation.AgentMessage{Role: "assistant", Content: text})
+		}
+	}
 	// One charge for every iteration that reached the provider, including a
 	// run that stopped early or failed after earlier turns took actions.
 	if chargeCredits && result != nil && result.InputTokens+result.OutputTokens > 0 {
@@ -645,6 +656,7 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		// the server log so a failing provider is debuggable.
 		log.Printf("aiagent: run failed (org=%s session=%s provider=%s model=%s): %v", inv.OrgID, sess.ID, s.provider.Name(), model, rerr)
 		sess.Context.Pending = nil
+		// Leave ctx canceled so this cleanup cannot drop an approval a newer run stored.
 		_ = s.repo.ClearPendingTool(ctx, sess.OrgID, sess.ID)
 		emit(withBalance(StreamEvent{Type: evError, Code: "provider_error", Message: "Remie hit an error. Please try again."}))
 		return nil
@@ -926,6 +938,11 @@ func WithStrictApproval(ctx context.Context) context.Context {
 func strictApproval(ctx context.Context) bool {
 	v, _ := ctx.Value(strictApprovalKey{}).(bool)
 	return v
+}
+
+// StrictApproval reports whether WithStrictApproval marked this context.
+func StrictApproval(ctx context.Context) bool {
+	return strictApproval(ctx)
 }
 
 // PageSlack marks a session answered in Slack rather than the dashboard.

@@ -149,15 +149,8 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 	}
 	idemKey := fmt.Sprintf("seq_ai:%s:%s:%s", campaign.ID, contact.ID, sequenceID)
 	if !s.aiProvider.IsLocal() {
-		if cerr := s.aiCredits.Reserve(ctx, *campaign.OrganizationID, credits.EstimateAINode); cerr != nil {
-			switch {
-			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				return errors.New("the workspace balance is too low for this step")
-			case errors.Is(cerr, credits.ErrCapExceeded):
-				return errors.New("AI usage cap reached; try again later")
-			default:
-				return cerr
-			}
+		if err := campaignCreditErr(s.aiCredits.Reserve(ctx, *campaign.OrganizationID, credits.EstimateAINode), "the workspace balance is too low for this step"); err != nil {
+			return err
 		}
 	}
 
@@ -412,12 +405,32 @@ func aiTruncate(s string, n int) string {
 
 // Campaign "ai_step" (agent): a bounded tool-use loop where the model, following
 // the step's instruction, may call the guarded reversible actions the user
-// enabled. Mirrors the automation agent — reuses generation.RunAgent and the
-// existing campaign action executor, and bills one credit per loop iteration.
+// enabled. The balance is checked before each iteration. The run's tokens are
+// charged once, after the loop, including a loop that stopped early.
 const (
 	seqAgentMaxIterations = 4
 	seqAgentTimeout       = 45 * time.Second
 )
+
+// campaignCreditErr is the sentence a campaign log shows for a refused Reserve.
+// An allowance or overage refusal keeps its own sentence. A plain short balance
+// keeps low. A usage cap is not a short balance.
+func campaignCreditErr(err error, low string) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, credits.ErrCapExceeded) {
+		return errors.New("AI usage cap reached; try again later")
+	}
+	if errors.Is(err, credits.ErrInsufficientCredits) {
+		var refusal *credits.AIRefusal
+		if errors.As(err, &refusal) {
+			return refusal
+		}
+		return errors.New(low)
+	}
+	return err
+}
 
 // campaignTagTool builds an argument-taking tag/label tool. The model picks a
 // name; a configured pool restricts the choice (offered as an enum), while an
@@ -685,14 +698,7 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 			return nil
 		}
 		if cerr := s.aiCredits.Reserve(ctx, *campaign.OrganizationID, credits.EstimateAgentIteration); cerr != nil {
-			switch {
-			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				creditErr = errors.New("the workspace balance is too low for the agent step")
-			case errors.Is(cerr, credits.ErrCapExceeded):
-				creditErr = errors.New("AI usage cap reached; try again later")
-			default:
-				creditErr = cerr
-			}
+			creditErr = campaignCreditErr(cerr, "the workspace balance is too low for the agent step")
 			return creditErr
 		}
 		return nil
