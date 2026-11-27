@@ -3,6 +3,7 @@ package sequence
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -17,10 +18,7 @@ type SequenceService interface {
 	Update(ctx context.Context, orgID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error)
 	UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error
 	Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error
-	// ReorderSteps repositions the campaign's steps to the given order and
-	// reconnects the catch-all chain so it follows the new order, preserving
-	// every conditional branch. It rejects an order that is not a permutation of
-	// the campaign's steps, or that would create a routing cycle.
+	// ReorderSteps puts a straight-through sequence that has not sent yet in a new order.
 	ReorderSteps(ctx context.Context, orgID, campaignID string, order []string) (*models.Sequence, *errx.Error)
 }
 
@@ -48,164 +46,96 @@ func (s *sequenceService) WireAttachments(repo repository.AttachmentRepository, 
 	s.attachmentRepo, s.storage = repo, store
 }
 
-// ReorderSteps repositions the campaign's steps to the given order and
-// reconnects the catch-all chain so it follows the new order, preserving every
-// conditional branch. Routing is purely branch-based (position only picks the
-// entry step and orders the canvas), so a linear chain only reorders when its
-// catch-all links follow the new order; a branching chain keeps its conditional
-// branches and only its fall-through catch-all is re-pointed. The order must be
-// a permutation of the campaign's steps, and must not create a routing cycle.
+// ReorderSteps puts a straight-through sequence in a new order. Each position
+// keeps its wait, so a move changes which step goes out at each point, not when.
+// The repository refuses once the campaign has sent a step.
 func (s *sequenceService) ReorderSteps(ctx context.Context, orgID, campaignID string, order []string) (*models.Sequence, *errx.Error) {
-	// plan is handed the steps read under the campaign lock, so the order is
-	// validated against the state the write will replace.
 	plan := func(steps []models.Sequence) ([]repository.SequenceReorder, *errx.Error) {
 		return buildReorder(steps, order)
 	}
 	return s.sequenceRepository.Reorder(ctx, orgID, campaignID, plan)
 }
 
-// buildReorder validates that order is a permutation of steps, reconnects each
-// step's catch-all to the next step in the new order while preserving its
-// conditional branches, and refuses an order that would create a routing cycle.
+// buildReorder turns a permutation of steps (given in position order) into the rows to write.
 func buildReorder(steps []models.Sequence, order []string) ([]repository.SequenceReorder, *errx.Error) {
 	if len(steps) == 0 {
 		return nil, errx.ErrNotFound
 	}
-
 	byID := make(map[string]models.Sequence, len(steps))
 	for _, st := range steps {
 		byID[st.ID.String()] = st
 	}
-
-	seen := make(map[string]bool, len(order))
-	updates := make([]repository.SequenceReorder, 0, len(order))
-	for i, idStr := range order {
-		if seen[idStr] {
-			return nil, errx.ErrSequenceOrder
-		}
-		st, ok := byID[idStr]
-		if !ok {
-			return nil, errx.ErrNotFound
-		}
-		seen[idStr] = true
-
-		var nextID *uuid.UUID
-		if i+1 < len(order) {
-			next := byID[order[i+1]]
-			nextID = &next.ID
-		}
-		conditions, cerr := reconnectCatchAll(st.Conditions, nextID)
-		if cerr != nil {
-			return nil, cerr
-		}
-		raw, merr := json.Marshal(conditions)
-		if merr != nil {
-			return nil, errx.InternalError()
-		}
-		updates = append(updates, repository.SequenceReorder{ID: st.ID, Position: i + 1, Conditions: raw})
-	}
-	if len(seen) != len(steps) {
-		// The order omitted a step that exists in the campaign.
+	if len(order) != len(steps) {
 		return nil, errx.ErrSequenceOrder
 	}
+	ordered := make([]models.Sequence, 0, len(order))
+	seen := make(map[string]bool, len(order))
+	for _, id := range order {
+		st, ok := byID[id]
+		if !ok || seen[id] {
+			return nil, errx.ErrSequenceOrder
+		}
+		seen[id] = true
+		ordered = append(ordered, st)
+	}
 
-	if xerr := reorderCreatesCycle(steps, updates); xerr != nil {
-		return nil, xerr
+	branchIDs, ok := linearChain(steps)
+	if !ok {
+		return nil, errx.ErrSequenceOrderBranched
+	}
+	for _, st := range ordered {
+		if st.Kind == "" || st.Kind == "email" {
+			if strings.TrimSpace(st.Subject) == "" {
+				return nil, errx.ErrSequenceOrderSubject
+			}
+			break
+		}
+	}
+
+	updates := make([]repository.SequenceReorder, len(ordered))
+	for i, st := range ordered {
+		bc := models.BranchConditions{}
+		if i+1 < len(ordered) {
+			next := ordered[i+1].ID
+			bc.Branches = []models.Branch{{BranchID: branchIDs[st.ID], TargetSequenceID: &next}}
+		}
+		raw, err := json.Marshal(bc)
+		if err != nil {
+			return nil, errx.InternalError()
+		}
+		updates[i] = repository.SequenceReorder{ID: st.ID, Position: i + 1, WaitAfter: steps[i].WaitAfter, Conditions: raw}
 	}
 	return updates, nil
 }
 
-// reconnectCatchAll returns the step's branches with every conditional branch
-// (one that has conditions) preserved and a single unconditional catch-all that
-// points to nextID — or no catch-all when nextID is nil (the last step). This is
-// what lets a reorder re-establish the linear "go there next" chain without
-// disturbing the user's engagement branches.
-func reconnectCatchAll(raw json.RawMessage, nextID *uuid.UUID) (*models.BranchConditions, *errx.Error) {
-	bc := &models.BranchConditions{}
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, bc); err != nil {
-			return nil, errx.ErrSequenceBranch
-		}
-	}
-
-	var catchAllBranchID string
-	conditional := make([]models.Branch, 0, len(bc.Branches))
-	for _, br := range bc.Branches {
-		if len(br.Conditions) > 0 {
-			conditional = append(conditional, br)
-		} else if catchAllBranchID == "" {
-			// Reuse the existing catch-all's stable client-supplied id so the
-			// editor's diffing does not see a brand-new branch.
-			catchAllBranchID = br.BranchID
-		}
-	}
-	if nextID != nil {
-		conditional = append(conditional, models.Branch{
-			BranchID:         catchAllBranchID,
-			TargetSequenceID: nextID,
-			Conditions:       nil,
-		})
-	}
-	bc.Branches = conditional
-	return bc, nil
-}
-
-// reorderCreatesCycle reports whether writing the reordered positions and their
-// reconnected catch-all chain would make the branch graph contain a cycle. The
-// catch-all chain strictly increases in position, so a cycle can only form from
-// a preserved conditional branch pointing "backwards"; such a reorder is
-// refused rather than left to loop a contact forever at schedule time.
-func reorderCreatesCycle(steps []models.Sequence, updates []repository.SequenceReorder) *errx.Error {
-	positionOf := make(map[string]int, len(updates))
-	targets := make(map[string][]uuid.UUID, len(updates))
-	for _, u := range updates {
-		positionOf[u.ID.String()] = u.Position
-		var cond models.BranchConditions
-		if len(u.Conditions) > 0 {
-			if err := json.Unmarshal(u.Conditions, &cond); err != nil {
-				return errx.InternalError()
+// linearChain reports whether steps, in position order, run straight through:
+// every step but the last has exactly one unconditional connection, to the next
+// step, and the last has none. It returns each step's connection id so a rewrite keeps it.
+func linearChain(steps []models.Sequence) (map[uuid.UUID]string, bool) {
+	ids := make(map[uuid.UUID]string, len(steps))
+	for i, st := range steps {
+		var bc models.BranchConditions
+		if len(st.Conditions) > 0 {
+			if err := json.Unmarshal(st.Conditions, &bc); err != nil {
+				return nil, false
 			}
 		}
-		for _, br := range cond.Branches {
-			if br.TargetSequenceID != nil {
-				targets[u.ID.String()] = append(targets[u.ID.String()], *br.TargetSequenceID)
+		if i == len(steps)-1 {
+			for _, br := range bc.Branches {
+				if len(br.Conditions) > 0 || br.TargetSequenceID != nil {
+					return nil, false
+				}
 			}
-		}
-	}
-
-	const (
-		notVisited = 0
-		inProgress = 1
-		done       = 2
-	)
-	state := make(map[string]int, len(steps))
-
-	var visit func(id string) bool
-	visit = func(id string) bool {
-		state[id] = inProgress
-		for _, next := range targets[id] {
-			nextID := next.String()
-			if state[nextID] == inProgress {
-				return true
-			}
-			if state[nextID] == done {
-				continue
-			}
-			if visit(nextID) {
-				return true
-			}
-		}
-		state[id] = done
-		return false
-	}
-
-	for _, st := range steps {
-		if state[st.ID.String()] == done {
 			continue
 		}
-		if visit(st.ID.String()) {
-			return errx.ErrSequenceCycle
+		if len(bc.Branches) != 1 {
+			return nil, false
 		}
+		br := bc.Branches[0]
+		if len(br.Conditions) > 0 || br.TargetSequenceID == nil || *br.TargetSequenceID != steps[i+1].ID {
+			return nil, false
+		}
+		ids[st.ID] = br.BranchID
 	}
-	return nil
+	return ids, true
 }

@@ -251,27 +251,29 @@ export function emailBodyEmpty(html: string): boolean {
     return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
 }
 
-// Rewrite a step's branches so its single catch-all points at nextId, keeping
-// every conditional branch untouched. Mirrors the server's reconnectCatchAll so
-// an optimistic reorder draws the chain it will actually be saved as. A null
-// nextId (the last step) drops the catch-all, ending the sequence there.
-export function reconnectCatchAll(branches: SequenceBranch[], nextId: string | null): SequenceBranch[] {
-    const conds = branches.filter(isCond);
-    if (!nextId) return normalize(conds);
-    const existing = branches.find((b) => !isCond(b));
-    return normalize([...conds, { branch_id: existing?.branch_id ?? newBranchId(), target_step_id: nextId, conditions: [] }]);
+// Steps in position order run straight through: one unconditional way on to the next step, none out of the last.
+export function isLinearChain(steps: Sequence[]): boolean {
+    return steps.every((s, i) => {
+        const branches = s.conditions?.branches ?? [];
+        if (i === steps.length - 1) return branches.every((b) => !isCond(b) && !b.target_step_id);
+        return branches.length === 1 && !isCond(branches[0]) && branches[0].target_step_id === steps[i + 1].id;
+    });
 }
 
-// Apply a new order to the steps and rewire each catch-all to the step after it,
-// which is what the server does on a reorder. Conditional branches are kept, so
-// the canvas shows the new chain before the request lands rather than the old one.
-export function reorderSteps(steps: Sequence[], order: string[]): Sequence[] {
+// Mirrors the server's reorder of a straight-through sequence: each position keeps its wait, each step leads to the next.
+export function reorderLinear(steps: Sequence[], order: string[]): Sequence[] {
     const byId = new Map(steps.map((s) => [s.id, s]));
     const ordered = order.map((id) => byId.get(id)).filter((s): s is Sequence => !!s);
-    const rest = steps.filter((s) => !order.includes(s.id));
-    const all = [...ordered, ...rest];
-    return all.map((s, i) => ({
-        ...s,
-        conditions: { branches: reconnectCatchAll(s.conditions?.branches ?? [], all[i + 1]?.id ?? null) },
-    }));
+    return ordered.map((s, i) => {
+        const next = ordered[i + 1];
+        const own = s.conditions?.branches?.[0]?.branch_id;
+        const branches: SequenceBranch[] = next ? [{ branch_id: own ?? newBranchId(), target_step_id: next.id, conditions: [] }] : [];
+        return { ...s, wait_after: steps[i]?.wait_after ?? s.wait_after, conditions: { branches } };
+    });
+}
+
+// The first email of an order must carry a subject of its own; a reply in the thread has none to send.
+export function firstEmailHasSubject(steps: Sequence[]): boolean {
+    const first = steps.find((s) => !s.kind || s.kind === "email");
+    return !first || first.subject.trim() !== "";
 }

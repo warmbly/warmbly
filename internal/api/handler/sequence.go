@@ -143,13 +143,8 @@ func (h *Handler) PatchSequenceLayout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// ReorderSteps rearranges the order of a campaign's steps. It repositions the
-// steps and reconnects the catch-all chain so it follows the new order, while
-// preserving every conditional branch. Unlike PATCH step-layout (which only
-// moves canvas x/y and is unaudited), this changes the contact's flow — the
-// entry step and, for a linear chain, which email comes next — so it is audited.
-// The body is the full ordered list of step ids (atomic, idempotent, last-write-
-// wins), which is what a drag-and-drop or up/down reorder emits.
+// ReorderSteps puts a campaign's steps in the order given. The body names every
+// step once, so a retry writes the same result. It changes what contacts receive, so it is audited.
 func (h *Handler) ReorderSteps(c *gin.Context) {
 	orgID := middleware.GetOrganizationID(c)
 	if orgID == nil {
@@ -160,7 +155,7 @@ func (h *Handler) ReorderSteps(c *gin.Context) {
 	id := c.Param("id")
 
 	var body struct {
-		StepIDs []string `json:"stepIds"`
+		StepIDs []string `json:"step_ids"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		errx.Handle(c, errx.InvalidBody(err))

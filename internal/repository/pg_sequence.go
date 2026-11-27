@@ -30,21 +30,18 @@ type SequenceRepository interface {
 	// statement, without bumping updated_at — so a drag never reads as a content
 	// change. Cosmetic and unaudited.
 	UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error
-	// Reorder repositions the campaign's steps to the given order and rewrites
-	// each step's conditions (position + branch tree) in one transaction. plan
-	// runs with the campaign's steps read under the campaign lock, so a step
-	// created or a branch edited while the reorder is in flight cannot be
-	// validated against a stale snapshot. Returns the step now at position 1.
+	// Reorder writes the position, wait and connections plan computes from the
+	// steps read under the campaign lock, refusing once the campaign has sent a
+	// step. Returns the step now at position 1.
 	Reorder(ctx context.Context, orgID, campaignID string, plan ReorderPlan) (*models.Sequence, *errx.Error)
 	Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error
 }
 
-// SequenceReorder is one step's new position and conditions for a reorder. The
-// service computes Conditions (reconnecting the catch-all chain, preserving
-// conditional branches); the repository writes position + conditions atomically.
+// SequenceReorder is one step's new position, wait and connections for a reorder.
 type SequenceReorder struct {
 	ID         uuid.UUID
 	Position   int
+	WaitAfter  int
 	Conditions json.RawMessage
 }
 
@@ -397,13 +394,7 @@ func (r *sequenceRepository) UpdateLayout(ctx context.Context, orgID, campaignID
 	return nil
 }
 
-// Reorder repositions the campaign's steps and rewrites their conditions in one
-// transaction. It does not touch the branch tree's meaning beyond position: plan
-// has already reconnected the catch-all chain and preserved conditional
-// branches, so here it only writes position + conditions atomically. The
-// campaign row is locked FOR UPDATE before the steps are read, so two concurrent
-// reorders cannot take the same positions and a step created or branch edited
-// mid-flight is never dropped from the validated order.
+// Reorder runs plan against the steps read under the campaign row lock and writes its result in one transaction.
 func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID string, plan ReorderPlan) (*models.Sequence, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
@@ -424,6 +415,17 @@ func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID stri
 		}
 		db.CaptureError(err, lockQuery, []any{campaignID, orgID}, "queryrow")
 		return nil, errx.InternalError()
+	}
+
+	// A contact mid-sequence would skip or repeat steps under a new order.
+	var started bool
+	startedQuery := `SELECT EXISTS (SELECT 1 FROM campaign_contact_progress WHERE campaign_id = $1 AND (sent_at IS NOT NULL OR dispatched_at IS NOT NULL))`
+	if err := tx.QueryRow(ctx, startedQuery, campaignID).Scan(&started); err != nil {
+		db.CaptureError(err, startedQuery, []any{campaignID}, "queryrow")
+		return nil, errx.InternalError()
+	}
+	if started {
+		return nil, errx.ErrSequenceOrderStarted
 	}
 
 	// Read the steps under the campaign lock. Locking the sequence rows too holds
@@ -473,7 +475,7 @@ func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID stri
 	// statement rather than passing it as an argument.
 	updateQuery := fmt.Sprintf(`
 		UPDATE sequences s
-		SET position = $3, conditions = $4
+		SET position = $3, conditions = $4, wait_after = $6
 		FROM campaigns c
 		WHERE c.organization_id = $1
 		 AND c.id = $2
@@ -483,7 +485,7 @@ func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID stri
 
 	var entry *models.Sequence
 	for _, u := range updates {
-		row := tx.QueryRow(ctx, updateQuery, orgID, campaignID, u.Position, u.Conditions, u.ID)
+		row := tx.QueryRow(ctx, updateQuery, orgID, campaignID, u.Position, u.Conditions, u.ID, u.WaitAfter)
 		var seq models.Sequence
 		if err := GetSequence(row, &seq); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

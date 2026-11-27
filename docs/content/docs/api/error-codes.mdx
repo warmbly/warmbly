@@ -174,12 +174,14 @@ Resource IDs on email, campaign and contact routes must be UUIDs. Email `tags` a
 
 #### Campaign step refusals
 
-The [campaign step routes](/api/endpoints/#campaigns) answer these codes when a reorder cannot be applied. Both are `400`, and no step is moved when either comes back.
+`PATCH /v1/campaigns/:id/steps/reorder` answers these codes when it cannot apply an order. No step moves when one comes back.
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
-| `invalid_step_order` | 400 | `PATCH /v1/campaigns/:id/steps/reorder` was sent a `stepIds` list that is not a complete, duplicate-free list of that campaign's steps: one is repeated, or one of the campaign's steps is missing from it. Send every step exactly once, in the order you want |
-| `step_order_cycle` | 400 | The requested order would route a step back to one it already reaches: a step's preserved conditional branch points at a step that now leads back to it. Reorder so no step routes to one that comes before it |
+| `invalid_step_order` | 400 | `step_ids` is not a complete list of the campaign's steps: a step is missing or repeated, or an id is not one of them. Send every step exactly once, in the order you want |
+| `step_order_branched` | 409 | The sequence does not run straight through: a step has a condition, a path that skips ahead, or no connection to the step after it. Arrange it by its paths instead |
+| `step_order_started` | 409 | The campaign has already sent a step, so a new order would change what contacts partway through receive next. Duplicate the campaign and reorder the copy |
+| `step_order_no_subject` | 400 | The order would put an email that replies in the thread, with no subject of its own, first. Give it a subject first |
 
 #### Image upload refusals
 

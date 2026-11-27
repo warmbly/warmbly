@@ -72,7 +72,9 @@ import {
     normalize,
     planRemoval,
     reachableSteps,
-    reorderSteps,
+    firstEmailHasSubject,
+    isLinearChain,
+    reorderLinear,
     routePort,
 } from "./campaignGraph";
 import { SOCIAL_CONDITIONS, SOCIAL_CONDITION_PREFIX, SOCIAL_FLOW_KEY, entryView, pickerItems, stepIssue, stepView } from "./campaignSteps";
@@ -225,16 +227,6 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         (id: string, patch: Partial<Sequence>) => qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => old?.map((s) => (s.id === id ? { ...s, ...patch } : s))),
         [qc, campaignId],
     );
-    // Reorder the cached steps into the given order, rewiring each step's
-    // catch-all to the next step the way the server does. Without that the
-    // canvas keeps drawing the old chain (and can warn about detached steps)
-    // until the refetch lands. The server is still the source of truth.
-    const reorderCache = React.useCallback(
-        (stepIds: string[]) => {
-            qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => (old ? reorderSteps(old, stepIds) : old));
-        },
-        [campaignId, qc],
-    );
 
     const saveBranches = React.useCallback(
         async (id: string, branches: SequenceBranch[]) => {
@@ -254,42 +246,50 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
         [campaignId, patchCache, invalidate, qc],
     );
 
-    // Move a step up or down one position in the sequence. The whole new order
-    // is committed at once so the server repositions every step and reconnects
-    // the linear chain to follow it; conditional branches are left untouched.
-    // A second move is refused while one is in flight: two concurrent reorders
-    // can land out of order and the earlier one silently wins.
+    // Move up and Move down only apply to a sequence that runs straight through; anything else is arranged by its paths.
+    const linear = React.useMemo(() => isLinearChain(steps), [steps]);
     const reorderPending = React.useRef(false);
     const [reorderBusy, setReorderBusy] = React.useState(false);
     const reorder = React.useCallback(
         async (fromIndex: number, direction: -1 | 1) => {
-            if (reorderPending.current) return;
             const toIndex = fromIndex + direction;
-            if (toIndex < 0 || toIndex >= steps.length) return;
-            // Set synchronously, before the first await, so a second click cannot
-            // slip past the guard while the first request is still starting.
-            reorderPending.current = true;
-            setReorderBusy(true);
-            const original = steps.map((s) => s.id);
+            if (reorderPending.current || toIndex < 0 || toIndex >= steps.length) return;
             const next = steps.slice();
             [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
+            if (!firstEmailHasSubject(next)) {
+                toast.error("The first email needs a subject of its own. Give that step a subject before moving it to the front.");
+                return;
+            }
+            // Set before the first await so a second click cannot start a second move.
+            reorderPending.current = true;
+            setReorderBusy(true);
             const stepIds = next.map((s) => s.id);
-            // A refetch in flight would land on top of this optimistic reorder.
             await qc.cancelQueries({ queryKey: SEQ_KEY(campaignId) });
-            reorderCache(stepIds);
+            const snapshot = qc.getQueryData<Sequence[]>(SEQ_KEY(campaignId));
+            qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => (old ? reorderLinear(old, stepIds) : old));
             try {
                 await reorderMutation.mutateAsync(stepIds);
             } catch (err) {
+                qc.setQueryData(SEQ_KEY(campaignId), snapshot);
                 toast.error(buildError(err as AppError));
-                reorderCache(original);
-                throw err;
             } finally {
                 reorderPending.current = false;
                 setReorderBusy(false);
                 void invalidate();
             }
         },
-        [campaignId, steps, reorderMutation, reorderCache, qc, invalidate],
+        [campaignId, steps, reorderMutation, qc, invalidate],
+    );
+    // A move can rewrite the open path, so unsaved edits there are confirmed away first, as select does.
+    const requestReorder = React.useCallback(
+        (fromIndex: number, direction: -1 | 1) => {
+            if (!dirty.isDirty()) return void reorder(fromIndex, direction);
+            confirm.show("Discard your unsaved changes to this step?", async () => {
+                dirty.clear();
+                await reorder(fromIndex, direction);
+            });
+        },
+        [confirm, dirty, reorder],
     );
 
     const saveWait = React.useCallback(
@@ -530,15 +530,13 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             </StepBadge>
         ) : null;
         const menu: StepMenuItem[] = [];
-        if (canEdit) {
-            // Reorder within the sequence's position order. Moving a step swaps
-            // it with its neighbour; the server reconnects the linear chain.
+        if (canEdit && linear) {
             const index = indexOf.get(id) ?? 0;
             if (index > 0) {
                 menu.push({
                     label: "Move up",
                     icon: <ArrowUpIcon className="size-3.5" />,
-                    onSelect: () => void reorder(index, -1),
+                    onSelect: () => requestReorder(index, -1),
                     disabled: reorderBusy,
                 });
             }
@@ -546,7 +544,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 menu.push({
                     label: "Move down",
                     icon: <ArrowDownIcon className="size-3.5" />,
-                    onSelect: () => void reorder(index, 1),
+                    onSelect: () => requestReorder(index, 1),
                     disabled: reorderBusy,
                 });
             }

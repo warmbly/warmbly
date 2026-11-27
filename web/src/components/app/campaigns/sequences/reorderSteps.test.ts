@@ -1,81 +1,37 @@
-// A reorder must rewire each step's catch-all to the step that follows it, the
-// way the server does on save. Reordering the array alone leaves the canvas
-// drawing the old chain (and can warn that steps are detached) until a refetch.
-
 import { describe, expect, it } from "vitest";
 import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
 import type { SequenceBranch } from "@/lib/api/models/app/campaigns/sequences/Branching";
-import { catchAll, isCond, reorderSteps } from "./campaignGraph";
+import { firstEmailHasSubject, isLinearChain, reorderLinear } from "./campaignGraph";
 
-const br = (id: string, target: string | null, conditions: SequenceBranch["conditions"] = []): SequenceBranch => ({ branch_id: id, target_step_id: target, conditions });
-const chain = (target: string | null): SequenceBranch[] => [br("else", target)];
-const opened = [{ field: "opened" as const, operator: "within_days" as const, value: 3 }];
+const to = (id: string, target: string | null, conditions: SequenceBranch["conditions"] = []): SequenceBranch => ({ branch_id: id, target_step_id: target, conditions });
+const step = (id: string, subject: string, wait: number, branches: SequenceBranch[] = []) =>
+    ({ id, name: id, subject, wait_after: wait, kind: "email", thread_reply: subject === "", conditions: { branches } }) as unknown as Sequence;
 
-function step(id: string, branches: SequenceBranch[] = []): Sequence {
-    return {
-        id,
-        name: id,
-        subject: "",
-        body_plain: "",
-        body_html: "",
-        body_sync: false,
-        body_code: false,
-        wait_after: 0,
-        thread_reply: true,
-        x: 0,
-        y: 0,
-        kind: "email",
-        conditions: { branches },
-        updated_at: new Date(),
-        created_at: new Date(),
-    } as Sequence;
-}
-
-const order = (steps: Sequence[]) => steps.map((s) => s.id);
-const targetOf = (s: Sequence) => catchAll(s)?.target_step_id ?? null;
-
-describe("reorderSteps", () => {
-    it("rewires the catch-all chain to follow the new order", () => {
-        const steps = [step("a", chain("b")), step("b", chain("c")), step("c", chain(null))];
-
-        const next = reorderSteps(steps, ["c", "a", "b"]);
-
-        expect(order(next)).toEqual(["c", "a", "b"]);
-        expect(targetOf(next[0])).toBe("a"); // c -> a
-        expect(targetOf(next[1])).toBe("b"); // a -> b
-        expect(targetOf(next[2])).toBeNull(); // b ends the sequence
+describe("reorderLinear", () => {
+    it("keeps each position's wait and connects the steps in the new order", () => {
+        const steps = [step("a", "Intro", 0, [to("ab", "b")]), step("b", "Bump", 3, [to("bc", "c")]), step("c", "", 4)];
+        const out = reorderLinear(steps, ["b", "a", "c"]);
+        expect(out.map((s) => [s.id, s.wait_after, s.conditions?.branches?.map((b) => b.target_step_id)])).toEqual([
+            ["b", 0, ["a"]],
+            ["a", 3, ["c"]],
+            ["c", 4, []],
+        ]);
+        expect(isLinearChain(out)).toBe(true);
     });
+});
 
-    it("keeps conditional branches pointed at their original target", () => {
-        // A: opened -> B (conditional), otherwise -> C (catch-all).
-        const steps = [step("a", [br("opened", "b", opened), br("else", "c")]), step("b", chain(null)), step("c", chain(null))];
-
-        const next = reorderSteps(steps, ["c", "a", "b"]);
-        const a = next.find((s) => s.id === "a")!;
-
-        const conditional = (a.conditions?.branches ?? []).filter(isCond);
-        expect(conditional).toHaveLength(1);
-        expect(conditional[0].target_step_id).toBe("b"); // unchanged
-        expect(targetOf(a)).toBe("b"); // rewritten to the step after A
+describe("isLinearChain", () => {
+    it("rejects a condition, a detached step and a jump", () => {
+        const opened = [{ field: "opened" as const, operator: "ever" as const }] as SequenceBranch["conditions"];
+        expect(isLinearChain([step("a", "x", 0, [to("1", "b", opened), to("2", "b")]), step("b", "y", 3)])).toBe(false);
+        expect(isLinearChain([step("a", "x", 0), step("b", "y", 3)])).toBe(false);
+        expect(isLinearChain([step("a", "x", 0, [to("1", "c")]), step("b", "y", 3, [to("2", "c")]), step("c", "z", 4)])).toBe(false);
     });
+});
 
-    it("adds a catch-all to a step that had none when it is no longer last", () => {
-        const steps = [step("a", chain("b")), step("b")];
-
-        const next = reorderSteps(steps, ["b", "a"]);
-
-        expect(targetOf(next[0])).toBe("a");
-        expect(targetOf(next[1])).toBeNull();
-    });
-
-    it("leaves steps omitted from the order at the end with a rewired chain", () => {
-        const steps = [step("a", chain("b")), step("b", chain("c")), step("c", chain(null))];
-
-        const next = reorderSteps(steps, ["b"]);
-
-        expect(order(next)).toEqual(["b", "a", "c"]);
-        expect(targetOf(next[0])).toBe("a");
-        expect(targetOf(next[1])).toBe("c");
-        expect(targetOf(next[2])).toBeNull();
+describe("firstEmailHasSubject", () => {
+    it("needs a subject on the first email", () => {
+        expect(firstEmailHasSubject([step("b", "", 3), step("a", "Intro", 0)])).toBe(false);
+        expect(firstEmailHasSubject([step("a", "Intro", 0), step("b", "", 3)])).toBe(true);
     });
 });
