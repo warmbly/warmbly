@@ -129,3 +129,35 @@ func TestScavioZoomFitsTheArea(t *testing.T) {
 		t.Errorf("zoom state=%d city=%d block=%d", state, city, block)
 	}
 }
+
+func TestDefaultProviderPicksScavioWhenConnected(t *testing.T) {
+	avail := func(ids ...models.LeadProvider) []ProviderInfo {
+		var ps []ProviderInfo
+		for _, id := range models.LeadProviders {
+			p := ProviderInfo{ID: id, Available: id == models.LeadProviderOSM}
+			for _, a := range ids {
+				if a == id {
+					p.Available = true
+				}
+			}
+			ps = append(ps, p)
+		}
+		return ps
+	}
+	cases := []struct {
+		name string
+		ids  []models.LeadProvider
+		want models.LeadProvider
+	}{
+		{"no key", nil, models.LeadProviderOSM},
+		{"scavio only", []models.LeadProvider{models.LeadProviderScavio}, models.LeadProviderScavio},
+		{"scavio and outscraper", []models.LeadProvider{models.LeadProviderScavio, models.LeadProviderOutscraper}, models.LeadProviderScavio},
+		{"scavio and foursquare", []models.LeadProvider{models.LeadProviderScavio, models.LeadProviderFoursquare}, models.LeadProviderScavio},
+		{"google places and scavio", []models.LeadProvider{models.LeadProviderGooglePlaces, models.LeadProviderScavio}, models.LeadProviderGooglePlaces},
+	}
+	for _, c := range cases {
+		if got := defaultProvider(avail(c.ids...)); got != c.want {
+			t.Errorf("%s: default = %s, want %s", c.name, got, c.want)
+		}
+	}
+}

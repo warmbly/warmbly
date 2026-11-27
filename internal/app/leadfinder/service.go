@@ -324,9 +324,9 @@ func (s *Service) FinderConfig(ctx context.Context, orgID uuid.UUID) *FinderConf
 	return out
 }
 
-// defaultProvider is the richest provider available, OpenStreetMap at worst.
+// defaultProvider is the first keyed provider available in this order, OpenStreetMap at worst.
 func defaultProvider(ps []ProviderInfo) models.LeadProvider {
-	for _, id := range []models.LeadProvider{models.LeadProviderGooglePlaces, models.LeadProviderOutscraper, models.LeadProviderFoursquare} {
+	for _, id := range []models.LeadProvider{models.LeadProviderGooglePlaces, models.LeadProviderScavio, models.LeadProviderOutscraper, models.LeadProviderFoursquare} {
 		for _, p := range ps {
 			if p.ID == id && p.Available {
 				return id
