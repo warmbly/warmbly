@@ -250,3 +250,30 @@ export function emailBodyEmpty(html: string): boolean {
     if (/<img\b/i.test(html)) return false;
     return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
 }
+
+// Steps in position order run straight through: one unconditional way on to the next step, none out of the last.
+export function isLinearChain(steps: Sequence[]): boolean {
+    return steps.every((s, i) => {
+        const branches = s.conditions?.branches ?? [];
+        if (i === steps.length - 1) return branches.every((b) => !isCond(b) && !b.target_step_id);
+        return branches.length === 1 && !isCond(branches[0]) && branches[0].target_step_id === steps[i + 1].id;
+    });
+}
+
+// Mirrors the server's reorder of a straight-through sequence: each position keeps its wait, each step leads to the next.
+export function reorderLinear(steps: Sequence[], order: string[]): Sequence[] {
+    const byId = new Map(steps.map((s) => [s.id, s]));
+    const ordered = order.map((id) => byId.get(id)).filter((s): s is Sequence => !!s);
+    return ordered.map((s, i) => {
+        const next = ordered[i + 1];
+        const own = s.conditions?.branches?.[0]?.branch_id;
+        const branches: SequenceBranch[] = next ? [{ branch_id: own ?? newBranchId(), target_step_id: next.id, conditions: [] }] : [];
+        return { ...s, wait_after: steps[i]?.wait_after ?? s.wait_after, conditions: { branches } };
+    });
+}
+
+// The first email of an order must carry a subject of its own; a reply in the thread has none to send.
+export function firstEmailHasSubject(steps: Sequence[]): boolean {
+    const first = steps.find((s) => !s.kind || s.kind === "email");
+    return !first || first.subject.trim() !== "";
+}

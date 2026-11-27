@@ -172,6 +172,17 @@ Resource IDs on email, campaign and contact routes must be UUIDs. Email `tags` a
 | `already_sent` | `PUT /unibox/ai-drafts/by-thread` found an approved draft that already answers the newest inbound message on the thread. Nothing was changed |
 | `draft_discarded` | `PUT /unibox/ai-drafts/by-thread` found a discarded draft that already covers the newest inbound message on the thread. Nothing was changed |
 
+#### Campaign step refusals
+
+`PATCH /v1/campaigns/:id/steps/reorder` answers these codes when it cannot apply an order. No step moves when one comes back.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `invalid_step_order` | 400 | `step_ids` is not a complete list of the campaign's steps: a step is missing or repeated, or an id is not one of them. Send every step exactly once, in the order you want |
+| `step_order_branched` | 409 | The sequence does not run straight through: a step has a condition, a path that skips ahead, or no connection to the step after it. Arrange it by its paths instead |
+| `step_order_started` | 409 | The campaign has already sent a step, so a new order would change what contacts partway through receive next. Duplicate the campaign and reorder the copy |
+| `step_order_no_subject` | 400 | The order would put an email that replies in the thread, with no subject of its own, first. Give it a subject first |
+
 #### Image upload refusals
 
 Avatars, OAuth app logos, form logos, covers and backgrounds, and images placed in an email are checked by what the file contains, not by its name or the type the browser sends.

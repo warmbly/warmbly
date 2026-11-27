@@ -30,8 +30,24 @@ type SequenceRepository interface {
 	// statement, without bumping updated_at — so a drag never reads as a content
 	// change. Cosmetic and unaudited.
 	UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error
+	// Reorder writes the position, wait and connections plan computes from the
+	// steps read under the campaign lock, refusing once the campaign has sent a
+	// step. Returns the step now at position 1.
+	Reorder(ctx context.Context, orgID, campaignID string, plan ReorderPlan) (*models.Sequence, *errx.Error)
 	Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error
 }
+
+// SequenceReorder is one step's new position, wait and connections for a reorder.
+type SequenceReorder struct {
+	ID         uuid.UUID
+	Position   int
+	WaitAfter  int
+	Conditions json.RawMessage
+}
+
+// ReorderPlan turns the campaign's steps, read under the campaign lock, into the
+// updates to write. Returning an error aborts the transaction unchanged.
+type ReorderPlan func(steps []models.Sequence) ([]SequenceReorder, *errx.Error)
 
 type sequenceRepository struct {
 	DB      *db.DB
@@ -376,6 +392,121 @@ func (r *sequenceRepository) UpdateLayout(ctx context.Context, orgID, campaignID
 		return errx.InternalError()
 	}
 	return nil
+}
+
+// Reorder runs plan against the steps read under the campaign row lock and writes its result in one transaction.
+func (r *sequenceRepository) Reorder(ctx context.Context, orgID, campaignID string, plan ReorderPlan) (*models.Sequence, *errx.Error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		db.CaptureError(err, "", nil, "begin")
+		return nil, errx.InternalError()
+	}
+	defer tx.Rollback(ctx)
+
+	lockQuery := `
+		SELECT id
+		FROM campaigns WHERE id = $1 AND organization_id = $2
+		FOR UPDATE
+	`
+	var locked uuid.UUID
+	if err := tx.QueryRow(ctx, lockQuery, campaignID, orgID).Scan(&locked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errx.ErrNotFound
+		}
+		db.CaptureError(err, lockQuery, []any{campaignID, orgID}, "queryrow")
+		return nil, errx.InternalError()
+	}
+
+	// A contact mid-sequence would skip or repeat steps under a new order.
+	var started bool
+	startedQuery := `SELECT EXISTS (SELECT 1 FROM campaign_contact_progress WHERE campaign_id = $1 AND (sent_at IS NOT NULL OR dispatched_at IS NOT NULL))`
+	if err := tx.QueryRow(ctx, startedQuery, campaignID).Scan(&started); err != nil {
+		db.CaptureError(err, startedQuery, []any{campaignID}, "queryrow")
+		return nil, errx.InternalError()
+	}
+	if started {
+		return nil, errx.ErrSequenceOrderStarted
+	}
+
+	// Read the steps under the campaign lock. Locking the sequence rows too holds
+	// a concurrent branch edit until this transaction commits, so the conditions
+	// written below are computed from state nothing else changed underneath.
+	lockStepsQuery := `SELECT id FROM sequences WHERE campaign_id = $1 ORDER BY position ASC, created_at ASC FOR UPDATE`
+	if _, err := tx.Exec(ctx, lockStepsQuery, campaignID); err != nil {
+		db.CaptureError(err, lockStepsQuery, []any{campaignID}, "exec")
+		return nil, errx.InternalError()
+	}
+
+	readQuery := fmt.Sprintf(`
+		SELECT %s
+		FROM sequences s
+		WHERE s.campaign_id = $1
+		ORDER BY s.position ASC, s.created_at ASC`, SequenceSelectJoin)
+	rows, err := tx.Query(ctx, readQuery, campaignID)
+	if err != nil {
+		db.CaptureError(err, readQuery, []any{campaignID}, "query")
+		return nil, errx.InternalError()
+	}
+	steps := make([]models.Sequence, 0)
+	for rows.Next() {
+		var seq models.Sequence
+		if err := GetSequence(rows, &seq); err != nil {
+			rows.Close()
+			db.CaptureError(err, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		steps = append(steps, seq)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, readQuery, []any{campaignID}, "rows")
+		return nil, errx.InternalError()
+	}
+
+	updates, xerr := plan(steps)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if len(updates) == 0 {
+		return nil, errx.ErrNotFound
+	}
+
+	// SequenceSelectJoin is a column list, not a bind value: format it into the
+	// statement rather than passing it as an argument.
+	updateQuery := fmt.Sprintf(`
+		UPDATE sequences s
+		SET position = $3, conditions = $4, wait_after = $6
+		FROM campaigns c
+		WHERE c.organization_id = $1
+		 AND c.id = $2
+		 AND s.campaign_id = c.id
+		 AND s.id = $5
+		RETURNING %s`, SequenceSelectJoin)
+
+	var entry *models.Sequence
+	for _, u := range updates {
+		row := tx.QueryRow(ctx, updateQuery, orgID, campaignID, u.Position, u.Conditions, u.ID, u.WaitAfter)
+		var seq models.Sequence
+		if err := GetSequence(row, &seq); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, errx.ErrNotFound
+			}
+			db.CaptureError(err, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		if seq.Position == 1 {
+			entry = &seq
+		}
+	}
+	if entry == nil {
+		return nil, errx.InternalError()
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		db.CaptureError(err, "", nil, "commit")
+		return nil, errx.InternalError()
+	}
+	return entry, nil
 }
 
 func (r *sequenceRepository) Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error {

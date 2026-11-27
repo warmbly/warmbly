@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -140,6 +141,43 @@ func (h *Handler) PatchSequenceLayout(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// ReorderSteps puts a campaign's steps in the order given. The body names every
+// step once, so a retry writes the same result. It changes what contacts receive, so it is audited.
+func (h *Handler) ReorderSteps(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	id := c.Param("id")
+
+	var body struct {
+		StepIDs []string `json:"step_ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errx.Handle(c, errx.InvalidBody(err))
+		return
+	}
+	if len(body.StepIDs) == 0 {
+		errx.Handle(c, errx.ErrSequenceOrder)
+		return
+	}
+
+	resp, err := h.SequenceService.ReorderSteps(c.Request.Context(), orgID.String(), id, body.StepIDs)
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntitySequence, &resp.ID, nil, map[string]string{
+		"campaign_id": id,
+		"order":       strings.Join(body.StepIDs, ","),
+	})
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) DeleteSequence(c *gin.Context) {

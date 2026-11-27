@@ -265,6 +265,14 @@ var (
 	ErrSequenceKind      = New(BadRequest, "Step kind must be email, action, or wait.")
 	ErrSequenceAction    = New(BadRequest, "Invalid action configuration for this step.")
 	ErrSequenceWaitAfter = New(BadRequest, fmt.Sprintf("Step wait must be between 0 and %d days.", config.SequenceWaitAfterMax))
+	ErrSequenceOrder     = NewWithIdentifier(BadRequest, "invalid_step_order",
+		"The step order must include every step in the campaign exactly once.")
+	ErrSequenceOrderBranched = NewWithIdentifier(Conflict, "step_order_branched",
+		"Steps can only be moved in a sequence that runs straight through, with no conditions and every step connected in order.")
+	ErrSequenceOrderStarted = NewWithIdentifier(Conflict, "step_order_started",
+		"This campaign has already sent, so moving steps would change what contacts partway through receive next. Duplicate the campaign to send them in another order.")
+	ErrSequenceOrderSubject = NewWithIdentifier(BadRequest, "step_order_no_subject",
+		"The first email needs a subject of its own. Give that step a subject before moving it to the front.")
 
 	// Contact
 	ErrContactSerialize = New(BadRequest, "Failed to serialize contact.")

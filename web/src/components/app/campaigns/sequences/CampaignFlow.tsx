@@ -19,6 +19,7 @@ import type { SequenceActionType } from "@/lib/api/models/app/campaigns/sequence
 import useSequences from "@/lib/api/hooks/app/campaigns/sequences/useSequences";
 import useCreateSequence from "@/lib/api/hooks/app/campaigns/sequences/useCreateSequence";
 import useDeleteSequence from "@/lib/api/hooks/app/campaigns/sequences/useDeleteSequence";
+import useReorderSteps from "@/lib/api/hooks/app/campaigns/sequences/useReorderSteps";
 import updateSequence from "@/lib/api/client/app/campaigns/sequences/updateSequence";
 import useCampaign from "@/lib/api/hooks/app/campaigns/useCampaign";
 import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
@@ -71,6 +72,9 @@ import {
     normalize,
     planRemoval,
     reachableSteps,
+    firstEmailHasSubject,
+    isLinearChain,
+    reorderLinear,
     routePort,
 } from "./campaignGraph";
 import { SOCIAL_CONDITIONS, SOCIAL_CONDITION_PREFIX, SOCIAL_FLOW_KEY, entryView, pickerItems, stepIssue, stepView } from "./campaignSteps";
@@ -102,6 +106,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const steps = React.useMemo(() => sequences ?? [], [sequences]);
     const createSequence = useCreateSequence(campaignId);
     const deleteSequence = useDeleteSequence(campaignId);
+    const reorderMutation = useReorderSteps(campaignId);
     const { data: campaign } = useCampaign(campaignId);
     const updateCampaign = useUpdateCampaign(campaignId);
     const { data: variants } = useCampaignABVariants(campaignId);
@@ -239,6 +244,52 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             }
         },
         [campaignId, patchCache, invalidate, qc],
+    );
+
+    // Move up and Move down only apply to a sequence that runs straight through; anything else is arranged by its paths.
+    const linear = React.useMemo(() => isLinearChain(steps), [steps]);
+    const reorderPending = React.useRef(false);
+    const [reorderBusy, setReorderBusy] = React.useState(false);
+    const reorder = React.useCallback(
+        async (fromIndex: number, direction: -1 | 1) => {
+            const toIndex = fromIndex + direction;
+            if (reorderPending.current || toIndex < 0 || toIndex >= steps.length) return;
+            const next = steps.slice();
+            [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
+            if (!firstEmailHasSubject(next)) {
+                toast.error("The first email needs a subject of its own. Give that step a subject before moving it to the front.");
+                return;
+            }
+            // Set before the first await so a second click cannot start a second move.
+            reorderPending.current = true;
+            setReorderBusy(true);
+            const stepIds = next.map((s) => s.id);
+            await qc.cancelQueries({ queryKey: SEQ_KEY(campaignId) });
+            const snapshot = qc.getQueryData<Sequence[]>(SEQ_KEY(campaignId));
+            qc.setQueryData<Sequence[]>(SEQ_KEY(campaignId), (old) => (old ? reorderLinear(old, stepIds) : old));
+            try {
+                await reorderMutation.mutateAsync(stepIds);
+            } catch (err) {
+                qc.setQueryData(SEQ_KEY(campaignId), snapshot);
+                toast.error(buildError(err as AppError));
+            } finally {
+                reorderPending.current = false;
+                setReorderBusy(false);
+                void invalidate();
+            }
+        },
+        [campaignId, steps, reorderMutation, qc, invalidate],
+    );
+    // A move can rewrite the open path, so unsaved edits there are confirmed away first, as select does.
+    const requestReorder = React.useCallback(
+        (fromIndex: number, direction: -1 | 1) => {
+            if (!dirty.isDirty()) return void reorder(fromIndex, direction);
+            confirm.show("Discard your unsaved changes to this step?", async () => {
+                dirty.clear();
+                await reorder(fromIndex, direction);
+            });
+        },
+        [confirm, dirty, reorder],
     );
 
     const saveWait = React.useCallback(
@@ -479,6 +530,25 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
             </StepBadge>
         ) : null;
         const menu: StepMenuItem[] = [];
+        if (canEdit && linear) {
+            const index = indexOf.get(id) ?? 0;
+            if (index > 0) {
+                menu.push({
+                    label: "Move up",
+                    icon: <ArrowUpIcon className="size-3.5" />,
+                    onSelect: () => requestReorder(index, -1),
+                    disabled: reorderBusy,
+                });
+            }
+            if (index < steps.length - 1) {
+                menu.push({
+                    label: "Move down",
+                    icon: <ArrowDownIcon className="size-3.5" />,
+                    onSelect: () => requestReorder(index, 1),
+                    disabled: reorderBusy,
+                });
+            }
+        }
         if (canEdit && !isSwitchStep(s)) {
             menu.push({
                 label: "Add a condition",

@@ -361,6 +361,42 @@ Optional.
 
 `201 Created` with the new `Campaign` object (see the [list](#list-campaigns) shape), including `senders`.
 
+## Reorder steps
+
+`PATCH /campaigns/:id/steps/reorder`
+
+Put the steps of a sequence that runs straight through in a new order. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+Each position keeps its wait (`wait_after`), so the order changes which step is sent at each point, not when. Every step is connected to the one after it, and the last step ends the sequence. The body names every step, so sending the same request again gives the same result.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign whose steps to reorder. |
+
+### Request body
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `step_ids` | uuid[] | Every step of the campaign, once each, in the new order. |
+
+```json
+{ "step_ids": ["8c1e...", "1f2a...", "d93b..."] }
+```
+
+### Response
+
+`200 OK` with the step now first.
+
+### Errors
+
+| Status | Code | When |
+| --- | --- | --- |
+| `400` | `invalid_step_order` | `step_ids` misses, repeats or adds a step. |
+| `409` | `step_order_branched` | The sequence has a condition, a path that skips ahead, or a step not connected to the next. |
+| `409` | `step_order_started` | The campaign has already sent a step. Duplicate it and reorder the copy. |
+| `400` | `step_order_no_subject` | The first email would have no subject of its own. |
+| `404` | `not_found` | The campaign does not belong to the caller's organization. |
+
 ## Get advanced settings
 
 `GET /campaigns/:id/advanced`
