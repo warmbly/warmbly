@@ -605,8 +605,12 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 	if err != nil {
 		return errx.InternalError()
 	}
-	if activeCampaigns >= config.HardCapCampaignsActive {
-		return errx.New(errx.Forbidden, "You have 50 active campaigns. Contact us if you need to run more.")
+	maxActive, xerr := s.maxActiveCampaigns(ctx, orgID)
+	if xerr != nil {
+		return xerr
+	}
+	if activeCampaigns >= maxActive {
+		return errx.New(errx.Forbidden, fmt.Sprintf("You have %d active campaigns, the most this workspace can run at once. Contact us if you need to run more.", maxActive))
 	}
 
 	// Set status to active
@@ -1693,4 +1697,19 @@ func (s *campaignService) LeadTimezones(ctx context.Context, orgID uuid.UUID, ca
 	out.TimezoneMode = campaign.TimezoneMode
 	out.Timezone = campaign.ClockTimezone()
 	return out, nil
+}
+
+// maxActiveCampaigns is the organization's effective active-campaign limit, the hard cap when none resolves.
+func (s *campaignService) maxActiveCampaigns(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	if s.limits == nil {
+		return config.HardCapCampaignsActive, nil
+	}
+	limits, xerr := s.limits.GetEffectiveLimits(ctx, orgID)
+	if xerr != nil {
+		return 0, xerr
+	}
+	if limits == nil || limits.MaxActiveCampaigns == nil {
+		return config.HardCapCampaignsActive, nil
+	}
+	return *limits.MaxActiveCampaigns, nil
 }
