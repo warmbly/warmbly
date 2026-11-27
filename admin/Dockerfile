@@ -47,7 +47,10 @@ RUN --mount=type=secret,id=sentry_auth_token,required=false \
 
 # Stage 2: serve the built SPA from nginx with a history fallback. The
 # entrypoint renders /config.js from container env at startup.
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
+# VERSION keys the build cache, so every release re-runs this against Alpine's current packages.
+ARG VERSION
+RUN apk upgrade --no-cache
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx-security-headers.conf /etc/nginx/warmbly-security-headers.conf
 RUN nginx -t

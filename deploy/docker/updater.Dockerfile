@@ -21,7 +21,10 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X github.com/warmbly/warmbly/internal/version.Version=$VERSION -X github.com/warmbly/warmbly/internal/version.Commit=$COMMIT -X github.com/warmbly/warmbly/internal/version.BuiltAt=$BUILT_AT" -o /out/updater ./cmd/updater
 
 # Runtime: the official docker CLI image already carries the compose plugin.
-FROM docker:27-cli
+FROM docker:29-cli
+# VERSION keys the build cache, so every release re-runs this against Alpine's current packages.
+ARG VERSION
+RUN apk upgrade --no-cache
 
 RUN apk add --no-cache git ca-certificates tzdata && mkdir -p /var/lib/warmbly-updater
 

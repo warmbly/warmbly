@@ -49,6 +49,9 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
 
 # Runtime stage
 FROM alpine:3.23
+# VERSION keys the build cache, so every release re-runs this against Alpine's current packages.
+ARG VERSION
+RUN apk upgrade --no-cache
 
 RUN apk add --no-cache ca-certificates libgcc && \
     addgroup -g 1000 tracking && \

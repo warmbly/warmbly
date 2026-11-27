@@ -28,6 +28,9 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
       -o /out/warmbly ./cmd/cli
 
 FROM alpine:3.23
+# VERSION keys the build cache, so every release re-runs this against Alpine's current packages.
+ARG VERSION
+RUN apk upgrade --no-cache
 
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 1000 warmbly
 

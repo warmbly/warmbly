@@ -27,6 +27,9 @@ RUN mix release
 # Runtime stage. The alpine version must be at least the builder image's, or
 # the crypto NIF fails to load against an older libcrypto (missing symbols).
 FROM alpine:3.23
+# VERSION keys the build cache, so every release re-runs this against Alpine's current packages.
+ARG VERSION
+RUN apk upgrade --no-cache
 
 RUN apk add --no-cache libstdc++ openssl ncurses-libs
 RUN adduser -D -u 1000 warmbly

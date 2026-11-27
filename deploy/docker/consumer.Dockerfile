@@ -25,6 +25,9 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
 
 # Runtime stage
 FROM alpine:3.23
+# VERSION keys the build cache, so every release re-runs this against Alpine's current packages.
+ARG VERSION
+RUN apk upgrade --no-cache
 
 ARG GO_TAGS=""
 RUN apk add --no-cache ca-certificates tzdata && \
