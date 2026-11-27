@@ -41,7 +41,8 @@ const (
 type Mailboxes interface {
 	OAuthAuthorizeURL(provider models.InboxProvider, state, verifier string) (string, *errx.Error)
 	OAuthCallbackOrigin(provider models.InboxProvider) (string, *errx.Error)
-	OAuthConnectWithCode(ctx context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, code, verifier string) (*models.Email, *errx.Error)
+	// OAuthConnectWithCodeAs refuses any account but address ("" accepts any).
+	OAuthConnectWithCodeAs(ctx context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, code, verifier, address string) (*models.Email, *errx.Error)
 	OnboardSMTPIMAP(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSMTPIMAPAccount) (*models.Email, *errx.Error)
 	BulkUpdateTags(ctx context.Context, orgID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error)
 	SetWarmupLifecycle(ctx context.Context, orgID, emailAccountID, action string) (*models.Email, *errx.Error)

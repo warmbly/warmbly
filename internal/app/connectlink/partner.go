@@ -17,6 +17,9 @@ import (
 type PartnerLinks interface {
 	// LoginHint pre-fills the provider's sign-in for a partner's link, "" for any other.
 	LoginHint(ctx context.Context, linkID uuid.UUID) string
+	// RequiredAddress is the one mailbox a link may connect, "" when any account may sign in (a
+	// hint only pre-fills); a sign-in as another account is refused and leaves the link usable.
+	RequiredAddress(ctx context.Context, linkID uuid.UUID) string
 	// Connected hands the partner the mailbox its link connected.
 	Connected(ctx context.Context, linkID uuid.UUID, acc *models.Email)
 	// ReturnURL is where a partner's link sends the person after the provider; ok is false for any other link.

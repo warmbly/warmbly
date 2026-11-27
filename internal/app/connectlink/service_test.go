@@ -185,6 +185,8 @@ type fakeMailboxes struct {
 	gotOrg     uuid.UUID
 	gotCode    string
 	gotVerif   string
+	gotAddress string
+	owner      string // the account the provider signs in, client@example.test when ""
 	calls      int
 }
 
@@ -196,13 +198,20 @@ func (m *fakeMailboxes) OAuthAuthorizeURL(_ models.InboxProvider, state, verifie
 	return "https://login.example.test/?state=" + state, nil
 }
 
-func (m *fakeMailboxes) OAuthConnectWithCode(_ context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, code, verifier string) (*models.Email, *errx.Error) {
+func (m *fakeMailboxes) OAuthConnectWithCodeAs(_ context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, code, verifier, address string) (*models.Email, *errx.Error) {
 	m.calls++
-	m.gotUser, m.gotOrg, m.gotCode, m.gotVerif = userID, *orgID, code, verifier
+	m.gotUser, m.gotOrg, m.gotCode, m.gotVerif, m.gotAddress = userID, *orgID, code, verifier, address
 	if m.connectErr != nil {
 		return nil, m.connectErr
 	}
-	return &models.Email{ID: uuid.New(), OrganizationID: orgID, Email: "client@example.test", Provider: string(provider)}, nil
+	owner := m.owner
+	if owner == "" {
+		owner = "client@example.test"
+	}
+	if address != "" && !strings.EqualFold(owner, address) {
+		return nil, errx.NewWithIdentifier(errx.Conflict, "signed_in_as_other", "signed in as "+owner)
+	}
+	return &models.Email{ID: uuid.New(), OrganizationID: orgID, Email: owner, Provider: string(provider)}, nil
 }
 
 type fakeWorkspaces struct {
