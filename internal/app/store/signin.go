@@ -139,6 +139,13 @@ func (l SignInLinks) LoginHint(ctx context.Context, linkID uuid.UUID) string {
 	return ""
 }
 
+// RequiredAddress: a store link connects only the purchased mailbox. Anyone else's sign-in (a
+// tenant's own admin@….onmicrosoft.com, say) is refused instead of connecting a stray mailbox
+// and using up the link.
+func (l SignInLinks) RequiredAddress(ctx context.Context, linkID uuid.UUID) string {
+	return l.LoginHint(ctx, linkID)
+}
+
 // ReturnURL: a store link ends on the hosted connect page's own result.
 func (SignInLinks) ReturnURL(context.Context, uuid.UUID, string) (string, bool) { return "", false }
 
@@ -170,6 +177,7 @@ func (l SignInLinks) Connected(ctx context.Context, linkID uuid.UUID, acc *model
 // PartnerLinksChain asks each in turn: the store's links first, then the partner API's.
 type PartnerLinksChain []interface {
 	LoginHint(ctx context.Context, linkID uuid.UUID) string
+	RequiredAddress(ctx context.Context, linkID uuid.UUID) string
 	Connected(ctx context.Context, linkID uuid.UUID, acc *models.Email)
 	ReturnURL(ctx context.Context, linkID uuid.UUID, status string) (string, bool)
 }
@@ -179,6 +187,16 @@ func (c PartnerLinksChain) LoginHint(ctx context.Context, linkID uuid.UUID) stri
 	for _, p := range c {
 		if h := p.LoginHint(ctx, linkID); h != "" {
 			return h
+		}
+	}
+	return ""
+}
+
+// RequiredAddress is the first non-empty one.
+func (c PartnerLinksChain) RequiredAddress(ctx context.Context, linkID uuid.UUID) string {
+	for _, p := range c {
+		if a := p.RequiredAddress(ctx, linkID); a != "" {
+			return a
 		}
 	}
 	return ""
